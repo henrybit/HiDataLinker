@@ -5,6 +5,7 @@ use super::engine::DatabaseEngine;
 use super::ident::{
     create_mysql_database_sql, drop_mysql_database_sql, qualify, quote_ident, validate_ident,
 };
+use super::sql::{apply_default_query_limit, SqlDialect, DEFAULT_QUERY_ROW_LIMIT};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, CharsetInfo, CollationInfo, ColumnInfo, ConnectionProfile, DatabaseInfo,
@@ -464,6 +465,8 @@ impl DatabaseEngine for MySqlEngine {
         if sql.is_empty() {
             return Err(AppError::msg("SQL is empty"));
         }
+        let limited = apply_default_query_limit(sql, SqlDialect::MySql);
+        let sql = limited.sql.as_str();
 
         let mut messages = Vec::new();
         let mut conn = self.conn().await?;
@@ -474,6 +477,11 @@ impl DatabaseEngine for MySqlEngine {
             messages.push(crate::models::QueryLogEntry::info(format!("USE {schema}")));
         }
 
+        if limited.applied {
+            messages.push(crate::models::QueryLogEntry::info(format!(
+                "No LIMIT specified; applying default LIMIT {DEFAULT_QUERY_ROW_LIMIT}"
+            )));
+        }
         messages.push(crate::models::QueryLogEntry::info(format!(
             "Executing {}…",
             statement_kind(sql)
@@ -525,9 +533,17 @@ impl DatabaseEngine for MySqlEngine {
                 "Last insert id: {id}"
             )));
         }
+        if !truncated && limited.applied && rows.len() >= DEFAULT_QUERY_ROW_LIMIT as usize {
+            truncated = true;
+        }
         if truncated {
+            let cap = if limited.applied {
+                DEFAULT_QUERY_ROW_LIMIT as usize
+            } else {
+                MAX_RESULT_ROWS
+            };
             messages.push(crate::models::QueryLogEntry::warning(format!(
-                "Result truncated to {MAX_RESULT_ROWS} rows"
+                "Result truncated to {cap} rows"
             )));
         }
         if warning_count > 0 {

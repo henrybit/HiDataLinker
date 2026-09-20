@@ -4,7 +4,7 @@ use super::ident::{
     create_pg_schema_sql, drop_pg_schema_sql, qualify_pg as qualify, quote_ident_pg as quote_ident,
     validate_ident,
 };
-use super::sql::statement_kind;
+use super::sql::{apply_default_query_limit, statement_kind, SqlDialect, DEFAULT_QUERY_ROW_LIMIT};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, IndexInfo, ObjectKind,
@@ -505,6 +505,8 @@ impl DatabaseEngine for PostgresEngine {
         if sql.is_empty() {
             return Err(AppError::msg("SQL is empty"));
         }
+        let limited = apply_default_query_limit(sql, SqlDialect::Postgres);
+        let sql = limited.sql.as_str();
 
         let mut messages = Vec::new();
         let client = self.pool.get().await?;
@@ -515,6 +517,11 @@ impl DatabaseEngine for PostgresEngine {
             )));
         }
 
+        if limited.applied {
+            messages.push(crate::models::QueryLogEntry::info(format!(
+                "No LIMIT specified; applying default LIMIT {DEFAULT_QUERY_ROW_LIMIT}"
+            )));
+        }
         messages.push(crate::models::QueryLogEntry::info(format!(
             "Executing {}…",
             statement_kind(sql)
@@ -531,6 +538,7 @@ impl DatabaseEngine for PostgresEngine {
             sql,
             started.elapsed().as_millis() as u64,
             messages,
+            limited.applied,
         ))
     }
 
@@ -568,6 +576,7 @@ fn simple_query_result(
     sql: &str,
     duration_ms: u64,
     mut log: Vec<crate::models::QueryLogEntry>,
+    default_limit_applied: bool,
 ) -> QueryResult {
     let mut columns = Vec::new();
     let mut rows = Vec::new();
@@ -626,9 +635,17 @@ fn simple_query_result(
         rows = current_rows;
     }
 
+    if !truncated && default_limit_applied && rows.len() >= DEFAULT_QUERY_ROW_LIMIT as usize {
+        truncated = true;
+    }
     if truncated {
+        let cap = if default_limit_applied {
+            DEFAULT_QUERY_ROW_LIMIT as usize
+        } else {
+            MAX_RESULT_ROWS
+        };
         log.push(crate::models::QueryLogEntry::warning(format!(
-            "Result truncated to {MAX_RESULT_ROWS} rows"
+            "Result truncated to {cap} rows"
         )));
     }
     if statement_index == 0 && columns.is_empty() {
