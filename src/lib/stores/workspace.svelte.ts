@@ -118,6 +118,8 @@ class WorkspaceStore {
 			password: '',
 			database: '',
 			sslCa: '',
+			sslCert: '',
+			sslKey: '',
 			savePassword: true
 		};
 		this.dialogOpen = true;
@@ -137,6 +139,8 @@ class WorkspaceStore {
 			password: item.password ?? '',
 			database: item.database ?? '',
 			sslCa: item.sslCa ?? '',
+			sslCert: item.sslCert ?? '',
+			sslKey: item.sslKey ?? '',
 			savePassword: item.savePassword
 		};
 		this.dialogOpen = true;

@@ -21,6 +21,8 @@
 			password: '',
 			database: ENGINE_PRESETS.mysql.database,
 			sslCa: '',
+			sslCert: '',
+			sslKey: '',
 			savePassword: true
 		}
 	);
@@ -79,6 +81,8 @@
 		profile.password = parsed.password;
 		profile.database = parsed.database;
 		profile.sslCa = parsed.sslCa;
+		profile.sslCert = parsed.sslCert;
+		profile.sslKey = parsed.sslKey;
 		if (
 			!profile.name ||
 			profile.name === 'MySQL' ||
@@ -125,7 +129,9 @@
 				username: profile.username,
 				password: profile.password,
 				database: profile.database,
-				sslCa: profile.sslCa
+				sslCa: profile.sslCa,
+				sslCert: profile.sslCert,
+				sslKey: profile.sslKey
 			});
 			testOk = true;
 			testMessage = t('dialog.connectionSucceeded');
@@ -137,24 +143,35 @@
 		}
 	}
 
+	function optionalPath(value?: string | null): string | null {
+		const trimmed = value?.trim();
+		return trimmed ? trimmed : null;
+	}
+
 	function save() {
 		void workspace.saveConnection({
 			...profile,
 			port: Number(profile.port) || ENGINE_PRESETS[engine].port,
 			engine,
-			sslCa: profile.sslCa?.trim() ? profile.sslCa.trim() : null
+			sslCa: optionalPath(profile.sslCa),
+			sslCert: engine === 'postgres' ? optionalPath(profile.sslCert) : null,
+			sslKey: engine === 'postgres' ? optionalPath(profile.sslKey) : null
 		});
 	}
 
-	async function pickCaFile() {
+	async function pickSslFile(
+		field: 'sslCa' | 'sslCert' | 'sslKey',
+		titleKey: 'dialog.sslCa' | 'dialog.sslCert' | 'dialog.sslKey',
+		extensions: string[]
+	) {
 		if (!isTauriRuntime()) return;
 		const { open } = await import('@tauri-apps/plugin-dialog');
 		const selected = await open({
-			title: t('dialog.sslCa'),
+			title: t(titleKey),
 			multiple: false,
-			filters: [{ name: 'Certificate', extensions: ['pem', 'crt', 'cer', 'cert'] }]
+			filters: [{ name: 'Certificate', extensions }]
 		});
-		if (typeof selected === 'string') profile.sslCa = selected;
+		if (typeof selected === 'string') profile[field] = selected;
 	}
 </script>
 
@@ -214,16 +231,52 @@
 				<span>{t('dialog.database')}</span>
 				<input bind:value={profile.database} placeholder={databaseHint} />
 			</label>
-			{#if engine === 'mysql'}
+			<label class="field">
+				<span>{t('dialog.sslCa')}</span>
+				<div class="field-control">
+					<input
+						bind:value={profile.sslCa}
+						placeholder={t('dialog.sslCaPlaceholder')}
+						spellcheck="false"
+					/>
+					<button
+						class="btn"
+						type="button"
+						onclick={() => void pickSslFile('sslCa', 'dialog.sslCa', ['pem', 'crt', 'cer', 'cert'])}
+						>{t('dialog.browse')}</button
+					>
+				</div>
+			</label>
+			{#if engine === 'postgres'}
 				<label class="field">
-					<span>{t('dialog.sslCa')}</span>
+					<span>{t('dialog.sslCert')}</span>
 					<div class="field-control">
 						<input
-							bind:value={profile.sslCa}
-							placeholder={t('dialog.sslCaPlaceholder')}
+							bind:value={profile.sslCert}
+							placeholder={t('dialog.sslCertPlaceholder')}
 							spellcheck="false"
 						/>
-						<button class="btn" type="button" onclick={() => void pickCaFile()}
+						<button
+							class="btn"
+							type="button"
+							onclick={() =>
+								void pickSslFile('sslCert', 'dialog.sslCert', ['pem', 'crt', 'cer', 'cert'])}
+							>{t('dialog.browse')}</button
+						>
+					</div>
+				</label>
+				<label class="field">
+					<span>{t('dialog.sslKey')}</span>
+					<div class="field-control">
+						<input
+							bind:value={profile.sslKey}
+							placeholder={t('dialog.sslKeyPlaceholder')}
+							spellcheck="false"
+						/>
+						<button
+							class="btn"
+							type="button"
+							onclick={() => void pickSslFile('sslKey', 'dialog.sslKey', ['pem', 'key'])}
 							>{t('dialog.browse')}</button
 						>
 					</div>

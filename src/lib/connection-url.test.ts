@@ -30,7 +30,9 @@ describe('connection url', () => {
 			username: 'app',
 			password: 's3cret',
 			database: 'shop',
-			sslCa: ''
+			sslCa: '',
+			sslCert: '',
+			sslKey: ''
 		});
 		expect(parseConnectionUrl('mariadb://root@127.0.0.1/app')).toEqual({
 			engine: 'mysql',
@@ -39,7 +41,9 @@ describe('connection url', () => {
 			username: 'root',
 			password: '',
 			database: 'app',
-			sslCa: ''
+			sslCa: '',
+			sslCert: '',
+			sslKey: ''
 		});
 	});
 
@@ -55,11 +59,31 @@ describe('connection url', () => {
 			username: '3RongwYzrjiCbcf.root',
 			password: 'secret',
 			database: 'account',
-			sslCa: '/etc/ssl/cert.pem'
+			sslCa: '/etc/ssl/cert.pem',
+			sslCert: '',
+			sslKey: ''
 		});
 		expect(
 			parseConnectionUrl('mysql://root@127.0.0.1:3306/app?sslca=%2Fetc%2Fssl%2Fcert.pem')?.sslCa
 		).toBe('/etc/ssl/cert.pem');
+	});
+
+	it('parses postgresql ssl certificate query parameters', () => {
+		expect(
+			parseConnectionUrl(
+				'postgresql://postgres:secret@db.example.com:5432/postgres?sslrootcert=/etc/ssl/root.crt&sslcert=/etc/ssl/client.crt&sslkey=/etc/ssl/client.key'
+			)
+		).toEqual({
+			engine: 'postgres',
+			host: 'db.example.com',
+			port: 5432,
+			username: 'postgres',
+			password: 'secret',
+			database: 'postgres',
+			sslCa: '/etc/ssl/root.crt',
+			sslCert: '/etc/ssl/client.crt',
+			sslKey: '/etc/ssl/client.key'
+		});
 	});
 
 	it('parses supabase-style postgresql urls', () => {
@@ -73,7 +97,9 @@ describe('connection url', () => {
 			username: 'postgres',
 			password: '[YOUR-PASSWORD]',
 			database: 'postgres',
-			sslCa: ''
+			sslCa: '',
+			sslCert: '',
+			sslKey: ''
 		});
 	});
 
@@ -88,7 +114,9 @@ describe('connection url', () => {
 			username: 'user',
 			password: 'p@ss:word',
 			database: 'my/db',
-			sslCa: ''
+			sslCa: '',
+			sslCert: '',
+			sslKey: ''
 		});
 	});
 
@@ -100,7 +128,9 @@ describe('connection url', () => {
 			username: 'alice',
 			password: '',
 			database: 'postgres',
-			sslCa: ''
+			sslCa: '',
+			sslCert: '',
+			sslKey: ''
 		});
 		expect(parseConnectionUrl('mysql://root@127.0.0.1/')).toEqual({
 			engine: 'mysql',
@@ -109,7 +139,9 @@ describe('connection url', () => {
 			username: 'root',
 			password: '',
 			database: '',
-			sslCa: ''
+			sslCa: '',
+			sslCert: '',
+			sslKey: ''
 		});
 	});
 

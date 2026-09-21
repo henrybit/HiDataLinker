@@ -8,6 +8,8 @@ export type ParsedConnectionUrl = {
 	password: string;
 	database: string;
 	sslCa: string;
+	sslCert: string;
+	sslKey: string;
 };
 
 const URL_SCHEME = /^(postgresql|postgres|pgsql|mysql|mariadb):\/\//i;
@@ -49,9 +51,18 @@ export function parseConnectionUrl(input: string): ParsedConnectionUrl | null {
 	const password = decodeUrlComponent(url.password);
 	const database =
 		decodeUrlComponent(url.pathname.replace(/^\/+/, '').replace(/\/+$/, '')) || preset.database;
-	const sslCa = firstSearchParam(url, ['ssl-ca', 'ssl_ca', 'sslca', 'ca']);
+	const sslCa = firstSearchParam(url, [
+		'ssl-ca',
+		'ssl_ca',
+		'sslca',
+		'ca',
+		'sslrootcert',
+		'ssl_root_cert'
+	]);
+	const sslCert = firstSearchParam(url, ['sslcert', 'ssl_cert', 'ssl-cert']);
+	const sslKey = firstSearchParam(url, ['sslkey', 'ssl_key', 'ssl-key']);
 
-	return { engine, host, port, username, password, database, sslCa };
+	return { engine, host, port, username, password, database, sslCa, sslCert, sslKey };
 }
 
 function firstSearchParam(url: URL, names: string[]): string {

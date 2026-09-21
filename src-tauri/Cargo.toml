@@ -26,6 +26,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 mysql_async = { version = "0.36", features = ["native-tls-tls"] }
 tokio-postgres = "0.7"
 deadpool-postgres = "0.14"
+native-tls = "0.2"
+postgres-native-tls = "0.5"
 async-trait = "0.1"
 dashmap = "6"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }

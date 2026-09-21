@@ -72,12 +72,9 @@ impl AppState {
         if !profile.save_password {
             profile.password = None;
         }
-        profile.ssl_ca = profile
-            .ssl_ca
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|value| value.to_string());
+        profile.ssl_ca = trim_optional_path(profile.ssl_ca.take());
+        profile.ssl_cert = trim_optional_path(profile.ssl_cert.take());
+        profile.ssl_key = trim_optional_path(profile.ssl_key.take());
 
         {
             let mut profiles = self.profiles.write().await;
@@ -208,6 +205,14 @@ impl AppState {
         })
         .await
     }
+}
+
+fn trim_optional_path(value: Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(|item| item.to_string())
 }
 
 fn reset_query_cache_dir(dir: &PathBuf) -> AppResult<()> {

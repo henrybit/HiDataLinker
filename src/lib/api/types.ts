@@ -14,6 +14,8 @@ export interface ConnectionProfile {
 	password?: string | null;
 	database?: string | null;
 	sslCa?: string | null;
+	sslCert?: string | null;
+	sslKey?: string | null;
 	savePassword: boolean;
 }
 
@@ -27,6 +29,8 @@ export interface ConnectionListItem {
 	password?: string | null;
 	database?: string | null;
 	sslCa?: string | null;
+	sslCert?: string | null;
+	sslKey?: string | null;
 	savePassword: boolean;
 	connected: boolean;
 }
@@ -43,6 +47,8 @@ export interface TestConnectionRequest {
 	password?: string | null;
 	database?: string | null;
 	sslCa?: string | null;
+	sslCert?: string | null;
+	sslKey?: string | null;
 }
 
 export interface DatabaseInfo {

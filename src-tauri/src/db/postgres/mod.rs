@@ -11,8 +11,11 @@ use crate::models::{
     QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use async_trait::async_trait;
-use deadpool_postgres::{Config, Pool, PoolConfig, Runtime};
+use deadpool_postgres::{Config, Pool, PoolConfig, Runtime, SslMode};
+use native_tls::{Certificate, Identity, TlsConnector};
+use postgres_native_tls::MakeTlsConnector;
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tokio_postgres::{NoTls, SimpleQueryMessage};
 
@@ -33,6 +36,11 @@ impl PostgresEngine {
                 &profile.username,
                 profile.password.as_deref(),
                 profile.database.as_deref(),
+                SslFiles {
+                    ca: profile.ssl_ca.as_deref(),
+                    cert: profile.ssl_cert.as_deref(),
+                    key: profile.ssl_key.as_deref(),
+                },
             )?,
         })
     }
@@ -44,6 +52,11 @@ impl PostgresEngine {
             &request.username,
             request.password.as_deref(),
             request.database.as_deref(),
+            SslFiles {
+                ca: request.ssl_ca.as_deref(),
+                cert: request.ssl_cert.as_deref(),
+                key: request.ssl_key.as_deref(),
+            },
         )?;
         let client = pool.get().await?;
         client.simple_query("SELECT 1").await?;
@@ -554,6 +567,7 @@ fn create_pool(
     username: &str,
     password: Option<&str>,
     database: Option<&str>,
+    ssl: SslFiles<'_>,
 ) -> AppResult<Pool> {
     let mut cfg = Config::new();
     cfg.host = Some(host.to_string());
@@ -568,7 +582,104 @@ fn create_pool(
         .unwrap_or("postgres");
     cfg.dbname = Some(dbname.to_string());
     cfg.pool = Some(PoolConfig::new(16));
-    Ok(cfg.create_pool(Some(Runtime::Tokio1), NoTls)?)
+    match tls_connector_from_files(ssl)? {
+        Some(tls) => {
+            cfg.ssl_mode = Some(SslMode::Require);
+            Ok(cfg.create_pool(Some(Runtime::Tokio1), tls)?)
+        }
+        None => Ok(cfg.create_pool(Some(Runtime::Tokio1), NoTls)?),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SslFiles<'a> {
+    ca: Option<&'a str>,
+    cert: Option<&'a str>,
+    key: Option<&'a str>,
+}
+
+fn trim_opt(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|item| !item.is_empty())
+}
+
+fn tls_connector_from_files(ssl: SslFiles<'_>) -> AppResult<Option<MakeTlsConnector>> {
+    let ca = trim_opt(ssl.ca);
+    let cert = trim_opt(ssl.cert);
+    let key = trim_opt(ssl.key);
+    if ca.is_none() && cert.is_none() && key.is_none() {
+        return Ok(None);
+    }
+    if cert.is_some() != key.is_some() {
+        return Err(AppError::msg(
+            "SSL client certificate and key must be provided together",
+        ));
+    }
+
+    let mut builder = TlsConnector::builder();
+    if let Some(ca) = ca {
+        let path = PathBuf::from(ca);
+        if !path.is_file() {
+            return Err(AppError::msg(format!("CA certificate not found: {ca}")));
+        }
+        for certificate in load_root_certs(&path)? {
+            builder.add_root_certificate(certificate);
+        }
+        // Match libpq sslmode=verify-ca: trust the supplied CA without requiring hostname SANs.
+        builder.danger_accept_invalid_hostnames(true);
+    }
+    if let (Some(cert), Some(key)) = (cert, key) {
+        builder.identity(load_client_identity(cert, key)?);
+    }
+
+    let connector = builder
+        .build()
+        .map_err(|error| AppError::msg(format!("failed to build TLS connector: {error}")))?;
+    Ok(Some(MakeTlsConnector::new(connector)))
+}
+
+fn load_root_certs(path: &Path) -> AppResult<Vec<Certificate>> {
+    let bytes = std::fs::read(path)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let mut certs = Vec::new();
+    let mut rest = text.as_ref();
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+    while let Some(start) = rest.find(BEGIN) {
+        let Some(end_rel) = rest[start..].find(END) else {
+            return Err(AppError::msg("invalid CA certificate: truncated PEM"));
+        };
+        let end = start + end_rel + END.len();
+        let pem = &rest.as_bytes()[start..end];
+        certs.push(
+            Certificate::from_pem(pem)
+                .map_err(|error| AppError::msg(format!("invalid CA certificate: {error}")))?,
+        );
+        rest = &rest[end..];
+    }
+    if certs.is_empty() {
+        certs.push(
+            Certificate::from_der(&bytes)
+                .map_err(|error| AppError::msg(format!("invalid CA certificate: {error}")))?,
+        );
+    }
+    Ok(certs)
+}
+
+fn load_client_identity(cert: &str, key: &str) -> AppResult<Identity> {
+    let cert_path = PathBuf::from(cert);
+    let key_path = PathBuf::from(key);
+    if !cert_path.is_file() {
+        return Err(AppError::msg(format!(
+            "client certificate not found: {cert}"
+        )));
+    }
+    if !key_path.is_file() {
+        return Err(AppError::msg(format!("client key not found: {key}")));
+    }
+    let cert_bytes = std::fs::read(&cert_path)?;
+    let key_bytes = std::fs::read(&key_path)?;
+    Identity::from_pkcs8(&cert_bytes, &key_bytes)
+        .map_err(|error| AppError::msg(format!("invalid SSL client certificate or key: {error}")))
 }
 
 fn simple_query_result(
@@ -884,4 +995,76 @@ async fn index_ddl(pool: &Pool, schema: &str, name: &str) -> AppResult<String> {
     } else {
         format!("{def};")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expect_tls_error(ssl: SslFiles<'_>) -> String {
+        match tls_connector_from_files(ssl) {
+            Ok(_) => panic!("expected TLS configuration error"),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn skips_tls_when_certs_missing() {
+        assert!(tls_connector_from_files(SslFiles {
+            ca: None,
+            cert: None,
+            key: None
+        })
+        .unwrap()
+        .is_none());
+        assert!(tls_connector_from_files(SslFiles {
+            ca: Some(""),
+            cert: Some("  "),
+            key: Some("")
+        })
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn rejects_missing_ca_file() {
+        let error = expect_tls_error(SslFiles {
+            ca: Some("/definitely/missing/ca.pem"),
+            cert: None,
+            key: None,
+        });
+        assert!(error.contains("CA certificate not found"));
+    }
+
+    #[test]
+    fn rejects_client_cert_without_key() {
+        let error = expect_tls_error(SslFiles {
+            ca: None,
+            cert: Some("/tmp/client.crt"),
+            key: None,
+        });
+        assert!(error.contains("must be provided together"));
+    }
+
+    #[test]
+    fn rejects_client_key_without_cert() {
+        let error = expect_tls_error(SslFiles {
+            ca: None,
+            cert: None,
+            key: Some("/tmp/client.key"),
+        });
+        assert!(error.contains("must be provided together"));
+    }
+
+    #[test]
+    fn rejects_invalid_ca_file() {
+        let path = std::env::temp_dir().join("db-gui-invalid-ca.pem");
+        std::fs::write(&path, "not a certificate").unwrap();
+        let error = expect_tls_error(SslFiles {
+            ca: path.to_str(),
+            cert: None,
+            key: None,
+        });
+        assert!(error.contains("invalid CA certificate"));
+    }
 }

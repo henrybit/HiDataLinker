@@ -47,6 +47,10 @@ pub struct ConnectionProfile {
     #[serde(default)]
     pub ssl_ca: Option<String>,
     #[serde(default)]
+    pub ssl_cert: Option<String>,
+    #[serde(default)]
+    pub ssl_key: Option<String>,
+    #[serde(default)]
     pub save_password: bool,
 }
 
@@ -94,6 +98,10 @@ pub struct TestConnectionRequest {
     pub database: Option<String>,
     #[serde(default)]
     pub ssl_ca: Option<String>,
+    #[serde(default)]
+    pub ssl_cert: Option<String>,
+    #[serde(default)]
+    pub ssl_key: Option<String>,
 }
 
 impl TestConnectionRequest {
@@ -118,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn deserializes_profile_without_ssl_ca() {
+    fn deserializes_profile_without_ssl_fields() {
         let json = r#"{
             "id":"1",
             "name":"local",
@@ -130,5 +138,7 @@ mod tests {
         }"#;
         let profile: ConnectionProfile = serde_json::from_str(json).unwrap();
         assert!(profile.ssl_ca.is_none());
+        assert!(profile.ssl_cert.is_none());
+        assert!(profile.ssl_key.is_none());
     }
 }
