@@ -122,6 +122,7 @@ class WorkspaceStore {
 			sslKey: '',
 			sslVerify: false,
 			oracleVersion: 'auto',
+			oracleConnect: 'service',
 			savePassword: true
 		};
 		this.dialogOpen = true;
@@ -139,12 +140,16 @@ class WorkspaceStore {
 			port: item.port,
 			username: item.username,
 			password: item.password ?? '',
-			database: item.database ?? '',
 			sslCa: item.sslCa ?? '',
 			sslCert: item.sslCert ?? '',
 			sslKey: item.sslKey ?? '',
 			sslVerify: item.sslVerify === true,
 			oracleVersion: item.oracleVersion || 'auto',
+			oracleConnect:
+				item.oracleConnect === 'sid' || (item.database ?? '').toLowerCase().startsWith('sid:')
+					? 'sid'
+					: 'service',
+			database: (item.database ?? '').replace(/^sid:/i, ''),
 			savePassword: item.savePassword
 		};
 		this.dialogOpen = true;

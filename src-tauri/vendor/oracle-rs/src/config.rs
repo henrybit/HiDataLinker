@@ -370,7 +370,7 @@ impl Config {
         // Connect data
         let service_part = match &self.service {
             ServiceMethod::ServiceName(name) => format!("(SERVICE_NAME={})", name),
-            ServiceMethod::Sid(sid) => format!("(SID={})", sid),
+            ServiceMethod::Sid(sid) => format!("(SID={sid})(SERVER=DEDICATED)"),
         };
         parts.push(format!("(CONNECT_DATA={})", service_part));
 

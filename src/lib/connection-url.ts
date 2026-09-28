@@ -13,6 +13,7 @@ export type ParsedConnectionUrl = {
 	sslKey: string;
 	sslVerify: boolean;
 	oracleVersion: string;
+	oracleConnect: string;
 };
 
 const URL_SCHEME = /^(postgresql|postgres|pgsql|mysql|mariadb|mssql|sqlserver|oracle):\/\//i;
@@ -73,6 +74,16 @@ export function parseConnectionUrl(input: string): ParsedConnectionUrl | null {
 					firstSearchParam(url, ['oracleVersion', 'oracle-version', 'oracleversion'])
 				)
 			: 'auto';
+	let oracleConnect = '';
+	let resolvedDatabase = database;
+	if (engine === 'oracle') {
+		if (resolvedDatabase.toLowerCase().startsWith('sid:')) {
+			resolvedDatabase = resolvedDatabase.slice(4);
+			oracleConnect = 'sid';
+		}
+		const connect = firstSearchParam(url, ['connect', 'connectMode', 'connect-mode']).toLowerCase();
+		if (connect === 'sid' || connect === 'service') oracleConnect = connect;
+	}
 
 	return {
 		engine,
@@ -80,12 +91,13 @@ export function parseConnectionUrl(input: string): ParsedConnectionUrl | null {
 		port,
 		username,
 		password,
-		database,
+		database: resolvedDatabase,
 		sslCa,
 		sslCert,
 		sslKey,
 		sslVerify,
-		oracleVersion: oracleVersion === 'auto' ? '' : oracleVersion
+		oracleVersion: oracleVersion === 'auto' ? '' : oracleVersion,
+		oracleConnect
 	};
 }
 

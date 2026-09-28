@@ -20,6 +20,8 @@ export interface ConnectionProfile {
 	sslVerify?: boolean;
 	/** Oracle release id such as `11.2`. Empty or `auto` negotiates the widest range. */
 	oracleVersion?: string | null;
+	/** `sid` connects by instance SID. Empty or `service` uses a service name. */
+	oracleConnect?: string | null;
 	savePassword: boolean;
 }
 
@@ -37,6 +39,7 @@ export interface ConnectionListItem {
 	sslKey?: string | null;
 	sslVerify?: boolean;
 	oracleVersion?: string | null;
+	oracleConnect?: string | null;
 	savePassword: boolean;
 	connected: boolean;
 }
@@ -57,6 +60,7 @@ export interface TestConnectionRequest {
 	sslKey?: string | null;
 	sslVerify?: boolean;
 	oracleVersion?: string | null;
+	oracleConnect?: string | null;
 }
 
 export interface DatabaseInfo {

@@ -75,6 +75,7 @@ impl OracleEngine {
                 profile.ssl_ca.as_deref(),
                 profile.ssl_verify,
                 profile.oracle_version.as_deref(),
+                profile.oracle_connect.as_deref(),
             )?,
             conn: Arc::new(Mutex::new(None)),
         })
@@ -91,6 +92,7 @@ impl OracleEngine {
                 request.ssl_ca.as_deref(),
                 request.ssl_verify,
                 request.oracle_version.as_deref(),
+                request.oracle_connect.as_deref(),
             )?,
             conn: Arc::new(Mutex::new(None)),
         };
@@ -627,6 +629,7 @@ fn build_config(
     ssl_ca: Option<&str>,
     verify_cert: bool,
     oracle_version: Option<&str>,
+    oracle_connect: Option<&str>,
 ) -> AppResult<Config> {
     let host = host.trim();
     if host.is_empty() {
@@ -636,21 +639,14 @@ fn build_config(
     if username.is_empty() {
         return Err(AppError::msg("username is required"));
     }
-    let service = database
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::msg("Oracle service name is required"))?;
-    if service.starts_with('(') {
-        return Err(AppError::msg(
-            "Oracle connections use a service name or sid:NAME, not a full connect descriptor",
-        ));
-    }
+    let service = database.map(str::trim).unwrap_or("");
+    let (use_sid, name) = oracle_target(service, oracle_connect)?;
     let port = if port == 0 { 1521 } else { port };
     let password = password.unwrap_or("");
-    let config = if let Some(sid) = service.strip_prefix("sid:") {
-        Config::with_sid(host, port, sid, username, password)
+    let config = if use_sid {
+        Config::with_sid(host, port, name, username, password)
     } else {
-        Config::new(host, port, service, username, password)
+        Config::new(host, port, name, username, password)
     };
     Ok(apply_oracle_version(
         apply_oracle_tls(config, verify_cert, ssl_ca)?,
@@ -731,6 +727,32 @@ fn apply_oracle_version(config: Config, version: Option<&str>) -> Config {
         Some(protocol) => config.protocol_version(protocol),
         None => config,
     }
+}
+
+/// `sid:` prefix or connect mode `sid` selects the instance SID.
+/// Anything else is a service name.
+fn oracle_target<'a>(database: &'a str, connect_as: Option<&str>) -> AppResult<(bool, &'a str)> {
+    if database.starts_with('(') {
+        return Err(AppError::msg(
+            "Oracle connections use a service name or SID, not a full connect descriptor",
+        ));
+    }
+    let (forced_sid, name) = match database.strip_prefix("sid:") {
+        Some(sid) => (true, sid.trim()),
+        None => (false, database),
+    };
+    let use_sid = forced_sid
+        || connect_as
+            .map(str::trim)
+            .is_some_and(|value| value.eq_ignore_ascii_case("sid"));
+    if name.is_empty() {
+        return Err(AppError::msg(if use_sid {
+            "Oracle SID is required"
+        } else {
+            "Oracle service name is required"
+        }));
+    }
+    Ok((use_sid, name))
 }
 
 fn is_oracle_system(name: &str) -> bool {
@@ -1105,5 +1127,52 @@ mod tests {
             Some("11.2"),
         );
         assert_eq!(config.protocol_desired, 314);
+    }
+
+    #[test]
+    fn connects_by_service_name_or_sid() {
+        let service = build_config(
+            "localhost",
+            1521,
+            "system",
+            Some("secret"),
+            Some("FREEPDB1"),
+            None,
+            false,
+            None,
+            Some("service"),
+        )
+        .unwrap();
+        assert_eq!(service.service.service_name(), Some("FREEPDB1"));
+        assert!(service.build_connect_string().contains("(SERVICE_NAME=FREEPDB1)"));
+
+        let sid = build_config(
+            "localhost",
+            1521,
+            "system",
+            Some("secret"),
+            Some("ORCL"),
+            None,
+            false,
+            None,
+            Some("sid"),
+        )
+        .unwrap();
+        assert_eq!(sid.service.sid(), Some("ORCL"));
+        assert!(sid.build_connect_string().contains("(SID=ORCL)"));
+
+        let prefixed = build_config(
+            "localhost",
+            1521,
+            "system",
+            None,
+            Some("sid:ORCL"),
+            None,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(prefixed.service.sid(), Some("ORCL"));
     }
 }

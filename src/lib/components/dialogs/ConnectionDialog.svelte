@@ -32,6 +32,7 @@
 			sslKey: '',
 			sslVerify: false,
 			oracleVersion: 'auto',
+			oracleConnect: 'service',
 			savePassword: true
 		}
 	);
@@ -58,7 +59,9 @@
 			: engine === 'mssql'
 				? t('dialog.databaseHintMssql')
 				: engine === 'oracle'
-					? t('dialog.databaseHintOracle')
+					? profile.oracleConnect === 'sid'
+						? t('dialog.sidPlaceholder')
+						: t('dialog.servicePlaceholder')
 					: t('dialog.databaseHintMysql')
 	);
 
@@ -103,6 +106,9 @@
 		profile.sslKey = parsed.sslKey;
 		profile.sslVerify = parsed.sslVerify;
 		profile.oracleVersion = parsed.oracleVersion || 'auto';
+		if (parsed.engine === 'oracle' && parsed.oracleConnect) {
+			profile.oracleConnect = parsed.oracleConnect;
+		}
 		if (isDefaultConnectionName(profile.name)) {
 			profile.name = ENGINE_PRESETS[parsed.engine].name;
 		}
@@ -147,7 +153,8 @@
 				sslCert: profile.sslCert,
 				sslKey: profile.sslKey,
 				sslVerify: certificateChoice && profile.sslVerify === true,
-				oracleVersion: engine === 'oracle' ? profile.oracleVersion || 'auto' : null
+				oracleVersion: engine === 'oracle' ? profile.oracleVersion || 'auto' : null,
+				oracleConnect: engine === 'oracle' && profile.oracleConnect === 'sid' ? 'sid' : null
 			});
 			testOk = true;
 			testMessage = t('dialog.connectionSucceeded');
@@ -177,7 +184,8 @@
 			oracleVersion:
 				engine === 'oracle' && profile.oracleVersion && profile.oracleVersion !== 'auto'
 					? profile.oracleVersion
-					: null
+					: null,
+			oracleConnect: engine === 'oracle' && profile.oracleConnect === 'sid' ? 'sid' : null
 		});
 	}
 
@@ -251,8 +259,32 @@
 				<span>{t('dialog.password')}</span>
 				<input type="password" bind:value={profile.password} />
 			</label>
+			{#if engine === 'oracle'}
+				<label class="field">
+					<span>{t('dialog.oracleConnect')}</span>
+					<select
+						bind:value={profile.oracleConnect}
+						onchange={() => {
+							const value = profile.database?.trim() ?? '';
+							if (profile.oracleConnect === 'sid' && value.toLowerCase().startsWith('sid:')) {
+								profile.database = value.slice(4);
+							}
+						}}
+					>
+						<option value="service">{t('dialog.serviceName')}</option>
+						<option value="sid">{t('dialog.sid')}</option>
+					</select>
+				</label>
+				<p class="hint">{t('dialog.oracleConnectHint')}</p>
+			{/if}
 			<label class="field">
-				<span>{engine === 'oracle' ? t('dialog.serviceName') : t('dialog.database')}</span>
+				<span
+					>{engine === 'oracle'
+						? profile.oracleConnect === 'sid'
+							? t('dialog.sid')
+							: t('dialog.serviceName')
+						: t('dialog.database')}</span
+				>
 				<input bind:value={profile.database} placeholder={databaseHint} />
 			</label>
 			{#if engine === 'oracle'}

@@ -121,8 +121,14 @@ export const en = {
 	'dialog.databaseHintMysql': 'optional',
 	'dialog.databaseHintPostgres': 'database to connect (default postgres)',
 	'dialog.databaseHintMssql': 'database to connect (default master)',
-	'dialog.databaseHintOracle': 'service name, or sid:ORCL',
+	'dialog.databaseHintOracle': 'e.g. FREEPDB1',
 	'dialog.serviceName': 'Service name',
+	'dialog.sid': 'SID',
+	'dialog.oracleConnect': 'Connect by',
+	'dialog.servicePlaceholder': 'e.g. FREEPDB1',
+	'dialog.sidPlaceholder': 'e.g. ORCL',
+	'dialog.oracleConnectHint':
+		'Service name uses SERVICE_NAME. Choose SID when the listener only registers an instance name.',
 	'dialog.oracleCreateHint':
 		'A new Oracle schema is a database user. Its password is the schema name plus “#Ora1”, with quota on USERS and privileges to create tables, views, sequences, procedures, and triggers.',
 	'dialog.invalidUrl': 'Invalid connection URL',

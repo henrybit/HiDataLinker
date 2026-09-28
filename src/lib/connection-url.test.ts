@@ -40,7 +40,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 		expect(parseConnectionUrl('mariadb://root@127.0.0.1/app')).toEqual({
 			engine: 'mysql',
@@ -53,7 +54,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 	});
 
@@ -73,7 +75,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 		expect(
 			parseConnectionUrl('mysql://root@127.0.0.1:3306/app?sslca=%2Fetc%2Fssl%2Fcert.pem')?.sslCa
@@ -96,7 +99,8 @@ describe('connection url', () => {
 			sslCert: '/etc/ssl/client.crt',
 			sslKey: '/etc/ssl/client.key',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 	});
 
@@ -115,7 +119,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 	});
 
@@ -134,7 +139,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 	});
 
@@ -150,7 +156,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 		expect(parseConnectionUrl('mysql://root@127.0.0.1/')).toEqual({
 			engine: 'mysql',
@@ -163,7 +170,8 @@ describe('connection url', () => {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
-			oracleVersion: ''
+			oracleVersion: '',
+			oracleConnect: ''
 		});
 	});
 
@@ -205,5 +213,14 @@ describe('connection url', () => {
 		expect(parseConnectionUrl('mysql://root@127.0.0.1/app?oracleVersion=11.2')?.oracleVersion).toBe(
 			''
 		);
+	});
+
+	it('reads an Oracle SID connection from the url', () => {
+		const parsed = parseConnectionUrl('oracle://system@db.example.com:1521/ORCL?connect=sid');
+		expect(parsed?.oracleConnect).toBe('sid');
+		expect(parsed?.database).toBe('ORCL');
+		const prefixed = parseConnectionUrl('oracle://system@db.example.com/sid:ORCL');
+		expect(prefixed?.oracleConnect).toBe('sid');
+		expect(prefixed?.database).toBe('ORCL');
 	});
 });
