@@ -39,7 +39,8 @@ describe('connection url', () => {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 		expect(parseConnectionUrl('mariadb://root@127.0.0.1/app')).toEqual({
 			engine: 'mysql',
@@ -51,7 +52,8 @@ describe('connection url', () => {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 	});
 
@@ -70,7 +72,8 @@ describe('connection url', () => {
 			sslCa: '/etc/ssl/cert.pem',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 		expect(
 			parseConnectionUrl('mysql://root@127.0.0.1:3306/app?sslca=%2Fetc%2Fssl%2Fcert.pem')?.sslCa
@@ -92,7 +95,8 @@ describe('connection url', () => {
 			sslCa: '/etc/ssl/root.crt',
 			sslCert: '/etc/ssl/client.crt',
 			sslKey: '/etc/ssl/client.key',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 	});
 
@@ -110,7 +114,8 @@ describe('connection url', () => {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 	});
 
@@ -128,7 +133,8 @@ describe('connection url', () => {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 	});
 
@@ -143,7 +149,8 @@ describe('connection url', () => {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 		expect(parseConnectionUrl('mysql://root@127.0.0.1/')).toEqual({
 			engine: 'mysql',
@@ -155,7 +162,8 @@ describe('connection url', () => {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
-			sslVerify: false
+			sslVerify: false,
+			oracleVersion: ''
 		});
 	});
 
@@ -184,5 +192,18 @@ describe('connection url', () => {
 		expect(
 			parseConnectionUrl('oracle://system@db.example.com/FREEPDB1?sslverify=1')?.sslVerify
 		).toBe(true);
+	});
+
+	it('reads an Oracle release from the connection url', () => {
+		expect(
+			parseConnectionUrl('oracle://system@db.example.com/FREEPDB1?oracleVersion=11.2')
+				?.oracleVersion
+		).toBe('11.2');
+		expect(parseConnectionUrl('oracle://system@db.example.com/FREEPDB1')?.oracleVersion).toBe(
+			''
+		);
+		expect(parseConnectionUrl('mysql://root@127.0.0.1/app?oracleVersion=11.2')?.oracleVersion).toBe(
+			''
+		);
 	});
 });

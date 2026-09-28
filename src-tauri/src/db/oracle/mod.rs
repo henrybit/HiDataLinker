@@ -74,6 +74,7 @@ impl OracleEngine {
                 profile.database.as_deref(),
                 profile.ssl_ca.as_deref(),
                 profile.ssl_verify,
+                profile.oracle_version.as_deref(),
             )?,
             conn: Arc::new(Mutex::new(None)),
         })
@@ -89,6 +90,7 @@ impl OracleEngine {
                 request.database.as_deref(),
                 request.ssl_ca.as_deref(),
                 request.ssl_verify,
+                request.oracle_version.as_deref(),
             )?,
             conn: Arc::new(Mutex::new(None)),
         };
@@ -624,6 +626,7 @@ fn build_config(
     database: Option<&str>,
     ssl_ca: Option<&str>,
     verify_cert: bool,
+    oracle_version: Option<&str>,
 ) -> AppResult<Config> {
     let host = host.trim();
     if host.is_empty() {
@@ -649,7 +652,10 @@ fn build_config(
     } else {
         Config::new(host, port, service, username, password)
     };
-    apply_oracle_tls(config, verify_cert, ssl_ca)
+    Ok(apply_oracle_version(
+        apply_oracle_tls(config, verify_cert, ssl_ca)?,
+        oracle_version,
+    ))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -690,6 +696,40 @@ fn apply_oracle_tls(config: Config, verify_cert: bool, ssl_ca: Option<&str>) -> 
             })?;
             Ok(config.tls_config(tls))
         }
+    }
+}
+
+/// Highest TNS version to offer. `None` keeps the driver default (319) and still
+/// accepts servers from 10g R1 (311) through 23ai (320).
+fn oracle_protocol(version: Option<&str>) -> Option<u16> {
+    let value = version?.trim();
+    if value.is_empty() || value.eq_ignore_ascii_case("auto") {
+        return None;
+    }
+    let protocol = match value.to_ascii_lowercase().as_str() {
+        "23" | "23ai" | "23c" => 320,
+        "21" | "21c" => 319,
+        "19" | "19c" => 318,
+        "18" | "18c" => 317,
+        "12.2" | "12c2" | "12cr2" | "122" => 316,
+        "12.1" | "12c" | "12c1" | "12cr1" | "121" => 315,
+        "11.2" | "11g" | "11gr2" | "112" => 314,
+        "11.1" | "11gr1" | "111" => 313,
+        "10.2" | "10g" | "10gr2" | "102" => 312,
+        "10.1" | "10gr1" | "101" => 311,
+        other => other.parse().unwrap_or(0),
+    };
+    if (311..=320).contains(&protocol) {
+        Some(protocol)
+    } else {
+        None
+    }
+}
+
+fn apply_oracle_version(config: Config, version: Option<&str>) -> Config {
+    match oracle_protocol(version) {
+        Some(protocol) => config.protocol_version(protocol),
+        None => config,
     }
 }
 
@@ -1043,5 +1083,27 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("CA certificate not found"));
+    }
+
+    #[test]
+    fn selects_a_protocol_for_each_oracle_release() {
+        assert_eq!(oracle_protocol(None), None);
+        assert_eq!(oracle_protocol(Some("auto")), None);
+        assert_eq!(oracle_protocol(Some("11.2")), Some(314));
+        assert_eq!(oracle_protocol(Some("11g")), Some(314));
+        assert_eq!(oracle_protocol(Some("10.1")), Some(311));
+        assert_eq!(oracle_protocol(Some("23ai")), Some(320));
+        assert_eq!(oracle_protocol(Some("19c")), Some(318));
+        assert_eq!(oracle_protocol(Some("12.2")), Some(316));
+        assert_eq!(oracle_protocol(Some("nope")), None);
+    }
+
+    #[test]
+    fn eleven_g_offers_protocol_314() {
+        let config = apply_oracle_version(
+            Config::new("localhost", 1521, "FREEPDB1", "system", "secret"),
+            Some("11.2"),
+        );
+        assert_eq!(config.protocol_desired, 314);
     }
 }

@@ -103,6 +103,10 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.verifyCertOffOracle': '默认关闭，不要求服务器证书受信任。',
 	'dialog.verifyCertOnOracle':
 		'启用 TLS。服务器证书必须链接到受信任的根证书。下面的 CA 文件可选。',
+	'dialog.oracleVersion': 'Oracle 版本',
+	'dialog.oracleVersionAuto': '自动协商',
+	'dialog.oracleVersionHint':
+		'自动协商可连接 10g R1 到 23ai。若旧版本握手失败，请选择对应版本；11g 选 11g R2。',
 	'dialog.cancel': '取消',
 	'dialog.save': '保存',
 	'dialog.delete': '删除',

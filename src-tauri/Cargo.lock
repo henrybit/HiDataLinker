@@ -3003,8 +3003,6 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "oracle-rs"
 version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c9ca364b441f92b717658c62e85207158b30285deb01811ccd923017f61612e"
 dependencies = [
  "aes",
  "async-trait",

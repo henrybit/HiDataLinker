@@ -1,4 +1,5 @@
 import { ENGINE_PRESETS, normalizeEngine, type EngineKind } from '$lib/engine';
+import { normalizeOracleVersion } from '$lib/oracle-version';
 
 export type ParsedConnectionUrl = {
 	engine: EngineKind;
@@ -11,6 +12,7 @@ export type ParsedConnectionUrl = {
 	sslCert: string;
 	sslKey: string;
 	sslVerify: boolean;
+	oracleVersion: string;
 };
 
 const URL_SCHEME = /^(postgresql|postgres|pgsql|mysql|mariadb|mssql|sqlserver|oracle):\/\//i;
@@ -65,8 +67,26 @@ export function parseConnectionUrl(input: string): ParsedConnectionUrl | null {
 	const sslCert = firstSearchParam(url, ['sslcert', 'ssl_cert', 'ssl-cert']);
 	const sslKey = firstSearchParam(url, ['sslkey', 'ssl_key', 'ssl-key']);
 	const sslVerify = parseSslVerify(url);
+	const oracleVersion =
+		engine === 'oracle'
+			? normalizeOracleVersion(
+					firstSearchParam(url, ['oracleVersion', 'oracle-version', 'oracleversion'])
+				)
+			: 'auto';
 
-	return { engine, host, port, username, password, database, sslCa, sslCert, sslKey, sslVerify };
+	return {
+		engine,
+		host,
+		port,
+		username,
+		password,
+		database,
+		sslCa,
+		sslCert,
+		sslKey,
+		sslVerify,
+		oracleVersion: oracleVersion === 'auto' ? '' : oracleVersion
+	};
 }
 
 function firstSearchParam(url: URL, names: string[]): string {

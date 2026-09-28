@@ -61,6 +61,9 @@ pub struct ConnectionProfile {
     /// When true, SQL Server or Oracle validates the server certificate. Missing or false accepts it.
     #[serde(default)]
     pub ssl_verify: bool,
+    /// Oracle release id, such as `11.2`. Empty negotiates the widest protocol range.
+    #[serde(default)]
+    pub oracle_version: Option<String>,
     #[serde(default)]
     pub save_password: bool,
 }
@@ -115,6 +118,8 @@ pub struct TestConnectionRequest {
     pub ssl_key: Option<String>,
     #[serde(default)]
     pub ssl_verify: bool,
+    #[serde(default)]
+    pub oracle_version: Option<String>,
 }
 
 impl TestConnectionRequest {
@@ -159,5 +164,6 @@ mod tests {
         assert!(profile.ssl_cert.is_none());
         assert!(profile.ssl_key.is_none());
         assert!(!profile.ssl_verify);
+        assert!(profile.oracle_version.is_none());
     }
 }

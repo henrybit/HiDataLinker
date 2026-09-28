@@ -37,7 +37,7 @@ futures-util = "0.3"
 tiberius = { version = "0.12", features = ["chrono", "rust_decimal", "native-tls"] }
 chrono = "0.4"
 rust_decimal = "1"
-oracle-rs = "0.1"
+oracle-rs = { path = "vendor/oracle-rs" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

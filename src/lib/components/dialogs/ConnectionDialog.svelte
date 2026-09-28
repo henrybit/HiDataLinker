@@ -13,6 +13,7 @@
 		looksLikeConnectionUrl,
 		parseConnectionUrl
 	} from '$lib/connection-url';
+	import { ORACLE_VERSIONS } from '$lib/oracle-version';
 	import type { ConnectionProfile } from '$lib/api/types';
 	import { t } from '$lib/i18n/i18n.svelte';
 
@@ -30,6 +31,7 @@
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
+			oracleVersion: 'auto',
 			savePassword: true
 		}
 	);
@@ -100,6 +102,7 @@
 		profile.sslCert = parsed.sslCert;
 		profile.sslKey = parsed.sslKey;
 		profile.sslVerify = parsed.sslVerify;
+		profile.oracleVersion = parsed.oracleVersion || 'auto';
 		if (isDefaultConnectionName(profile.name)) {
 			profile.name = ENGINE_PRESETS[parsed.engine].name;
 		}
@@ -143,7 +146,8 @@
 				sslCa: profile.sslCa,
 				sslCert: profile.sslCert,
 				sslKey: profile.sslKey,
-				sslVerify: certificateChoice && profile.sslVerify === true
+				sslVerify: certificateChoice && profile.sslVerify === true,
+				oracleVersion: engine === 'oracle' ? profile.oracleVersion || 'auto' : null
 			});
 			testOk = true;
 			testMessage = t('dialog.connectionSucceeded');
@@ -169,7 +173,11 @@
 				certificateChoice && !profile.sslVerify ? null : optionalPath(profile.sslCa),
 			sslCert: engine === 'postgres' ? optionalPath(profile.sslCert) : null,
 			sslKey: engine === 'postgres' ? optionalPath(profile.sslKey) : null,
-			sslVerify: certificateChoice && profile.sslVerify === true
+			sslVerify: certificateChoice && profile.sslVerify === true,
+			oracleVersion:
+				engine === 'oracle' && profile.oracleVersion && profile.oracleVersion !== 'auto'
+					? profile.oracleVersion
+					: null
 		});
 	}
 
@@ -247,6 +255,18 @@
 				<span>{engine === 'oracle' ? t('dialog.serviceName') : t('dialog.database')}</span>
 				<input bind:value={profile.database} placeholder={databaseHint} />
 			</label>
+			{#if engine === 'oracle'}
+				<label class="field">
+					<span>{t('dialog.oracleVersion')}</span>
+					<select bind:value={profile.oracleVersion}>
+						<option value="auto">{t('dialog.oracleVersionAuto')}</option>
+						{#each ORACLE_VERSIONS as version (version.id)}
+							<option value={version.id}>{version.label}</option>
+						{/each}
+					</select>
+				</label>
+				<p class="hint">{t('dialog.oracleVersionHint')}</p>
+			{/if}
 			{#if certificateChoice}
 				<label class="field">
 					<span>{t('dialog.verifyCert')}</span>

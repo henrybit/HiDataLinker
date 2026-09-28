@@ -104,6 +104,10 @@ export const en = {
 		'Off by default. The connection does not require a trusted server certificate.',
 	'dialog.verifyCertOnOracle':
 		'TLS is enabled. The server certificate must chain to a trusted root. A CA file below is optional.',
+	'dialog.oracleVersion': 'Oracle version',
+	'dialog.oracleVersionAuto': 'Automatic',
+	'dialog.oracleVersionHint':
+		'Automatic accepts 10g R1 through 23ai. If an older server rejects the handshake, pick its release. 11g is 11g R2.',
 	'dialog.cancel': 'Cancel',
 	'dialog.save': 'Save',
 	'dialog.delete': 'Delete',

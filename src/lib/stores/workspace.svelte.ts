@@ -121,6 +121,7 @@ class WorkspaceStore {
 			sslCert: '',
 			sslKey: '',
 			sslVerify: false,
+			oracleVersion: 'auto',
 			savePassword: true
 		};
 		this.dialogOpen = true;
@@ -143,6 +144,7 @@ class WorkspaceStore {
 			sslCert: item.sslCert ?? '',
 			sslKey: item.sslKey ?? '',
 			sslVerify: item.sslVerify === true,
+			oracleVersion: item.oracleVersion || 'auto',
 			savePassword: item.savePassword
 		};
 		this.dialogOpen = true;

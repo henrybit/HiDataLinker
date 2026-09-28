@@ -18,6 +18,8 @@ export interface ConnectionProfile {
 	sslKey?: string | null;
 	/** SQL Server and Oracle. False accepts a server certificate that is not trusted. */
 	sslVerify?: boolean;
+	/** Oracle release id such as `11.2`. Empty or `auto` negotiates the widest range. */
+	oracleVersion?: string | null;
 	savePassword: boolean;
 }
 
@@ -34,6 +36,7 @@ export interface ConnectionListItem {
 	sslCert?: string | null;
 	sslKey?: string | null;
 	sslVerify?: boolean;
+	oracleVersion?: string | null;
 	savePassword: boolean;
 	connected: boolean;
 }
@@ -53,6 +56,7 @@ export interface TestConnectionRequest {
 	sslCert?: string | null;
 	sslKey?: string | null;
 	sslVerify?: boolean;
+	oracleVersion?: string | null;
 }
 
 export interface DatabaseInfo {
