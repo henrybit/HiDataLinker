@@ -13,7 +13,9 @@
 	import DropDatabaseDialog from '$lib/components/dialogs/DropDatabaseDialog.svelte';
 	import MigrateDatabaseDialog from '$lib/components/dialogs/MigrateDatabaseDialog.svelte';
 	import RelationshipAnalysis from '$lib/components/analysis/RelationshipAnalysis.svelte';
+	import LlmSettingsDialog from '$lib/components/dialogs/LlmSettingsDialog.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
+	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
 	import ContextMenu from '$lib/components/layout/ContextMenu.svelte';
 
 	let { children } = $props();
@@ -82,6 +84,9 @@
 {/if}
 {#if analysisPanel.open}
 	<RelationshipAnalysis />
+{/if}
+{#if llmSettingsDialog.open}
+	<LlmSettingsDialog />
 {/if}
 {#if workspace.contextMenu}
 	<ContextMenu />

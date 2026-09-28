@@ -13,6 +13,7 @@ export const en = {
 	'toolbar.connected': 'connected',
 	'toolbar.offline': 'offline',
 	'toolbar.noConnection': 'No connection selected',
+	'toolbar.settings': 'Settings',
 	'toolbar.language': 'Language',
 	'toolbar.lang.en': 'EN',
 	'toolbar.lang.zh': '中文',
@@ -370,7 +371,10 @@ export const en = {
 	'analysis.comment.inferred': 'Inferred',
 	'analysis.comment.none': 'No comment',
 	'analysis.needScope': 'Select at least one schema.',
-	'analysis.needKey': 'Enter an API key.',
+	'analysis.needKey': 'The selected provider has no API key. Add one in Settings.',
+	'analysis.needProvider': 'Add a model provider in Settings.',
+	'analysis.noProviders': 'No model providers yet.',
+	'analysis.manageProviders': 'Manage providers',
 	'analysis.needTauri': 'Run `pnpm tauri dev` to read database catalogs.',
 	'analysis.offlineScope': '{name} is offline. Connect it before analyzing.',
 	'analysis.truncated': '{name} returned a truncated catalog, so some objects may be missing.',
@@ -400,7 +404,25 @@ export const en = {
 	'analysis.confidence.low': 'Low confidence',
 	'analysis.origin.physical': 'Physical',
 	'analysis.origin.view': 'View',
-	'analysis.origin.inferred': 'Inferred'
+	'analysis.origin.inferred': 'Inferred',
+
+	'settings.title': 'Settings',
+	'settings.hint': 'Add model providers here. Analysis and other features can choose one of them.',
+	'settings.add': 'Add provider',
+	'settings.name': 'Name',
+	'settings.kind': 'Type',
+	'settings.apiKey': 'API key',
+	'settings.model': 'Model',
+	'settings.baseUrl': 'API base URL',
+	'settings.baseUrlHint':
+		'Leave empty to use the official endpoint. A base URL also works for a compatible proxy.',
+	'settings.keyLocal':
+		'Keys stay in this app profile and are sent only to the provider you select.',
+	'settings.save': 'Save',
+	'settings.delete': 'Delete',
+	'settings.close': 'Close',
+	'settings.nameRequired': 'Enter a name for this provider.',
+	'settings.empty': 'No providers yet.'
 } as const;
 
 export type MessageKey = keyof typeof en;

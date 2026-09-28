@@ -15,6 +15,7 @@ export const zh: Record<MessageKey, string> = {
 	'toolbar.connected': '已连接',
 	'toolbar.offline': '未连接',
 	'toolbar.noConnection': '未选择连接',
+	'toolbar.settings': '设置',
 	'toolbar.language': '语言',
 	'toolbar.lang.en': 'EN',
 	'toolbar.lang.zh': '中文',
@@ -101,8 +102,7 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.verifyCertOff': '默认关闭。不在系统信任链中的 SQL Server 证书也会被接受。',
 	'dialog.verifyCertOn': '服务器证书必须链接到受信任的根证书。下面的 CA 文件可选。',
 	'dialog.verifyCertOffOracle': '默认关闭，不要求服务器证书受信任。',
-	'dialog.verifyCertOnOracle':
-		'启用 TLS。服务器证书必须链接到受信任的根证书。下面的 CA 文件可选。',
+	'dialog.verifyCertOnOracle': '启用 TLS。服务器证书必须链接到受信任的根证书。下面的 CA 文件可选。',
 	'dialog.oracleVersion': 'Oracle 版本',
 	'dialog.oracleVersionAuto': '自动协商',
 	'dialog.oracleVersionHint':
@@ -126,7 +126,8 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.oracleConnect': '连接方式',
 	'dialog.servicePlaceholder': '例如 FREEPDB1',
 	'dialog.sidPlaceholder': '例如 ORCL',
-	'dialog.oracleConnectHint': '服务名使用 SERVICE_NAME。只登记了实例名的库请选 SID，否则监听可能直接断开。',
+	'dialog.oracleConnectHint':
+		'服务名使用 SERVICE_NAME。只登记了实例名的库请选 SID，否则监听可能直接断开。',
 	'dialog.oracleCreateHint':
 		'新建的 Oracle 模式是一个数据库用户。密码为模式名加上 “#Ora1”，并授予 USERS 表空间配额以及创建表、视图、序列、过程和触发器的权限。',
 	'dialog.invalidUrl': '连接 URL 无效',
@@ -360,7 +361,10 @@ export const zh: Record<MessageKey, string> = {
 	'analysis.comment.inferred': '推断',
 	'analysis.comment.none': '无注释',
 	'analysis.needScope': '请至少选择一个 schema。',
-	'analysis.needKey': '请填写 API 密钥。',
+	'analysis.needKey': '所选 provider 还没有 API 密钥，请先在设置里填写。',
+	'analysis.needProvider': '请先在设置里添加模型 provider。',
+	'analysis.noProviders': '还没有可用的模型 provider。',
+	'analysis.manageProviders': '管理 provider',
 	'analysis.needTauri': '请运行 `pnpm tauri dev` 后再读取数据库结构。',
 	'analysis.offlineScope': '{name} 未连接。请先连接再分析。',
 	'analysis.truncated': '{name} 的目录被截断，可能缺少部分对象。',
@@ -390,5 +394,21 @@ export const zh: Record<MessageKey, string> = {
 	'analysis.confidence.low': '低置信',
 	'analysis.origin.physical': '物理',
 	'analysis.origin.view': '视图',
-	'analysis.origin.inferred': '推测'
+	'analysis.origin.inferred': '推测',
+
+	'settings.title': '设置',
+	'settings.hint': '在这里添加大模型 provider。分析和其他功能可以从中选择。',
+	'settings.add': '添加 provider',
+	'settings.name': '名称',
+	'settings.kind': '类型',
+	'settings.apiKey': 'API 密钥',
+	'settings.model': '模型',
+	'settings.baseUrl': 'API 地址',
+	'settings.baseUrlHint': '留空则使用官方地址。也可以填写兼容的代理地址。',
+	'settings.keyLocal': '密钥只保存在本机这个应用配置里，并且只会发给你选择的模型服务。',
+	'settings.save': '保存',
+	'settings.delete': '删除',
+	'settings.close': '关闭',
+	'settings.nameRequired': '请填写 provider 名称。',
+	'settings.empty': '还没有 provider。'
 };

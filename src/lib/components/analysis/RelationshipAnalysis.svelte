@@ -4,9 +4,10 @@
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { DocumentReadError, extractDocumentText } from '$lib/analysis/documents';
 	import { edgeVisible } from '$lib/analysis/layout';
-	import { createAnalysisCaller, DEFAULT_MODELS, type LlmProvider } from '$lib/analysis/llm';
+	import { createAnalysisCaller } from '$lib/analysis/llm';
 	import { runRelationshipAnalysis } from '$lib/analysis/run';
-	import { loadLlmSettings, saveLlmSettings } from '$lib/analysis/settings';
+	import { llmCatalog, llmSettingsDialog, selectLlmProvider } from '$lib/llm/catalog.svelte';
+	import { toLlmSettings } from '$lib/llm/providers';
 	import type {
 		AnalysisWarning,
 		Cardinality,
@@ -21,7 +22,6 @@
 	import { getLocale, t } from '$lib/i18n/i18n.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
-	let settings = $state(loadLlmSettings());
 	let selected = $state<Record<string, string[]>>({});
 	let files = $state<Array<{ name: string; text: string }>>([]);
 	let graph = $state<RelationshipGraph | null>(null);
@@ -34,10 +34,13 @@
 
 	const visibleEdges = $derived(graph?.edges.filter((edge) => edgeVisible(edge, filters)) ?? []);
 	const selectedNode = $derived(graph?.nodes.find((node) => node.id === selectedId) ?? null);
+	const providers = $derived(llmCatalog.providers);
+	const provider = $derived(providers.find((item) => item.id === llmCatalog.selectedId) ?? null);
 
 	onMount(() => {
 		const onKey = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') analysisPanel.open = false;
+			if (event.key !== 'Escape' || event.defaultPrevented) return;
+			analysisPanel.open = false;
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
@@ -78,14 +81,6 @@
 		if (checked) current.add(name);
 		else current.delete(name);
 		selected = { ...selected, [connectionId]: [...current] };
-	}
-
-	function setProvider(provider: LlmProvider) {
-		if (settings.model.trim() === DEFAULT_MODELS[settings.provider]) {
-			settings.model = DEFAULT_MODELS[provider];
-		}
-		settings.provider = provider;
-		saveLlmSettings(settings);
 	}
 
 	function selectedScopes(): SchemaScope[] {
@@ -131,7 +126,11 @@
 			error = t('analysis.offlineScope', { name: offline.connectionName });
 			return;
 		}
-		if (!settings.apiKey.trim()) {
+		if (!provider) {
+			error = t('analysis.needProvider');
+			return;
+		}
+		if (!provider.apiKey.trim()) {
 			error = t('analysis.needKey');
 			return;
 		}
@@ -140,13 +139,12 @@
 			return;
 		}
 		running = true;
-		saveLlmSettings(settings);
 		try {
 			graph = await runRelationshipAnalysis({
 				scopes,
 				documents: files,
 				locale: getLocale(),
-				caller: createAnalysisCaller(settings),
+				caller: createAnalysisCaller(toLlmSettings(provider)),
 				runQuery: (scope, sql) => api.executeSql(scope.connectionId, sql, scope.schema),
 				onProgress: (event) => {
 					if (event.phase === 'catalog' && event.scope) {
@@ -314,42 +312,33 @@
 				</ul>
 
 				<h3>{t('analysis.provider')}</h3>
-				<label class="analysis-field">
-					<span>{t('analysis.provider')}</span>
-					<select
-						value={settings.provider}
-						onchange={(event) =>
-							setProvider((event.currentTarget as HTMLSelectElement).value as LlmProvider)}
-					>
-						<option value="openai">{t('analysis.provider.openai')}</option>
-						<option value="anthropic">{t('analysis.provider.anthropic')}</option>
-					</select>
-				</label>
-				<label class="analysis-field">
-					<span>{t('analysis.apiKey')}</span>
-					<input
-						type="password"
-						bind:value={settings.apiKey}
-						autocomplete="off"
-						onchange={() => saveLlmSettings(settings)}
-					/>
-				</label>
-				<label class="analysis-field">
-					<span>{t('analysis.model')}</span>
-					<input bind:value={settings.model} onchange={() => saveLlmSettings(settings)} />
-				</label>
-				<label class="analysis-field">
-					<span>{t('analysis.baseUrl')}</span>
-					<input
-						bind:value={settings.baseUrl}
-						placeholder={settings.provider === 'anthropic'
-							? 'https://api.anthropic.com'
-							: 'https://api.openai.com/v1'}
-						onchange={() => saveLlmSettings(settings)}
-					/>
-				</label>
-				<p class="hint">{t('analysis.baseUrlHint')}</p>
-				<p class="hint">{t('analysis.keyLocal')}</p>
+				{#if providers.length === 0}
+					<p class="hint">{t('analysis.noProviders')}</p>
+				{:else}
+					<label class="analysis-field">
+						<span>{t('analysis.provider')}</span>
+						<select
+							value={provider?.id ?? ''}
+							onchange={(event) =>
+								selectLlmProvider((event.currentTarget as HTMLSelectElement).value)}
+						>
+							{#each providers as item (item.id)}
+								<option value={item.id}>{item.name}</option>
+							{/each}
+						</select>
+					</label>
+					{#if provider}
+						<p class="hint">
+							{provider.kind === 'anthropic'
+								? t('analysis.provider.anthropic')
+								: t('analysis.provider.openai')}
+							· {provider.model}
+						</p>
+					{/if}
+				{/if}
+				<button class="btn" type="button" onclick={() => (llmSettingsDialog.open = true)}>
+					{t('analysis.manageProviders')}
+				</button>
 			</div>
 			<div class="analysis-main">
 				<div class="analysis-filters">

@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Cable, ChevronDown, Database, Play, Plus, RefreshCw, Square } from '@lucide/svelte';
+	import {
+		Cable,
+		ChevronDown,
+		Database,
+		Play,
+		Plus,
+		RefreshCw,
+		Settings,
+		Square
+	} from '@lucide/svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
+	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
 	import { engineLabel } from '$lib/engine';
 	import { getLocale, schemaNounLabel, setLocale, t, type Locale } from '$lib/i18n/i18n.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
@@ -118,6 +128,10 @@
 			{t('toolbar.noConnection')}
 		{/if}
 	</span>
+	<button class="toolbar-btn" type="button" onclick={() => (llmSettingsDialog.open = true)}>
+		<Settings size={14} />
+		{t('toolbar.settings')}
+	</button>
 	<div class="locale-switch" role="group" aria-label={t('toolbar.language')}>
 		<button
 			class="btn"
