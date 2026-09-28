@@ -40,9 +40,9 @@ use crate::capabilities::Capabilities;
 use crate::config::{Config, ServiceMethod};
 use crate::constants::{BindDirection, FetchOrientation, FunctionCode, MessageType, OracleType, PacketType, PACKET_HEADER_SIZE};
 use crate::cursor::{ScrollableCursor, ScrollResult};
-use crate::error::{Error, Result};
+use crate::error::{closed_response, server_error_text, Error, Result};
 use crate::implicit::{ImplicitResult, ImplicitResults};
-use crate::messages::{AcceptMessage, AuthMessage, AuthPhase, ConnectMessage, ExecuteMessage, ExecuteOptions, FetchMessage, LobOpMessage};
+use crate::messages::{AcceptMessage, AuthMessage, AuthPhase, ConnectMessage, ExecuteMessage, ExecuteOptions, FetchMessage, LobOpMessage, RedirectMessage, RefuseMessage};
 use crate::packet::Packet;
 use crate::row::{Row, Value};
 use crate::statement::{BindParam, ColumnInfo, Statement, StatementType};
@@ -241,17 +241,41 @@ enum OracleStream {
 }
 
 impl OracleStream {
-    async fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+    async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            OracleStream::Plain(stream) => {
-                AsyncReadExt::read_exact(stream, buf).await?;
-                Ok(())
+            OracleStream::Plain(stream) => stream.read(buf).await,
+            OracleStream::Tls(stream) => stream.read(buf).await,
+        }
+    }
+
+    /// Read until `buf` is full. A short count means the peer closed the socket.
+    async fn read_full(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut filled = 0;
+        while filled < buf.len() {
+            let n = self.read(&mut buf[filled..]).await?;
+            if n == 0 {
+                break;
             }
-            OracleStream::Tls(stream) => {
-                AsyncReadExt::read_exact(stream, buf).await?;
-                Ok(())
+            filled += n;
+        }
+        Ok(filled)
+    }
+
+    /// Append bytes until EOF or `limit` total bytes are stored in `out`.
+    async fn read_remainder(&mut self, out: &mut Vec<u8>, limit: usize) -> std::io::Result<()> {
+        let mut tmp = [0u8; 1024];
+        while out.len() < limit {
+            let n = self.read(&mut tmp).await?;
+            if n == 0 {
+                break;
+            }
+            let room = limit - out.len();
+            out.extend_from_slice(&tmp[..n.min(room)]);
+            if n > room {
+                break;
             }
         }
+        Ok(())
     }
 
     async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
@@ -282,6 +306,68 @@ struct ConnectionInner {
     sequence_number: u8,
     /// Statement cache for prepared statement reuse
     statement_cache: Option<StatementCache>,
+}
+
+/// Packet length when the 8-byte header is a known TNS packet. `None` means the
+/// bytes are listener text (or a truncated header), not a framed packet.
+fn tns_packet_length(header: &[u8], large_sdu: bool) -> Option<usize> {
+    if header.len() < PACKET_HEADER_SIZE || PacketType::try_from(header[4]).is_err() {
+        return None;
+    }
+    let length = if large_sdu {
+        u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize
+    } else {
+        u16::from_be_bytes([header[0], header[1]]) as usize
+    };
+    if (PACKET_HEADER_SIZE..=1_048_576).contains(&length) {
+        Some(length)
+    } else {
+        None
+    }
+}
+
+fn refuse_error(config: &Config, response: &Bytes) -> Error {
+    let fallback = || {
+        server_error_text(response)
+            .map(Error::ConnectionClosedByServer)
+            .unwrap_or_else(|| closed_response(response))
+    };
+    let Ok(packet) = Packet::from_bytes(response.clone()) else {
+        return fallback();
+    };
+    match RefuseMessage::parse(&packet) {
+        Ok(refuse) => {
+            let name = config
+                .service
+                .service_name()
+                .or_else(|| config.service.sid());
+            refuse.into_error(name)
+        }
+        Err(_) => fallback(),
+    }
+}
+
+fn redirect_error(response: &Bytes) -> Error {
+    let Ok(packet) = Packet::from_bytes(response.clone()) else {
+        return server_error_text(response)
+            .map(Error::ConnectionRedirect)
+            .unwrap_or_else(|| closed_response(response));
+    };
+    match RedirectMessage::parse(&packet) {
+        Ok(redirect) => {
+            let mut address = redirect.address;
+            if let Some(connect_string) = redirect.connect_string {
+                if !connect_string.is_empty() {
+                    address.push(' ');
+                    address.push_str(&connect_string);
+                }
+            }
+            Error::ConnectionRedirected { address }
+        }
+        Err(_) => server_error_text(response)
+            .map(Error::ConnectionRedirect)
+            .unwrap_or_else(|| closed_response(response)),
+    }
 }
 
 impl ConnectionInner {
@@ -386,36 +472,42 @@ impl ConnectionInner {
     }
 
     async fn receive(&mut self) -> Result<bytes::Bytes> {
-        if let Some(stream) = &mut self.stream {
-            // Read packet header first (always 8 bytes)
-            // large_sdu only affects how the length field is interpreted, not header size
-            let mut header_buf = vec![0u8; PACKET_HEADER_SIZE];
-            stream.read_exact(&mut header_buf).await?;
+        let Some(stream) = self.stream.as_mut() else {
+            return Err(Error::ConnectionClosed);
+        };
 
-            // Parse header to get payload length
-            // In large_sdu mode, first 4 bytes are length; otherwise first 2 bytes
-            let packet_len = if self.large_sdu {
-                u32::from_be_bytes([header_buf[0], header_buf[1], header_buf[2], header_buf[3]])
-                    as usize
-            } else {
-                u16::from_be_bytes([header_buf[0], header_buf[1]]) as usize
-            };
-
-            // Read remaining payload
-            let payload_len = packet_len.saturating_sub(PACKET_HEADER_SIZE);
-            let mut payload_buf = vec![0u8; payload_len];
-            if payload_len > 0 {
-                stream.read_exact(&mut payload_buf).await?;
-            }
-
-            // Combine header and payload
-            let mut full_packet = header_buf.clone();
-            full_packet.extend(payload_buf);
-
-            Ok(bytes::Bytes::from(full_packet))
-        } else {
-            Err(Error::ConnectionClosed)
+        // large_sdu only affects how the length field is interpreted, not header size.
+        let mut header_buf = [0u8; PACKET_HEADER_SIZE];
+        let header_read = stream.read_full(&mut header_buf).await.map_err(Error::Io)?;
+        if header_read < PACKET_HEADER_SIZE {
+            return Err(closed_response(&header_buf[..header_read]));
         }
+
+        // A listener that does not understand the CONNECT packet often writes the
+        // error as text and closes. Those bytes are not a TNS header; keep them.
+        let Some(packet_len) = tns_packet_length(&header_buf, self.large_sdu) else {
+            let mut raw = header_buf.to_vec();
+            stream
+                .read_remainder(&mut raw, 64 * 1024)
+                .await
+                .map_err(Error::Io)?;
+            return Err(closed_response(&raw));
+        };
+
+        let payload_len = packet_len - PACKET_HEADER_SIZE;
+        let mut payload_buf = vec![0u8; payload_len];
+        if payload_len > 0 {
+            let got = stream.read_full(&mut payload_buf).await.map_err(Error::Io)?;
+            if got < payload_len {
+                let mut raw = header_buf.to_vec();
+                raw.extend_from_slice(&payload_buf[..got]);
+                return Err(closed_response(&raw));
+            }
+        }
+
+        let mut full_packet = header_buf.to_vec();
+        full_packet.extend(payload_buf);
+        Ok(bytes::Bytes::from(full_packet))
     }
 
     /// Receive a complete response that may span multiple packets
@@ -972,21 +1064,10 @@ impl Connection {
                     return Ok(());
                 }
                 4 => {
-                    // REFUSE
-                    let mut buf = ReadBuffer::new(response.slice(PACKET_HEADER_SIZE..));
-                    let _reason = buf.read_u8()?;
-                    let _user_reason = buf.read_u8()?;
-
-                    return Err(Error::ConnectionRefused {
-                        error_code: None,
-                        message: Some("Connection refused by server".to_string()),
-                    });
+                    return Err(refuse_error(&self.config, &response));
                 }
                 5 => {
-                    // REDIRECT
-                    return Err(Error::ConnectionRedirect(
-                        "redirect not implemented".to_string(),
-                    ));
+                    return Err(redirect_error(&response));
                 }
                 11 => {
                     // RESEND - server requests retransmission of the connect packet

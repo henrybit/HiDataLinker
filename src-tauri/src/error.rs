@@ -38,9 +38,27 @@ impl AppError {
     pub fn user_message(&self) -> String {
         match self {
             Self::Postgres(error) => format_postgres_error(error),
+            Self::Oracle(error) => with_sources(error),
+            Self::Mysql(error) => with_sources(error),
+            Self::SqlServer(error) => with_sources(error),
+            Self::Io(error) => with_sources(error),
             other => other.to_string(),
         }
     }
+}
+
+fn with_sources(error: &dyn StdError) -> String {
+    let mut message = error.to_string();
+    let mut current = error.source();
+    while let Some(source) = current {
+        let text = source.to_string();
+        if !text.is_empty() && !message.contains(&text) {
+            message.push_str(": ");
+            message.push_str(&text);
+        }
+        current = source.source();
+    }
+    message
 }
 
 fn format_postgres_error(error: &tokio_postgres::Error) -> String {

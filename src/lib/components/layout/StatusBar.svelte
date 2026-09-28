@@ -12,7 +12,7 @@
 </script>
 
 <footer class="status-bar">
-	<span>{workspace.error ?? workspace.lastMessage ?? workspace.status}</span>
+	<span title={workspace.error ?? ''}>{workspace.error ?? workspace.lastMessage ?? workspace.status}</span>
 	<span>
 		{#if workspace.busy}
 			{t('status.tasks', { count: workspace.pending.size })}

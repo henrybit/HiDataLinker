@@ -240,6 +240,74 @@ impl Error {
     }
 }
 
+/// Error for a listener that closed the socket before a complete TNS packet arrived.
+///
+/// Any Oracle text already read (`(DESCRIPTION=…)`, `ORA-…`, `TNS-…`) is kept in full.
+pub(crate) fn closed_response(bytes: &[u8]) -> Error {
+    if let Some(text) = server_error_text(bytes) {
+        return Error::ConnectionClosedByServer(text);
+    }
+    if bytes.is_empty() {
+        return Error::ConnectionClosedByServer(
+            "I/O error: early eof. The listener closed the connection without sending an error packet.".into(),
+        );
+    }
+    Error::ConnectionClosedByServer(format!(
+        "I/O error: early eof. The listener closed the connection after {} bytes: {}",
+        bytes.len(),
+        bytes_preview(bytes),
+    ))
+}
+
+/// Oracle listener or server text embedded in a raw response.
+pub(crate) fn server_error_text(bytes: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(bytes);
+    let upper = text.to_ascii_uppercase();
+    let start = ["(DESCRIPTION", "(ERR=", "ORA-", "TNS-", "ERROR_STACK", "(ERROR="]
+        .iter()
+        .filter_map(|marker| upper.find(marker))
+        .min()?;
+    let message = trim_server_text(&text[start..]);
+    if message.is_empty() {
+        None
+    } else {
+        Some(message)
+    }
+}
+
+fn trim_server_text(text: &str) -> String {
+    text.trim_matches(|c: char| c == '\0' || (c.is_control() && c != '\n' && c != '\r' && c != '\t'))
+        .trim()
+        .to_string()
+}
+
+fn bytes_preview(bytes: &[u8]) -> String {
+    let shown = bytes.len().min(512);
+    let lossy = String::from_utf8_lossy(&bytes[..shown]);
+    let printable = lossy
+        .chars()
+        .filter(|c| c.is_ascii_graphic() || c.is_whitespace())
+        .count();
+    let total = lossy.chars().count().max(1);
+    if printable * 4 >= total * 3 {
+        let mut text = trim_server_text(&lossy);
+        if bytes.len() > shown {
+            text.push_str(" …");
+        }
+        return text;
+    }
+    let hex = bytes[..shown]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if bytes.len() > shown {
+        format!("{hex} …")
+    } else {
+        hex
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +337,31 @@ mod tests {
         }
         .is_connection_error());
         assert!(!Error::NoDataFound.is_connection_error());
+    }
+
+    #[test]
+    fn closed_response_keeps_listener_text() {
+        let packet = b"\x00\x2a\x00\x00\x04\x00\x00\x00(DESCRIPTION=(ERR=12514)(ERROR_STACK=(ERROR=(CODE=12514)(EMFI=4))))";
+        let error = closed_response(packet);
+        let message = error.to_string();
+        assert!(message.starts_with("(DESCRIPTION=(ERR=12514)"));
+        assert!(message.contains("(ERROR=(CODE=12514)(EMFI=4))"));
+        assert!(!message.contains("early eof"));
+    }
+
+    #[test]
+    fn closed_response_without_bytes_says_no_packet() {
+        let message = closed_response(&[]).to_string();
+        assert!(message.contains("early eof"));
+        assert!(message.contains("without sending an error packet"));
+    }
+
+    #[test]
+    fn server_error_text_finds_ora_code() {
+        let bytes = b"\x00\x01junkORA-12505: TNS:listener does not currently know of SID given in connect descriptor\0";
+        assert_eq!(
+            server_error_text(bytes).as_deref(),
+            Some("ORA-12505: TNS:listener does not currently know of SID given in connect descriptor")
+        );
     }
 }

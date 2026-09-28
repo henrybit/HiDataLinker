@@ -284,11 +284,21 @@ button {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0 10px;
+	gap: 12px;
+	padding: 4px 10px;
 	border-top: 1px solid var(--border);
 	background: var(--bg-toolbar);
 	color: var(--text-muted);
 	font-size: 12px;
+}
+
+.status-bar > span:first-child {
+	flex: 1;
+	min-width: 0;
+	max-height: 4.8em;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
 }
 
 .tree {
@@ -1123,6 +1133,12 @@ button {
 	color: var(--danger);
 	background: #fef2f2;
 	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.modal .message.error {
+	max-height: 180px;
+	overflow: auto;
 }
 
 .message.success {
