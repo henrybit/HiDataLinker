@@ -11,6 +11,10 @@ describe('connection url', () => {
 		expect(connectionUrlPlaceholder('pgsql')).toBe(
 			'postgresql://postgres:password@127.0.0.1:5432/postgres'
 		);
+		expect(connectionUrlPlaceholder('mssql')).toBe('mssql://sa:password@127.0.0.1:1433/master');
+		expect(connectionUrlPlaceholder('oracle')).toBe(
+			'oracle://system:password@127.0.0.1:1521/FREEPDB1'
+		);
 	});
 
 	it('detects supported schemes', () => {
@@ -19,6 +23,8 @@ describe('connection url', () => {
 		expect(looksLikeConnectionUrl('pgsql://h/db')).toBe(true);
 		expect(looksLikeConnectionUrl('mysql://root@127.0.0.1:3306/app')).toBe(true);
 		expect(looksLikeConnectionUrl('mariadb://root@127.0.0.1/app')).toBe(true);
+		expect(looksLikeConnectionUrl('mssql://sa@127.0.0.1:1433/master')).toBe(true);
+		expect(looksLikeConnectionUrl('oracle://system@127.0.0.1:1521/FREEPDB1')).toBe(true);
 		expect(looksLikeConnectionUrl('127.0.0.1')).toBe(false);
 	});
 

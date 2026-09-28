@@ -4,6 +4,8 @@ pub const DEFAULT_QUERY_ROW_LIMIT: u32 = 500;
 pub enum SqlDialect {
     MySql,
     Postgres,
+    Mssql,
+    Oracle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +111,11 @@ fn has_top_level_row_limit(sql: &str, dialect: SqlDialect) -> bool {
                     return false;
                 }
             }
+            Some('[') if dialect == SqlDialect::Mssql => {
+                if !cur.skip_bracket_ident() {
+                    return false;
+                }
+            }
             Some('$') if dialect == SqlDialect::Postgres => {
                 if !cur.skip_dollar_quote_or_char() {
                     return false;
@@ -122,6 +129,17 @@ fn has_top_level_row_limit(sql: &str, dialect: SqlDialect) -> bool {
                     return true;
                 }
                 if keyword.eq_ignore_ascii_case("FETCH") && looks_like_fetch_clause(&mut cur) {
+                    return true;
+                }
+                if matches!(dialect, SqlDialect::Mssql | SqlDialect::Oracle)
+                    && keyword.eq_ignore_ascii_case("OFFSET")
+                {
+                    return true;
+                }
+                if dialect == SqlDialect::Mssql
+                    && keyword.eq_ignore_ascii_case("TOP")
+                    && looks_like_top_clause(&mut cur)
+                {
                     return true;
                 }
             }
@@ -152,6 +170,27 @@ fn looks_like_limit_clause(cur: &mut Cursor<'_>) -> bool {
     ok
 }
 
+fn looks_like_top_clause(cur: &mut Cursor<'_>) -> bool {
+    let saved = cur.i;
+    cur.skip_ws_and_comments();
+    let ok = match cur.peek() {
+        Some('(') => true,
+        Some(ch) if ch.is_ascii_digit() => true,
+        _ => false,
+    };
+    cur.i = saved;
+    ok
+}
+
+fn limit_clause(dialect: SqlDialect, limit: u32) -> String {
+    match dialect {
+        SqlDialect::MySql | SqlDialect::Postgres => format!("LIMIT {limit}"),
+        SqlDialect::Mssql | SqlDialect::Oracle => {
+            format!("OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY")
+        }
+    }
+}
+
 fn looks_like_fetch_clause(cur: &mut Cursor<'_>) -> bool {
     let saved = cur.i;
     cur.skip_ws_and_comments();
@@ -166,12 +205,13 @@ fn insert_limit(sql: &str, limit: u32, dialect: SqlDialect) -> String {
     let idx = insertion_index(sql, dialect).unwrap_or(sql.len());
     let prefix = sql[..idx].trim_end();
     let suffix = sql[idx..].trim_start();
+    let clause = limit_clause(dialect, limit);
     if suffix.is_empty() {
-        format!("{prefix} LIMIT {limit}")
+        format!("{prefix} {clause}")
     } else if suffix.starts_with(';') {
-        format!("{prefix} LIMIT {limit}{suffix}")
+        format!("{prefix} {clause}{suffix}")
     } else {
-        format!("{prefix} LIMIT {limit} {suffix}")
+        format!("{prefix} {clause} {suffix}")
     }
 }
 
@@ -200,6 +240,12 @@ fn insertion_index(sql: &str, dialect: SqlDialect) -> Option<usize> {
             }
             Some('\'') | Some('"') | Some('`') => {
                 if !cur.skip_quoted() {
+                    return last_token_end;
+                }
+                last_token_end = Some(cur.i);
+            }
+            Some('[') if dialect == SqlDialect::Mssql => {
+                if !cur.skip_bracket_ident() {
                     return last_token_end;
                 }
                 last_token_end = Some(cur.i);
@@ -348,6 +394,11 @@ fn next_statement_end(sql: &str, start: usize, dialect: SqlDialect) -> usize {
             }
             Some('\'') | Some('"') | Some('`') => {
                 if !cur.skip_quoted() {
+                    return sql.len();
+                }
+            }
+            Some('[') if dialect == SqlDialect::Mssql => {
+                if !cur.skip_bracket_ident() {
                     return sql.len();
                 }
             }
@@ -520,6 +571,25 @@ impl<'a> Cursor<'a> {
         false
     }
 
+    fn skip_bracket_ident(&mut self) -> bool {
+        if self.peek() != Some('[') {
+            return false;
+        }
+        self.bump();
+        while let Some(ch) = self.peek() {
+            if ch == ']' {
+                self.bump();
+                if self.peek() == Some(']') {
+                    self.bump();
+                    continue;
+                }
+                return true;
+            }
+            self.bump();
+        }
+        false
+    }
+
     fn skip_dollar_quote_or_char(&mut self) -> bool {
         let rest = self.rest();
         if !rest.starts_with('$') {
@@ -569,6 +639,11 @@ impl<'a> Cursor<'a> {
                         return false;
                     }
                 }
+                '[' if self.dialect == SqlDialect::Mssql => {
+                    if !self.skip_bracket_ident() {
+                        return false;
+                    }
+                }
                 '$' if self.dialect == SqlDialect::Postgres => {
                     if !self.skip_dollar_quote_or_char() {
                         return false;
@@ -613,6 +688,30 @@ mod tests {
         let rewritten = apply_pg("SELECT * FROM t");
         assert!(rewritten.applied);
         assert_eq!(rewritten.sql, "SELECT * FROM t LIMIT 500");
+    }
+
+    #[test]
+    fn adds_fetch_limit_for_sql_server_and_oracle() {
+        let mssql = apply_default_query_limit("SELECT * FROM [dbo].[t]", SqlDialect::Mssql);
+        assert!(mssql.applied);
+        assert_eq!(
+            mssql.sql,
+            "SELECT * FROM [dbo].[t] OFFSET 0 ROWS FETCH NEXT 500 ROWS ONLY"
+        );
+        let oracle = apply_default_query_limit("SELECT * FROM t", SqlDialect::Oracle);
+        assert!(oracle.applied);
+        assert!(oracle.sql.contains("FETCH NEXT 500 ROWS ONLY"));
+    }
+
+    #[test]
+    fn preserves_sql_server_top_and_offset() {
+        let top = apply_default_query_limit("SELECT TOP 10 * FROM t", SqlDialect::Mssql);
+        assert!(!top.applied);
+        let offset = apply_default_query_limit(
+            "SELECT * FROM t ORDER BY id OFFSET 5 ROWS",
+            SqlDialect::Oracle,
+        );
+        assert!(!offset.applied);
     }
 
     #[test]

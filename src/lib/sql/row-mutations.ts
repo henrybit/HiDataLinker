@@ -1,10 +1,14 @@
 import type { ColumnInfo, ColumnMeta } from '$lib/api/types';
-import { isPostgres, qualifyIdent, quoteIdent, quoteLiteral } from '$lib/engine';
+import { isMssql, isPostgres, isOracle, qualifyIdent, quoteIdent, quoteLiteral } from '$lib/engine';
 import { fromInputValue, temporalKind } from './column-types';
 
 export function isGeneratedColumn(column: ColumnInfo): boolean {
 	const extra = column.extra.toLowerCase();
-	return extra.includes('auto_increment') || extra.includes('generated always');
+	return (
+		extra.includes('auto_increment') ||
+		extra.includes('generated always') ||
+		extra.includes('identity')
+	);
 }
 
 export function insertableColumns(columns: ColumnInfo[]): ColumnInfo[] {
@@ -65,7 +69,9 @@ export function buildDeleteSql(
 	}
 	const target = qualifyIdent(engine, schema, table);
 	const sql = `DELETE FROM ${target} WHERE ${where}`;
-	return isPostgres(engine) ? sql : `${sql} LIMIT 1`;
+	if (isPostgres(engine) || isOracle(engine)) return sql;
+	if (isMssql(engine)) return `DELETE TOP (1) FROM ${target} WHERE ${where}`;
+	return `${sql} LIMIT 1`;
 }
 
 export function buildInsertSql(

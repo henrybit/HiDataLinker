@@ -23,6 +23,13 @@ describe('explain sql helpers', () => {
 		);
 	});
 
+	it('builds sql server and oracle explain', () => {
+		expect(buildExplainSql('SELECT id FROM t', 'mssql')).toBe(
+			'SET STATISTICS PROFILE ON;\nSELECT id FROM t'
+		);
+		expect(buildExplainSql('SELECT id FROM t', 'oracle')).toBe('EXPLAIN PLAN FOR\nSELECT id FROM t');
+	});
+
 	it('returns empty for blank input', () => {
 		expect(buildExplainSql('   ', 'mysql')).toBe('');
 	});

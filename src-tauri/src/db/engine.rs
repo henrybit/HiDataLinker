@@ -1,4 +1,6 @@
+use super::mssql::SqlServerEngine;
 use super::mysql::MySqlEngine;
+use super::oracle::OracleEngine;
 use super::postgres::PostgresEngine;
 use crate::error::AppResult;
 use crate::models::{
@@ -49,6 +51,8 @@ pub trait DatabaseEngine: Send + Sync {
 pub enum LiveEngine {
     MySql(MySqlEngine),
     Postgres(PostgresEngine),
+    SqlServer(SqlServerEngine),
+    Oracle(OracleEngine),
 }
 
 impl LiveEngine {
@@ -56,6 +60,8 @@ impl LiveEngine {
         match profile.engine_kind()? {
             EngineKind::MySql => Ok(Self::MySql(MySqlEngine::from_profile(profile)?)),
             EngineKind::Postgres => Ok(Self::Postgres(PostgresEngine::from_profile(profile)?)),
+            EngineKind::SqlServer => Ok(Self::SqlServer(SqlServerEngine::from_profile(profile)?)),
+            EngineKind::Oracle => Ok(Self::Oracle(OracleEngine::from_profile(profile)?)),
         }
     }
 
@@ -63,6 +69,8 @@ impl LiveEngine {
         match self {
             Self::MySql(_) => EngineKind::MySql,
             Self::Postgres(_) => EngineKind::Postgres,
+            Self::SqlServer(_) => EngineKind::SqlServer,
+            Self::Oracle(_) => EngineKind::Oracle,
         }
     }
 
@@ -70,6 +78,8 @@ impl LiveEngine {
         match request.engine_kind()? {
             EngineKind::MySql => MySqlEngine::test(request).await,
             EngineKind::Postgres => PostgresEngine::test(request).await,
+            EngineKind::SqlServer => SqlServerEngine::test(request).await,
+            EngineKind::Oracle => OracleEngine::test(request).await,
         }
     }
 }
@@ -79,6 +89,8 @@ macro_rules! dispatch_engine {
         match $self {
             Self::MySql(engine) => engine.$method($($arg),*).await,
             Self::Postgres(engine) => engine.$method($($arg),*).await,
+            Self::SqlServer(engine) => engine.$method($($arg),*).await,
+            Self::Oracle(engine) => engine.$method($($arg),*).await,
         }
     };
 }

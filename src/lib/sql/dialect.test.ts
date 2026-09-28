@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MySQL, PLSQL, PostgreSQL, StandardSQL } from '@codemirror/lang-sql';
+import { MSSQL, MySQL, PLSQL, PostgreSQL, StandardSQL } from '@codemirror/lang-sql';
 import { normalizeSqlDialect, sqlDialectFor } from './dialect';
 
 describe('sql dialect helpers', () => {
@@ -10,6 +10,7 @@ describe('sql dialect helpers', () => {
 		expect(normalizeSqlDialect('MariaDB')).toBe('mysql');
 		expect(normalizeSqlDialect('oracle')).toBe('oracle');
 		expect(normalizeSqlDialect('plsql')).toBe('oracle');
+		expect(normalizeSqlDialect('sqlserver')).toBe('mssql');
 		expect(normalizeSqlDialect('unknown')).toBe('standard');
 	});
 
@@ -17,6 +18,7 @@ describe('sql dialect helpers', () => {
 		expect(sqlDialectFor('postgres')).toBe(PostgreSQL);
 		expect(sqlDialectFor('mysql')).toBe(MySQL);
 		expect(sqlDialectFor('oracle')).toBe(PLSQL);
+		expect(sqlDialectFor('mssql')).toBe(MSSQL);
 		expect(sqlDialectFor(null)).toBe(StandardSQL);
 	});
 });

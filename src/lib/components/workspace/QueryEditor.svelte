@@ -4,7 +4,7 @@
 	import type { QueryLogEntry } from '$lib/api/types';
 	import { formatDuration, formatNumber } from '$lib/format';
 	import { afterPaint } from '$lib/runtime/jobs';
-	import { isPostgres } from '$lib/engine';
+	import { isOracle, isPostgres } from '$lib/engine';
 	import { buildExplainSql } from '$lib/sql/explain';
 	import { formatSql } from '$lib/sql/format';
 	import { workspace } from '$lib/stores/workspace.svelte';
@@ -42,9 +42,11 @@
 	const connection = $derived(workspace.connections.find((item) => item.id === connectionId));
 	const schemaHint = $derived(
 		schema
-			? isPostgres(connection?.engine)
-				? t('query.searchPath', { schema })
-				: t('query.useSchema', { schema })
+			? isOracle(connection?.engine)
+				? t('query.currentSchema', { schema })
+				: isPostgres(connection?.engine)
+					? t('query.searchPath', { schema })
+					: t('query.useSchema', { schema })
 			: t('query.noSchema')
 	);
 	const executionLog = $derived<QueryLogEntry[]>(

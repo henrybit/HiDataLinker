@@ -1,5 +1,5 @@
 import type { ColumnInfo } from '$lib/api/types';
-import { isPostgres, qualifyIdent, quoteIdent, quoteLiteral } from '$lib/engine';
+import { isMssql, isOracle, isPostgres, qualifyIdent, quoteIdent, quoteLiteral } from '$lib/engine';
 import { isGeneratedColumn } from './row-mutations';
 
 export type ColumnSpec = {
@@ -72,15 +72,28 @@ function mysqlColumnClause(spec: ColumnSpec, extra = ''): string {
 	return parts.join(' ');
 }
 
-function pgCommentSql(
+function commentSql(
+	engine: string | undefined | null,
 	schema: string,
 	table: string,
 	column: string,
 	comment: string
 ): string {
-	const target = `${qualifyIdent('postgres', schema, table)}.${quoteIdent('postgres', column)}`;
+	const target = `${qualifyIdent(engine, schema, table)}.${quoteIdent(engine, column)}`;
 	if (!comment.trim()) return `COMMENT ON COLUMN ${target} IS NULL`;
 	return `COMMENT ON COLUMN ${target} IS ${quoteLiteral(comment.trim())}`;
+}
+
+function mssqlParts(table: string): { schema: string; name: string } {
+	const dot = table.indexOf('.');
+	if (dot > 0 && !table.slice(dot + 1).includes('.')) {
+		return { schema: table.slice(0, dot), name: table.slice(dot + 1) };
+	}
+	return { schema: 'dbo', name: table };
+}
+
+function nLiteral(value: string): string {
+	return `N${quoteLiteral(value)}`;
 }
 
 export function buildAddColumnSql(
@@ -100,7 +113,24 @@ export function buildAddColumnSql(
 		const def = formatDefaultExpr(spec.defaultValue);
 		if (def) parts.push(`DEFAULT ${def}`);
 		const sql = [`ALTER TABLE ${target} ${parts.join(' ')}`];
-		if (spec.comment.trim()) sql.push(pgCommentSql(schema, table, name, spec.comment));
+		if (spec.comment.trim()) sql.push(commentSql(engine, schema, table, name, spec.comment));
+		return sql;
+	}
+	if (isOracle(engine)) {
+		const parts = [`${quoteIdent(engine, name)} ${type}`];
+		parts.push(spec.nullable ? 'NULL' : 'NOT NULL');
+		const def = formatDefaultExpr(spec.defaultValue);
+		if (def) parts.push(`DEFAULT ${def}`);
+		const sql = [`ALTER TABLE ${target} ADD (${parts.join(' ')})`];
+		if (spec.comment.trim()) sql.push(commentSql(engine, schema, table, name, spec.comment));
+		return sql;
+	}
+	if (isMssql(engine)) {
+		const parts = [`${quoteIdent(engine, name)} ${type}`, spec.nullable ? 'NULL' : 'NOT NULL'];
+		const def = formatDefaultExpr(spec.defaultValue);
+		if (def) parts.push(`CONSTRAINT ${quoteIdent(engine, `DF_${name}`)} DEFAULT ${def}`);
+		const sql = [`ALTER TABLE ${target} ADD ${parts.join(' ')}`];
+		if (spec.comment.trim()) sql.push(mssqlColumnComment(table, name, spec.comment, false));
 		return sql;
 	}
 
@@ -185,7 +215,57 @@ export function buildAlterColumnSql(
 			}
 		}
 		if (prev.comment !== next.comment) {
-			sql.push(pgCommentSql(schema, table, workingName, next.comment));
+			sql.push(commentSql(engine, schema, table, workingName, next.comment));
+		}
+		return sql;
+	}
+
+	if (isOracle(engine)) {
+		const sql: string[] = [];
+		let workingName = before.name;
+		if (prev.name !== next.name) {
+			sql.push(
+				`ALTER TABLE ${target} RENAME COLUMN ${quoteIdent(engine, before.name)} TO ${quoteIdent(engine, next.name)}`
+			);
+			workingName = next.name;
+		}
+		const col = quoteIdent(engine, workingName);
+		const changes: string[] = [col, next.columnType];
+		changes.push(next.nullable ? 'NULL' : 'NOT NULL');
+		if (prev.defaultValue !== next.defaultValue && next.defaultValue) {
+			changes.push(`DEFAULT ${formatDefaultExpr(next.defaultValue)}`);
+		}
+		if (prev.columnType !== next.columnType || prev.nullable !== next.nullable || prev.defaultValue !== next.defaultValue) {
+			sql.push(`ALTER TABLE ${target} MODIFY (${changes.join(' ')})`);
+		}
+		if (prev.comment !== next.comment) {
+			sql.push(commentSql(engine, schema, table, workingName, next.comment));
+		}
+		return sql;
+	}
+
+	if (isMssql(engine)) {
+		const sql: string[] = [];
+		let workingName = before.name;
+		const parts = mssqlParts(table);
+		if (prev.name !== next.name) {
+			sql.push(
+				`EXEC sp_rename ${nLiteral(`${parts.schema}.${parts.name}.${before.name}`)}, ${nLiteral(next.name)}, ${nLiteral('COLUMN')}`
+			);
+			workingName = next.name;
+		}
+		if (prev.columnType !== next.columnType || prev.nullable !== next.nullable) {
+			sql.push(
+				`ALTER TABLE ${target} ALTER COLUMN ${quoteIdent(engine, workingName)} ${next.columnType} ${next.nullable ? 'NULL' : 'NOT NULL'}`
+			);
+		}
+		if (prev.defaultValue !== next.defaultValue && next.defaultValue) {
+			sql.push(
+				`ALTER TABLE ${target} ADD CONSTRAINT ${quoteIdent(engine, `DF_${workingName}`)} DEFAULT ${formatDefaultExpr(next.defaultValue)} FOR ${quoteIdent(engine, workingName)}`
+			);
+		}
+		if (prev.comment !== next.comment) {
+			sql.push(mssqlColumnComment(table, workingName, next.comment, Boolean(prev.comment)));
 		}
 		return sql;
 	}
@@ -197,6 +277,12 @@ export function buildAlterColumnSql(
 		];
 	}
 	return [`ALTER TABLE ${target} MODIFY COLUMN ${mysqlColumnClause(next, before.extra)}`];
+}
+
+function mssqlColumnComment(table: string, column: string, comment: string, exists: boolean): string {
+	const parts = mssqlParts(table);
+	const proc = exists ? 'sys.sp_updateextendedproperty' : 'sys.sp_addextendedproperty';
+	return `EXEC ${proc} @name=${nLiteral('MS_Description')}, @value=${nLiteral(comment.trim())}, @level0type=${nLiteral('SCHEMA')}, @level0name=${nLiteral(parts.schema)}, @level1type=${nLiteral('TABLE')}, @level1name=${nLiteral(parts.name)}, @level2type=${nLiteral('COLUMN')}, @level2name=${nLiteral(column)}`;
 }
 
 export async function runSqlStatements(

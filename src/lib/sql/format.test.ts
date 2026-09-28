@@ -6,6 +6,7 @@ describe('sql format helpers', () => {
 		expect(sqlLanguageFor('pgsql')).toBe('postgresql');
 		expect(sqlLanguageFor('mysql')).toBe('mysql');
 		expect(sqlLanguageFor('oracle')).toBe('plsql');
+		expect(sqlLanguageFor('mssql')).toBe('tsql');
 		expect(sqlLanguageFor(null)).toBe('sql');
 	});
 

@@ -1,4 +1,4 @@
-export type EngineKind = 'mysql' | 'postgres';
+export type EngineKind = 'mysql' | 'postgres' | 'mssql' | 'oracle';
 
 export type ObjectKind = 'table' | 'view' | 'index' | 'trigger' | 'function' | 'procedure';
 

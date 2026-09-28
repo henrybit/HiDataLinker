@@ -1,5 +1,5 @@
 use super::engine::DatabaseEngine;
-use super::ident::{quote_ident, quote_ident_pg, validate_ident};
+use super::ident::{qualify_mssql, quote_ident, quote_ident_mssql, quote_ident_pg, validate_ident};
 use crate::error::{AppError, AppResult};
 use crate::models::ObjectKind;
 
@@ -7,6 +7,8 @@ use crate::models::ObjectKind;
 pub enum DumpDialect {
     Mysql,
     Postgres,
+    Mssql,
+    Oracle,
 }
 
 pub fn dump_mode_label(include_schema: bool, include_data: bool) -> &'static str {
@@ -379,6 +381,53 @@ fn push_database_preamble(
                 });
             }
         }
+        DumpDialect::Mssql => {
+            if include_schema {
+                script.statements.push(DumpStatement {
+                    object_kind: Some("database"),
+                    object_name: Some(schema.to_string()),
+                    label: format!("Create database {schema}"),
+                    sql: format!(
+                        "IF DB_ID(N'{}') IS NULL CREATE DATABASE {}",
+                        schema.replace('\'', "''"),
+                        quote_ident_mssql(schema)
+                    ),
+                });
+            }
+            script.statements.push(DumpStatement {
+                object_kind: Some("database"),
+                object_name: Some(schema.to_string()),
+                label: format!("Use database {schema}"),
+                sql: format!("USE {}", quote_ident_mssql(schema)),
+            });
+        }
+        DumpDialect::Oracle => {
+            if include_schema {
+                if let Ok(statements) = crate::db::ident::create_oracle_schema_statements(schema) {
+                    for (index, sql) in statements.into_iter().enumerate() {
+                        script.statements.push(DumpStatement {
+                            object_kind: Some("schema"),
+                            object_name: Some(schema.to_string()),
+                            label: if index == 0 {
+                                format!("Create schema {schema}")
+                            } else {
+                                format!("Grant privileges on {schema}")
+                            },
+                            sql,
+                        });
+                    }
+                }
+            }
+            script.statements.push(DumpStatement {
+                object_kind: Some("schema"),
+                object_name: Some(schema.to_string()),
+                label: format!("Set current schema {schema}"),
+                sql: format!(
+                    "ALTER SESSION SET CURRENT_SCHEMA = {}",
+                    quote_ident_pg(schema)
+                ),
+            });
+        }
     }
 }
 
@@ -400,7 +449,10 @@ where
 
     let target = match dialect {
         DumpDialect::Mysql => format!("{}.{}", quote_ident(schema), quote_ident(table)),
-        DumpDialect::Postgres => format!("{}.{}", quote_ident_pg(schema), quote_ident_pg(table)),
+        DumpDialect::Postgres | DumpDialect::Oracle => {
+            format!("{}.{}", quote_ident_pg(schema), quote_ident_pg(table))
+        }
+        DumpDialect::Mssql => qualify_mssql(schema, table),
     };
 
     let mut offset = 0_u64;
@@ -434,7 +486,8 @@ where
             .iter()
             .map(|column| match dialect {
                 DumpDialect::Mysql => quote_ident(&column.name),
-                DumpDialect::Postgres => quote_ident_pg(&column.name),
+                DumpDialect::Postgres | DumpDialect::Oracle => quote_ident_pg(&column.name),
+                DumpDialect::Mssql => quote_ident_mssql(&column.name),
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -544,7 +597,8 @@ pub fn rewrite_dump_schema_name(
 
     let (from_q, to_q) = match dialect {
         DumpDialect::Mysql => (quote_ident(from), quote_ident(to)),
-        DumpDialect::Postgres => (quote_ident_pg(from), quote_ident_pg(to)),
+        DumpDialect::Postgres | DumpDialect::Oracle => (quote_ident_pg(from), quote_ident_pg(to)),
+        DumpDialect::Mssql => (quote_ident_mssql(from), quote_ident_mssql(to)),
     };
 
     for statement in &mut script.statements {

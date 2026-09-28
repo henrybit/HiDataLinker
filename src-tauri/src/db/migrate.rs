@@ -1,6 +1,6 @@
 use super::dump::{build_dump_script, rewrite_dump_schema_name, DumpDialect, DumpScript};
 use super::engine::{DatabaseEngine, LiveEngine};
-use super::ident::{quote_ident, quote_ident_pg, validate_ident};
+use super::ident::{quote_ident, quote_ident_mssql, quote_ident_pg, validate_ident};
 use crate::error::{AppError, AppResult};
 use crate::models::{EngineKind, MigrateProgressEvent, MigrateResult};
 use tauri::{AppHandle, Emitter};
@@ -81,8 +81,13 @@ pub async fn migrate_database(
     let names_differ = source_name != target_name;
     // Cross-server restores keep the source name in SQL, then rename.
     // Same-server copies rewrite SQL up front so we never recreate the live source.
-    let restore_then_rename = names_differ && !same_connection;
-    let rewrite_before_execute = names_differ && same_connection;
+    // Oracle has no ALTER USER ... RENAME, so always rewrite quoted names.
+    let mut restore_then_rename = names_differ && !same_connection;
+    let mut rewrite_before_execute = names_differ && same_connection;
+    if source_kind == EngineKind::Oracle && names_differ {
+        restore_then_rename = false;
+        rewrite_before_execute = true;
+    }
 
     if restore_then_rename {
         ensure_name_absent_or_empty(&target, source_name, "intermediate restore name", &progress)
@@ -92,6 +97,8 @@ pub async fn migrate_database(
     let dialect = match source_kind {
         EngineKind::MySql => DumpDialect::Mysql,
         EngineKind::Postgres => DumpDialect::Postgres,
+        EngineKind::SqlServer => DumpDialect::Mssql,
+        EngineKind::Oracle => DumpDialect::Oracle,
     };
 
     let mut script = {
@@ -295,9 +302,17 @@ fn dump_statement_kind(sql: &str) -> DumpStatementKind {
         [set_kw, path, ..] if set_kw == "SET" && path == "SEARCH_PATH" => {
             DumpStatementKind::Session
         }
+        [alter, session, ..] if alter == "ALTER" && session == "SESSION" => {
+            DumpStatementKind::Session
+        }
         [create, kind, ..] if create == "CREATE" && (kind == "DATABASE" || kind == "SCHEMA") => {
             DumpStatementKind::Unscoped
         }
+        [create, user, ..] if create == "CREATE" && user == "USER" => DumpStatementKind::Unscoped,
+        [grant, ..] if grant == "GRANT" => DumpStatementKind::Unscoped,
+        [declare, ..] if declare == "DECLARE" => DumpStatementKind::Unscoped,
+        [begin, ..] if begin == "BEGIN" => DumpStatementKind::Unscoped,
+        [if_kw, ..] if if_kw == "IF" => DumpStatementKind::Unscoped,
         _ => DumpStatementKind::InSchema,
     }
 }
@@ -422,6 +437,27 @@ async fn rename_schema(
             Ok(())
         }
         EngineKind::MySql => rename_mysql_database(target, from, to, progress).await,
+        EngineKind::SqlServer => {
+            let sql = format!(
+                "USE [master]; ALTER DATABASE {} MODIFY NAME = {}",
+                quote_ident_mssql(from),
+                quote_ident_mssql(to)
+            );
+            progress.emit(
+                "rename",
+                "info",
+                Some("database"),
+                Some(from),
+                0,
+                1,
+                format!("Running {sql}"),
+            );
+            target.execute_sql(None, &sql).await?;
+            Ok(())
+        }
+        EngineKind::Oracle => Err(AppError::msg(
+            "Oracle cannot rename a schema in place. Choose the same schema name, or migrate on one connection so object names are rewritten.",
+        )),
     }
 }
 

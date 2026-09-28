@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { Cable, Database, Play, Plus, RefreshCw, Square } from '@lucide/svelte';
+	import { onMount } from 'svelte';
+	import { Cable, ChevronDown, Database, Play, Plus, RefreshCw, Square } from '@lucide/svelte';
+	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { engineLabel } from '$lib/engine';
 	import { getLocale, schemaNounLabel, setLocale, t, type Locale } from '$lib/i18n/i18n.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
@@ -9,10 +11,27 @@
 		selected ? workspace.connections.find((item) => item.id === selected.connectionId) : null
 	);
 	const locale = $derived(getLocale());
+	let menuOpen = $state(false);
+	let menuRoot = $state<HTMLDivElement | null>(null);
 
 	function switchLocale(next: Locale) {
 		setLocale(next);
 	}
+
+	function openAnalysis() {
+		menuOpen = false;
+		analysisPanel.open = true;
+	}
+
+	onMount(() => {
+		const onPointerDown = (event: PointerEvent) => {
+			if (!menuOpen || !menuRoot) return;
+			if (event.target instanceof Node && menuRoot.contains(event.target)) return;
+			menuOpen = false;
+		};
+		window.addEventListener('pointerdown', onPointerDown);
+		return () => window.removeEventListener('pointerdown', onPointerDown);
+	});
 </script>
 
 <header class="toolbar">
@@ -43,7 +62,9 @@
 		onclick={() => active && workspace.askCreateDatabase(active.id)}
 	>
 		<Database size={14} />
-		{t('toolbar.createNoun', { noun: active ? schemaNounLabel(active.engine) : t('noun.database') })}
+		{t('toolbar.createNoun', {
+			noun: active ? schemaNounLabel(active.engine) : t('noun.database')
+		})}
 	</button>
 	<button
 		class="toolbar-btn"
@@ -68,8 +89,27 @@
 		<RefreshCw size={14} />
 		{t('toolbar.refresh')}
 	</button>
+	<div class="analysis-menu" bind:this={menuRoot}>
+		<button
+			class="toolbar-btn"
+			type="button"
+			aria-haspopup="menu"
+			aria-expanded={menuOpen}
+			onclick={() => (menuOpen = !menuOpen)}
+		>
+			{t('toolbar.analyze')}
+			<ChevronDown size={14} />
+		</button>
+		{#if menuOpen}
+			<div class="analysis-menu-pop" role="menu">
+				<button type="button" role="menuitem" onclick={openAnalysis}
+					>{t('analysis.relationship')}</button
+				>
+			</div>
+		{/if}
+	</div>
 	<div class="toolbar-sep"></div>
-	<span class="truncate toolbar-status" style="color: var(--text-muted)">
+	<span class="toolbar-status truncate" style="color: var(--text-muted)">
 		{#if active}
 			<Database size={14} style="display:inline;vertical-align:-2px" />
 			{active.name} · {engineLabel(active.engine)} · {active.host}:{active.port}

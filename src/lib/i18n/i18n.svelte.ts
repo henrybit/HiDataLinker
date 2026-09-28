@@ -1,6 +1,6 @@
 import { en, type MessageKey } from './en';
 import { zh } from './zh';
-import { isPostgres } from '$lib/engine';
+	import { isSchemaScoped } from '$lib/engine';
 import type { FolderKind } from '$lib/api/types';
 
 export type { MessageKey };
@@ -58,11 +58,11 @@ export function t(key: MessageKey, params?: MessageParams): string {
 }
 
 export function schemaNounLabel(engine: string | undefined | null): string {
-	return t(isPostgres(engine) ? 'noun.schema' : 'noun.database');
+	return t(isSchemaScoped(engine) ? 'noun.schema' : 'noun.database');
 }
 
 export function schemaNounLower(engine: string | undefined | null): string {
-	return t(isPostgres(engine) ? 'noun.schema.lower' : 'noun.database.lower');
+	return t(isSchemaScoped(engine) ? 'noun.schema.lower' : 'noun.database.lower');
 }
 
 export function folderMessageKey(folder: FolderKind): MessageKey {

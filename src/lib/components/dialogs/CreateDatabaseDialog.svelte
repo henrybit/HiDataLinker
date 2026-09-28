@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/tauri';
 	import type { CharsetCatalog } from '$lib/api/types';
 	import { workspace } from '$lib/stores/workspace.svelte';
-	import { isPostgres } from '$lib/engine';
+	import { isMssql, isOracle, isSchemaScoped } from '$lib/engine';
 	import Combobox from '$lib/components/layout/Combobox.svelte';
 	import {
 		FALLBACK_CHARSET_CATALOG,
@@ -16,7 +16,9 @@
 	const prompt = $derived(workspace.createDatabasePrompt);
 	const noun = $derived(schemaNounLabel(prompt?.engine));
 	const nounLower = $derived(schemaNounLower(prompt?.engine));
-	const postgres = $derived(isPostgres(prompt?.engine));
+	const schemaScoped = $derived(isSchemaScoped(prompt?.engine));
+	const mssql = $derived(isMssql(prompt?.engine));
+	const oracle = $derived(isOracle(prompt?.engine));
 	const pending = $derived(
 		prompt ? workspace.isPending(`create-db:${prompt.connectionId}`) : false
 	);
@@ -35,7 +37,7 @@
 	onMount(() => {
 		nameInput?.focus();
 		const connectionId = prompt?.connectionId;
-		if (!connectionId || isPostgres(prompt?.engine)) return;
+		if (!connectionId || schemaScoped) return;
 		void api.listCharsetCatalog(connectionId).then(
 			(next) => {
 				if (next.charsets.length) catalog = next;
@@ -73,7 +75,7 @@
 				<header id="create-database-title">{t('dialog.createNounTitle', { noun })}</header>
 				<div class="body">
 					<p>
-						{#if postgres && prompt.database}
+						{#if schemaScoped && prompt.database}
 							{t('dialog.createNounBodyInDb', {
 								noun: nounLower,
 								connection: prompt.connectionName,
@@ -86,12 +88,15 @@
 							})}
 						{/if}
 					</p>
+					{#if oracle}
+						<p>{t('dialog.oracleCreateHint')}</p>
+					{/if}
 					<label class="field">
 						<span>{t('dialog.name')}</span>
 						<input
 							bind:this={nameInput}
 							bind:value={name}
-							placeholder={postgres
+							placeholder={schemaScoped
 								? t('dialog.schemaNamePlaceholder')
 								: t('dialog.databaseNamePlaceholder')}
 							disabled={pending}
@@ -100,7 +105,17 @@
 							}}
 						/>
 					</label>
-					{#if !postgres}
+					{#if mssql}
+						<div class="field">
+							<span>{t('dialog.collation')}</span>
+							<Combobox
+								bind:value={collation}
+								options={collationOptions(catalog.collations)}
+								placeholder={t('dialog.charsetSearch')}
+								disabled={pending}
+							/>
+						</div>
+					{:else if !schemaScoped}
 						<div class="field">
 							<span>{t('dialog.charset')}</span>
 							<Combobox

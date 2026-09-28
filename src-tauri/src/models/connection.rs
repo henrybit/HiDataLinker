@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub enum EngineKind {
     MySql,
     Postgres,
+    SqlServer,
+    Oracle,
 }
 
 impl EngineKind {
@@ -12,6 +14,8 @@ impl EngineKind {
         match value.trim().to_ascii_lowercase().as_str() {
             "" | "mysql" | "mariadb" => Ok(Self::MySql),
             "postgres" | "postgresql" | "pgsql" => Ok(Self::Postgres),
+            "mssql" | "sqlserver" | "sql_server" | "sql-server" => Ok(Self::SqlServer),
+            "oracle" | "oracledb" => Ok(Self::Oracle),
             other => Err(AppError::msg(format!("unsupported engine: {other}"))),
         }
     }
@@ -20,6 +24,8 @@ impl EngineKind {
         match self {
             Self::MySql => "mysql",
             Self::Postgres => "postgres",
+            Self::SqlServer => "mssql",
+            Self::Oracle => "oracle",
         }
     }
 
@@ -27,6 +33,8 @@ impl EngineKind {
         match self {
             Self::MySql => 3306,
             Self::Postgres => 5432,
+            Self::SqlServer => 1433,
+            Self::Oracle => 1521,
         }
     }
 }
@@ -122,7 +130,12 @@ mod tests {
             EngineKind::Postgres
         );
         assert_eq!(EngineKind::parse("pgsql").unwrap(), EngineKind::Postgres);
-        assert!(EngineKind::parse("oracle").is_err());
+        assert_eq!(
+            EngineKind::parse("sqlserver").unwrap(),
+            EngineKind::SqlServer
+        );
+        assert_eq!(EngineKind::parse("Oracle").unwrap(), EngineKind::Oracle);
+        assert!(EngineKind::parse("sqlite").is_err());
     }
 
     #[test]

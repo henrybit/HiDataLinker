@@ -7,6 +7,8 @@ export function sqlLanguageFor(engine: string | undefined | null): SqlLanguage {
 			return 'postgresql';
 		case 'oracle':
 			return 'plsql';
+		case 'mssql':
+			return 'tsql';
 		case 'mysql':
 			return 'mysql';
 		default:

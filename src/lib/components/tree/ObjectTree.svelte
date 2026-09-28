@@ -14,7 +14,7 @@
 		Zap
 	} from '@lucide/svelte';
 	import { workspace, folderLabel } from '$lib/stores/workspace.svelte';
-	import { engineLabel, isPostgres } from '$lib/engine';
+	import { engineLabel, isSchemaScoped } from '$lib/engine';
 	import type { FolderKind } from '$lib/api/types';
 	import { t } from '$lib/i18n/i18n.svelte';
 
@@ -189,7 +189,7 @@
 					<span class="icon" style="color:#2563eb"><Database size={14} /></span>
 					<span
 						class="truncate"
-						title={isPostgres(connection.engine) ? t('tree.schema') : t('tree.database')}
+						title={isSchemaScoped(connection.engine) ? t('tree.schema') : t('tree.database')}
 						>{database.name}</span
 					>
 				</div>

@@ -1,4 +1,4 @@
-import { isPostgres } from '$lib/engine';
+import { isMssql, isOracle, isPostgres } from '$lib/engine';
 
 /** Strip trailing semicolons and normalize whitespace edges. */
 export function normalizeExplainTarget(sql: string): string {
@@ -19,6 +19,12 @@ export function buildExplainSql(sql: string, engine?: string | null): string {
 
 	if (isPostgres(engine)) {
 		return `EXPLAIN (VERBOSE, COSTS, FORMAT TEXT)\n${target}`;
+	}
+	if (isOracle(engine)) {
+		return `EXPLAIN PLAN FOR\n${target}`;
+	}
+	if (isMssql(engine)) {
+		return `SET STATISTICS PROFILE ON;\n${target}`;
 	}
 
 	return `EXPLAIN\n${target}`;

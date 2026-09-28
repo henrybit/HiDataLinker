@@ -14,6 +14,10 @@ pub enum AppError {
     Mysql(#[from] mysql_async::Error),
     #[error(transparent)]
     Postgres(#[from] tokio_postgres::Error),
+    #[error(transparent)]
+    SqlServer(#[from] tiberius::error::Error),
+    #[error(transparent)]
+    Oracle(#[from] oracle_rs::Error),
     #[error("{0}")]
     PgPool(String),
     #[error(transparent)]

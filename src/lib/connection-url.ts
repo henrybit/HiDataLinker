@@ -12,11 +12,13 @@ export type ParsedConnectionUrl = {
 	sslKey: string;
 };
 
-const URL_SCHEME = /^(postgresql|postgres|pgsql|mysql|mariadb):\/\//i;
+const URL_SCHEME = /^(postgresql|postgres|pgsql|mysql|mariadb|mssql|sqlserver|oracle):\/\//i;
 
 export const CONNECTION_URL_PLACEHOLDERS = {
 	mysql: 'mysql://root:password@127.0.0.1:3306/database',
-	postgres: 'postgresql://postgres:password@127.0.0.1:5432/postgres'
+	postgres: 'postgresql://postgres:password@127.0.0.1:5432/postgres',
+	mssql: 'mssql://sa:password@127.0.0.1:1433/master',
+	oracle: 'oracle://system:password@127.0.0.1:1521/FREEPDB1'
 } as const;
 
 export function connectionUrlPlaceholder(engine: string | undefined | null): string {
@@ -39,7 +41,7 @@ export function parseConnectionUrl(input: string): ParsedConnectionUrl | null {
 	}
 
 	const scheme = url.protocol.replace(/:$/, '').toLowerCase();
-	const engine = normalizeEngine(scheme === 'mysql' || scheme === 'mariadb' ? 'mysql' : 'postgres');
+	const engine = normalizeEngine(scheme);
 	const host = url.hostname.trim();
 	if (!host) return null;
 

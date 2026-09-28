@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { workspace } from '$lib/stores/workspace.svelte';
 	import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
-	import { ENGINE_PRESETS, engineLabel, normalizeEngine, type EngineKind } from '$lib/engine';
+	import { ENGINE_PRESETS, engineLabel, isDefaultConnectionName, normalizeEngine, type EngineKind } from '$lib/engine';
 	import {
 		connectionUrlPlaceholder,
 		looksLikeConnectionUrl,
@@ -34,10 +34,22 @@
 	const engine = $derived(normalizeEngine(profile.engine));
 	const urlPlaceholder = $derived(connectionUrlPlaceholder(engine));
 	const hostPlaceholder = $derived(
-		engine === 'postgres' ? t('dialog.hostPlaceholderPostgres') : t('dialog.hostPlaceholderMysql')
+		engine === 'postgres'
+			? t('dialog.hostPlaceholderPostgres')
+			: engine === 'mssql'
+				? t('dialog.hostPlaceholderMssql')
+				: engine === 'oracle'
+					? t('dialog.hostPlaceholderOracle')
+					: t('dialog.hostPlaceholderMysql')
 	);
 	const databaseHint = $derived(
-		engine === 'postgres' ? t('dialog.databaseHintPostgres') : t('dialog.databaseHintMysql')
+		engine === 'postgres'
+			? t('dialog.databaseHintPostgres')
+			: engine === 'mssql'
+				? t('dialog.databaseHintMssql')
+				: engine === 'oracle'
+					? t('dialog.databaseHintOracle')
+					: t('dialog.databaseHintMysql')
 	);
 
 	function applyEngine(next: EngineKind) {
@@ -48,11 +60,7 @@
 		if (!profile.database || profile.database === previous.database) {
 			profile.database = preset.database;
 		}
-		if (
-			profile.name === previous.name ||
-			profile.name === 'MySQL' ||
-			profile.name === 'PostgreSQL'
-		) {
+		if (isDefaultConnectionName(profile.name)) {
 			profile.name = preset.name;
 		}
 		profile.engine = next;
@@ -83,13 +91,7 @@
 		profile.sslCa = parsed.sslCa;
 		profile.sslCert = parsed.sslCert;
 		profile.sslKey = parsed.sslKey;
-		if (
-			!profile.name ||
-			profile.name === 'MySQL' ||
-			profile.name === 'PostgreSQL' ||
-			profile.name === ENGINE_PRESETS.mysql.name ||
-			profile.name === ENGINE_PRESETS.postgres.name
-		) {
+		if (isDefaultConnectionName(profile.name)) {
 			profile.name = ENGINE_PRESETS[parsed.engine].name;
 		}
 		connectionUrl = raw.trim();
@@ -153,7 +155,7 @@
 			...profile,
 			port: Number(profile.port) || ENGINE_PRESETS[engine].port,
 			engine,
-			sslCa: optionalPath(profile.sslCa),
+			sslCa: engine === 'oracle' ? null : optionalPath(profile.sslCa),
 			sslCert: engine === 'postgres' ? optionalPath(profile.sslCert) : null,
 			sslKey: engine === 'postgres' ? optionalPath(profile.sslKey) : null
 		});
@@ -187,6 +189,8 @@
 				>
 					<option value="mysql">MySQL</option>
 					<option value="postgres">PostgreSQL</option>
+					<option value="mssql">SQL Server</option>
+					<option value="oracle">Oracle</option>
 				</select>
 			</label>
 			<label class="field">
@@ -228,15 +232,16 @@
 				<input type="password" bind:value={profile.password} />
 			</label>
 			<label class="field">
-				<span>{t('dialog.database')}</span>
+				<span>{engine === 'oracle' ? t('dialog.serviceName') : t('dialog.database')}</span>
 				<input bind:value={profile.database} placeholder={databaseHint} />
 			</label>
+			{#if engine !== 'oracle'}
 			<label class="field">
 				<span>{t('dialog.sslCa')}</span>
 				<div class="field-control">
 					<input
 						bind:value={profile.sslCa}
-						placeholder={t('dialog.sslCaPlaceholder')}
+						placeholder={engine === 'mssql' ? t('dialog.sslCaPlaceholderMssql') : t('dialog.sslCaPlaceholder')}
 						spellcheck="false"
 					/>
 					<button
@@ -281,6 +286,7 @@
 						>
 					</div>
 				</label>
+			{/if}
 			{/if}
 			<label class="field">
 				<span>{t('dialog.savePassword')}</span>
