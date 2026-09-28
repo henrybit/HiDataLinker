@@ -10,6 +10,7 @@ export type ParsedConnectionUrl = {
 	sslCa: string;
 	sslCert: string;
 	sslKey: string;
+	sslVerify: boolean;
 };
 
 const URL_SCHEME = /^(postgresql|postgres|pgsql|mysql|mariadb|mssql|sqlserver|oracle):\/\//i;
@@ -63,8 +64,9 @@ export function parseConnectionUrl(input: string): ParsedConnectionUrl | null {
 	]);
 	const sslCert = firstSearchParam(url, ['sslcert', 'ssl_cert', 'ssl-cert']);
 	const sslKey = firstSearchParam(url, ['sslkey', 'ssl_key', 'ssl-key']);
+	const sslVerify = parseSslVerify(url);
 
-	return { engine, host, port, username, password, database, sslCa, sslCert, sslKey };
+	return { engine, host, port, username, password, database, sslCa, sslCert, sslKey, sslVerify };
 }
 
 function firstSearchParam(url: URL, names: string[]): string {
@@ -73,6 +75,29 @@ function firstSearchParam(url: URL, names: string[]): string {
 		if (value?.trim()) return value.trim();
 	}
 	return '';
+}
+
+/** True only when the URL explicitly asks to validate the SQL Server certificate. */
+function parseSslVerify(url: URL): boolean {
+	const verify = firstSearchParam(url, [
+		'sslverify',
+		'ssl-verify',
+		'verifyServerCertificate',
+		'verifyservercertificate'
+	]);
+	if (verify) return truthy(verify);
+	const trust = firstSearchParam(url, [
+		'trustServerCertificate',
+		'trustservercertificate',
+		'TrustServerCertificate'
+	]);
+	if (trust) return !truthy(trust);
+	return false;
+}
+
+function truthy(value: string): boolean {
+	const normalized = value.trim().toLowerCase();
+	return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
 function decodeUrlComponent(value: string): string {

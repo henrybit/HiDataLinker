@@ -95,6 +95,15 @@ export const en = {
 	'dialog.sslKeyPlaceholder': 'optional PEM, e.g. /etc/ssl/client.key',
 	'dialog.browse': 'Browse…',
 	'dialog.savePassword': 'Save password',
+	'dialog.verifyCert': 'Verify server certificate',
+	'dialog.verifyCertOff':
+		'Off by default. A SQL Server certificate that is not in the trust store is still accepted.',
+	'dialog.verifyCertOn':
+		'The server certificate must chain to a trusted root. A CA file below is optional.',
+	'dialog.verifyCertOffOracle':
+		'Off by default. The connection does not require a trusted server certificate.',
+	'dialog.verifyCertOnOracle':
+		'TLS is enabled. The server certificate must chain to a trusted root. A CA file below is optional.',
 	'dialog.cancel': 'Cancel',
 	'dialog.save': 'Save',
 	'dialog.delete': 'Delete',
@@ -112,7 +121,6 @@ export const en = {
 	'dialog.serviceName': 'Service name',
 	'dialog.oracleCreateHint':
 		'A new Oracle schema is a database user. Its password is the schema name plus “#Ora1”, with quota on USERS and privileges to create tables, views, sequences, procedures, and triggers.',
-	'dialog.sslCaPlaceholderMssql': 'optional; any value encrypts and trusts the server certificate',
 	'dialog.invalidUrl': 'Invalid connection URL',
 	'dialog.urlDetected': 'Connection URL detected and applied',
 	'dialog.urlApplied': 'URL applied to connection fields',

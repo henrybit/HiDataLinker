@@ -120,6 +120,7 @@ class WorkspaceStore {
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
+			sslVerify: false,
 			savePassword: true
 		};
 		this.dialogOpen = true;
@@ -141,6 +142,7 @@ class WorkspaceStore {
 			sslCa: item.sslCa ?? '',
 			sslCert: item.sslCert ?? '',
 			sslKey: item.sslKey ?? '',
+			sslVerify: item.sslVerify === true,
 			savePassword: item.savePassword
 		};
 		this.dialogOpen = true;

@@ -16,6 +16,8 @@ export interface ConnectionProfile {
 	sslCa?: string | null;
 	sslCert?: string | null;
 	sslKey?: string | null;
+	/** SQL Server and Oracle. False accepts a server certificate that is not trusted. */
+	sslVerify?: boolean;
 	savePassword: boolean;
 }
 
@@ -31,6 +33,7 @@ export interface ConnectionListItem {
 	sslCa?: string | null;
 	sslCert?: string | null;
 	sslKey?: string | null;
+	sslVerify?: boolean;
 	savePassword: boolean;
 	connected: boolean;
 }
@@ -49,6 +52,7 @@ export interface TestConnectionRequest {
 	sslCa?: string | null;
 	sslCert?: string | null;
 	sslKey?: string | null;
+	sslVerify?: boolean;
 }
 
 export interface DatabaseInfo {

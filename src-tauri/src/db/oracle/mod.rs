@@ -73,6 +73,7 @@ impl OracleEngine {
                 profile.password.as_deref(),
                 profile.database.as_deref(),
                 profile.ssl_ca.as_deref(),
+                profile.ssl_verify,
             )?,
             conn: Arc::new(Mutex::new(None)),
         })
@@ -87,6 +88,7 @@ impl OracleEngine {
                 request.password.as_deref(),
                 request.database.as_deref(),
                 request.ssl_ca.as_deref(),
+                request.ssl_verify,
             )?,
             conn: Arc::new(Mutex::new(None)),
         };
@@ -621,6 +623,7 @@ fn build_config(
     password: Option<&str>,
     database: Option<&str>,
     ssl_ca: Option<&str>,
+    verify_cert: bool,
 ) -> AppResult<Config> {
     let host = host.trim();
     if host.is_empty() {
@@ -646,12 +649,47 @@ fn build_config(
     } else {
         Config::new(host, port, service, username, password)
     };
-    if ssl_ca.map(str::trim).is_some_and(|value| !value.is_empty()) {
-        config
-            .with_tls()
-            .map_err(|error| AppError::msg(format!("failed to enable Oracle TLS: {error}")))
-    } else {
-        Ok(config)
+    apply_oracle_tls(config, verify_cert, ssl_ca)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum OracleTls {
+    /// Ordinary TCP. No server certificate is checked.
+    Plain,
+    /// TCPS, validated against the Mozilla trust anchors bundled with the driver.
+    VerifySystem,
+    /// TCPS, validated against a PEM CA file.
+    VerifyCa(String),
+}
+
+/// Certificate checks apply only when the user asks to verify.
+/// The default leaves verification off, matching SQL Server.
+fn oracle_tls(verify_cert: bool, ca: Option<&str>) -> OracleTls {
+    if !verify_cert {
+        return OracleTls::Plain;
+    }
+    match ca.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(path) => OracleTls::VerifyCa(path.to_string()),
+        None => OracleTls::VerifySystem,
+    }
+}
+
+fn apply_oracle_tls(config: Config, verify_cert: bool, ssl_ca: Option<&str>) -> AppResult<Config> {
+    match oracle_tls(verify_cert, ssl_ca) {
+        OracleTls::Plain => Ok(config),
+        OracleTls::VerifySystem => config.with_tls().map_err(|error| {
+            AppError::msg(format!("failed to enable Oracle TLS: {error}"))
+        }),
+        OracleTls::VerifyCa(path) => {
+            if !std::path::Path::new(&path).is_file() {
+                return Err(AppError::msg(format!("CA certificate not found: {path}")));
+            }
+            let tls = oracle_rs::TlsConfig::new().with_ca_cert(&path);
+            tls.build_client_config().map_err(|error| {
+                AppError::msg(format!("failed to load Oracle CA certificate: {error}"))
+            })?;
+            Ok(config.tls_config(tls))
+        }
     }
 }
 
@@ -954,4 +992,56 @@ fn keyword_at(sql: &str, byte: usize, word: &str) -> bool {
     let after = rest[word.len()..].chars().next();
     let after_ok = after.is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_');
     before_ok && after_ok
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn certificate_verification_is_optional() {
+        assert_eq!(oracle_tls(false, None), OracleTls::Plain);
+        assert_eq!(oracle_tls(false, Some("ca.pem")), OracleTls::Plain);
+        assert_eq!(oracle_tls(false, Some("  ")), OracleTls::Plain);
+        assert_eq!(oracle_tls(true, None), OracleTls::VerifySystem);
+        assert_eq!(oracle_tls(true, Some("  ")), OracleTls::VerifySystem);
+        assert_eq!(
+            oracle_tls(true, Some("ca.pem")),
+            OracleTls::VerifyCa("ca.pem".to_string())
+        );
+    }
+
+    #[test]
+    fn default_connection_does_not_require_a_trusted_certificate() {
+        let config = apply_oracle_tls(
+            Config::new("localhost", 1521, "FREEPDB1", "system", "secret"),
+            false,
+            Some("ca.pem"),
+        )
+        .unwrap();
+        assert!(!config.is_tls_enabled());
+    }
+
+    #[test]
+    fn verification_enables_tls_against_system_roots() {
+        let config = apply_oracle_tls(
+            Config::new("localhost", 1521, "FREEPDB1", "system", "secret"),
+            true,
+            None,
+        )
+        .unwrap();
+        assert!(config.is_tls_enabled());
+        assert!(config.tls_config.unwrap().verify_server);
+    }
+
+    #[test]
+    fn rejects_missing_ca_when_verification_is_on() {
+        let error = apply_oracle_tls(
+            Config::new("localhost", 1521, "FREEPDB1", "system", "secret"),
+            true,
+            Some("/definitely/missing/ca.pem"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("CA certificate not found"));
+    }
 }

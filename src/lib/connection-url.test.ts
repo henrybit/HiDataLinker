@@ -38,7 +38,8 @@ describe('connection url', () => {
 			database: 'shop',
 			sslCa: '',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 		expect(parseConnectionUrl('mariadb://root@127.0.0.1/app')).toEqual({
 			engine: 'mysql',
@@ -49,7 +50,8 @@ describe('connection url', () => {
 			database: 'app',
 			sslCa: '',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 	});
 
@@ -67,7 +69,8 @@ describe('connection url', () => {
 			database: 'account',
 			sslCa: '/etc/ssl/cert.pem',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 		expect(
 			parseConnectionUrl('mysql://root@127.0.0.1:3306/app?sslca=%2Fetc%2Fssl%2Fcert.pem')?.sslCa
@@ -88,7 +91,8 @@ describe('connection url', () => {
 			database: 'postgres',
 			sslCa: '/etc/ssl/root.crt',
 			sslCert: '/etc/ssl/client.crt',
-			sslKey: '/etc/ssl/client.key'
+			sslKey: '/etc/ssl/client.key',
+			sslVerify: false
 		});
 	});
 
@@ -105,7 +109,8 @@ describe('connection url', () => {
 			database: 'postgres',
 			sslCa: '',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 	});
 
@@ -122,7 +127,8 @@ describe('connection url', () => {
 			database: 'my/db',
 			sslCa: '',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 	});
 
@@ -136,7 +142,8 @@ describe('connection url', () => {
 			database: 'postgres',
 			sslCa: '',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 		expect(parseConnectionUrl('mysql://root@127.0.0.1/')).toEqual({
 			engine: 'mysql',
@@ -147,12 +154,35 @@ describe('connection url', () => {
 			database: '',
 			sslCa: '',
 			sslCert: '',
-			sslKey: ''
+			sslKey: '',
+			sslVerify: false
 		});
 	});
 
 	it('returns null for invalid urls', () => {
 		expect(parseConnectionUrl('postgresql://')).toBeNull();
 		expect(parseConnectionUrl('not-a-url')).toBeNull();
+	});
+
+	it('ignores an untrusted SQL Server certificate unless verification is requested', () => {
+		expect(parseConnectionUrl('mssql://sa:secret@db.example.com/master')?.sslVerify).toBe(false);
+		expect(
+			parseConnectionUrl('mssql://sa@db.example.com/master?trustServerCertificate=true')?.sslVerify
+		).toBe(false);
+		expect(
+			parseConnectionUrl('mssql://sa@db.example.com/master?trustServerCertificate=false')?.sslVerify
+		).toBe(true);
+		expect(parseConnectionUrl('mssql://sa@db.example.com/master?sslverify=1')?.sslVerify).toBe(
+			true
+		);
+	});
+
+	it('ignores an untrusted Oracle certificate unless verification is requested', () => {
+		expect(parseConnectionUrl('oracle://system:secret@db.example.com/FREEPDB1')?.sslVerify).toBe(
+			false
+		);
+		expect(
+			parseConnectionUrl('oracle://system@db.example.com/FREEPDB1?sslverify=1')?.sslVerify
+		).toBe(true);
 	});
 });

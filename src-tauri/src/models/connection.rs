@@ -58,6 +58,9 @@ pub struct ConnectionProfile {
     pub ssl_cert: Option<String>,
     #[serde(default)]
     pub ssl_key: Option<String>,
+    /// When true, SQL Server or Oracle validates the server certificate. Missing or false accepts it.
+    #[serde(default)]
+    pub ssl_verify: bool,
     #[serde(default)]
     pub save_password: bool,
 }
@@ -110,6 +113,8 @@ pub struct TestConnectionRequest {
     pub ssl_cert: Option<String>,
     #[serde(default)]
     pub ssl_key: Option<String>,
+    #[serde(default)]
+    pub ssl_verify: bool,
 }
 
 impl TestConnectionRequest {
@@ -153,5 +158,6 @@ mod tests {
         assert!(profile.ssl_ca.is_none());
         assert!(profile.ssl_cert.is_none());
         assert!(profile.ssl_key.is_none());
+        assert!(!profile.ssl_verify);
     }
 }

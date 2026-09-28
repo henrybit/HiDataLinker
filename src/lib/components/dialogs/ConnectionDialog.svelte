@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { workspace } from '$lib/stores/workspace.svelte';
 	import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
-	import { ENGINE_PRESETS, engineLabel, isDefaultConnectionName, normalizeEngine, type EngineKind } from '$lib/engine';
+	import {
+		ENGINE_PRESETS,
+		engineLabel,
+		isDefaultConnectionName,
+		normalizeEngine,
+		type EngineKind
+	} from '$lib/engine';
 	import {
 		connectionUrlPlaceholder,
 		looksLikeConnectionUrl,
@@ -23,6 +29,7 @@
 			sslCa: '',
 			sslCert: '',
 			sslKey: '',
+			sslVerify: false,
 			savePassword: true
 		}
 	);
@@ -32,6 +39,7 @@
 	let testMessage = $state<string | null>(null);
 	let testOk = $state(false);
 	const engine = $derived(normalizeEngine(profile.engine));
+	const certificateChoice = $derived(engine === 'mssql' || engine === 'oracle');
 	const urlPlaceholder = $derived(connectionUrlPlaceholder(engine));
 	const hostPlaceholder = $derived(
 		engine === 'postgres'
@@ -91,6 +99,7 @@
 		profile.sslCa = parsed.sslCa;
 		profile.sslCert = parsed.sslCert;
 		profile.sslKey = parsed.sslKey;
+		profile.sslVerify = parsed.sslVerify;
 		if (isDefaultConnectionName(profile.name)) {
 			profile.name = ENGINE_PRESETS[parsed.engine].name;
 		}
@@ -133,7 +142,8 @@
 				database: profile.database,
 				sslCa: profile.sslCa,
 				sslCert: profile.sslCert,
-				sslKey: profile.sslKey
+				sslKey: profile.sslKey,
+				sslVerify: certificateChoice && profile.sslVerify === true
 			});
 			testOk = true;
 			testMessage = t('dialog.connectionSucceeded');
@@ -155,9 +165,11 @@
 			...profile,
 			port: Number(profile.port) || ENGINE_PRESETS[engine].port,
 			engine,
-			sslCa: engine === 'oracle' ? null : optionalPath(profile.sslCa),
+			sslCa:
+				certificateChoice && !profile.sslVerify ? null : optionalPath(profile.sslCa),
 			sslCert: engine === 'postgres' ? optionalPath(profile.sslCert) : null,
-			sslKey: engine === 'postgres' ? optionalPath(profile.sslKey) : null
+			sslKey: engine === 'postgres' ? optionalPath(profile.sslKey) : null,
+			sslVerify: certificateChoice && profile.sslVerify === true
 		});
 	}
 
@@ -235,58 +247,80 @@
 				<span>{engine === 'oracle' ? t('dialog.serviceName') : t('dialog.database')}</span>
 				<input bind:value={profile.database} placeholder={databaseHint} />
 			</label>
-			{#if engine !== 'oracle'}
-			<label class="field">
-				<span>{t('dialog.sslCa')}</span>
-				<div class="field-control">
-					<input
-						bind:value={profile.sslCa}
-						placeholder={engine === 'mssql' ? t('dialog.sslCaPlaceholderMssql') : t('dialog.sslCaPlaceholder')}
-						spellcheck="false"
-					/>
-					<button
-						class="btn"
-						type="button"
-						onclick={() => void pickSslFile('sslCa', 'dialog.sslCa', ['pem', 'crt', 'cer', 'cert'])}
-						>{t('dialog.browse')}</button
-					>
-				</div>
-			</label>
-			{#if engine === 'postgres'}
+			{#if certificateChoice}
 				<label class="field">
-					<span>{t('dialog.sslCert')}</span>
+					<span>{t('dialog.verifyCert')}</span>
+					<input
+						type="checkbox"
+						checked={profile.sslVerify === true}
+						onchange={(event) => {
+							profile.sslVerify = (event.currentTarget as HTMLInputElement).checked;
+						}}
+					/>
+				</label>
+				<p class="hint">
+					{engine === 'oracle'
+						? profile.sslVerify
+							? t('dialog.verifyCertOnOracle')
+							: t('dialog.verifyCertOffOracle')
+						: profile.sslVerify
+							? t('dialog.verifyCertOn')
+							: t('dialog.verifyCertOff')}
+				</p>
+			{/if}
+			{#if engine === 'mysql' || engine === 'postgres' || (certificateChoice && profile.sslVerify)}
+				<label class="field">
+					<span>{t('dialog.sslCa')}</span>
 					<div class="field-control">
 						<input
-							bind:value={profile.sslCert}
-							placeholder={t('dialog.sslCertPlaceholder')}
+							bind:value={profile.sslCa}
+							placeholder={t('dialog.sslCaPlaceholder')}
 							spellcheck="false"
 						/>
 						<button
 							class="btn"
 							type="button"
 							onclick={() =>
-								void pickSslFile('sslCert', 'dialog.sslCert', ['pem', 'crt', 'cer', 'cert'])}
-							>{t('dialog.browse')}</button
-						>
-					</div>
-				</label>
-				<label class="field">
-					<span>{t('dialog.sslKey')}</span>
-					<div class="field-control">
-						<input
-							bind:value={profile.sslKey}
-							placeholder={t('dialog.sslKeyPlaceholder')}
-							spellcheck="false"
-						/>
-						<button
-							class="btn"
-							type="button"
-							onclick={() => void pickSslFile('sslKey', 'dialog.sslKey', ['pem', 'key'])}
+								void pickSslFile('sslCa', 'dialog.sslCa', ['pem', 'crt', 'cer', 'cert'])}
 							>{t('dialog.browse')}</button
 						>
 					</div>
 				</label>
 			{/if}
+			{#if engine === 'postgres'}
+					<label class="field">
+						<span>{t('dialog.sslCert')}</span>
+						<div class="field-control">
+							<input
+								bind:value={profile.sslCert}
+								placeholder={t('dialog.sslCertPlaceholder')}
+								spellcheck="false"
+							/>
+							<button
+								class="btn"
+								type="button"
+								onclick={() =>
+									void pickSslFile('sslCert', 'dialog.sslCert', ['pem', 'crt', 'cer', 'cert'])}
+								>{t('dialog.browse')}</button
+							>
+						</div>
+					</label>
+					<label class="field">
+						<span>{t('dialog.sslKey')}</span>
+						<div class="field-control">
+							<input
+								bind:value={profile.sslKey}
+								placeholder={t('dialog.sslKeyPlaceholder')}
+								spellcheck="false"
+							/>
+							<button
+								class="btn"
+								type="button"
+								onclick={() => void pickSslFile('sslKey', 'dialog.sslKey', ['pem', 'key'])}
+								>{t('dialog.browse')}</button
+							>
+						</div>
+					</label>
 			{/if}
 			<label class="field">
 				<span>{t('dialog.savePassword')}</span>

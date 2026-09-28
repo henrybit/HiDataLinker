@@ -34,7 +34,8 @@ struct MsParams {
     username: String,
     password: String,
     database: String,
-    encrypt: bool,
+    verify_cert: bool,
+    ca: Option<String>,
 }
 
 #[derive(Clone)]
@@ -86,6 +87,7 @@ impl SqlServerEngine {
             profile.password.as_deref(),
             profile.database.as_deref(),
             profile.ssl_ca.as_deref(),
+            profile.ssl_verify,
         )?;
         Self::new(params)
     }
@@ -98,6 +100,7 @@ impl SqlServerEngine {
             request.password.as_deref(),
             request.database.as_deref(),
             request.ssl_ca.as_deref(),
+            request.ssl_verify,
         )?;
         let mut client = connect_client(&params).await?;
         let stream = client.simple_query("SELECT 1").await?;
@@ -619,6 +622,7 @@ fn params_from(
     password: Option<&str>,
     database: Option<&str>,
     ssl_ca: Option<&str>,
+    verify_cert: bool,
 ) -> AppResult<MsParams> {
     let host = host.trim();
     if host.is_empty() {
@@ -639,8 +643,32 @@ fn params_from(
         username: username.to_string(),
         password: password.unwrap_or("").to_string(),
         database: database.to_string(),
-        encrypt: ssl_ca.map(str::trim).is_some_and(|value| !value.is_empty()),
+        verify_cert,
+        ca: ssl_ca
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MssqlTrust {
+    /// Accept the server certificate even when it is not in the trust store.
+    AcceptInvalid,
+    /// Validate against the operating system trust store.
+    System,
+    /// Validate against the system store plus this CA file.
+    Ca(String),
+}
+
+fn mssql_trust(verify_cert: bool, ca: Option<&str>) -> MssqlTrust {
+    if !verify_cert {
+        return MssqlTrust::AcceptInvalid;
+    }
+    match ca.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(path) => MssqlTrust::Ca(path.to_string()),
+        None => MssqlTrust::System,
+    }
 }
 
 fn build_config(params: &MsParams) -> Config {
@@ -650,11 +678,13 @@ fn build_config(params: &MsParams) -> Config {
     config.database(&params.database);
     config.authentication(AuthMethod::sql_server(&params.username, &params.password));
     config.application_name("HiDataLinker");
-    if params.encrypt {
-        config.trust_cert();
-        config.encryption(EncryptionLevel::Required);
-    } else {
-        config.encryption(EncryptionLevel::Off);
+    // SQL Server often requires TLS during prelogin. EncryptionLevel::Off still
+    // upgrades to TLS, then native-tls rejects untrusted roots.
+    config.encryption(EncryptionLevel::Required);
+    match mssql_trust(params.verify_cert, params.ca.as_deref()) {
+        MssqlTrust::AcceptInvalid => config.trust_cert(),
+        MssqlTrust::System => {}
+        MssqlTrust::Ca(path) => config.trust_cert_ca(path),
     }
     config
 }
@@ -916,4 +946,21 @@ fn database_name(quoted: &str) -> AppResult<&str> {
         .unwrap_or(quoted);
     validate_ident(name)?;
     Ok(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn certificate_verification_is_optional() {
+        assert_eq!(mssql_trust(false, None), MssqlTrust::AcceptInvalid);
+        assert_eq!(mssql_trust(false, Some("ca.pem")), MssqlTrust::AcceptInvalid);
+        assert_eq!(mssql_trust(true, None), MssqlTrust::System);
+        assert_eq!(mssql_trust(true, Some("  ")), MssqlTrust::System);
+        assert_eq!(
+            mssql_trust(true, Some("ca.pem")),
+            MssqlTrust::Ca("ca.pem".to_string())
+        );
+    }
 }

@@ -97,6 +97,12 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.sslKeyPlaceholder': '可选 PEM，例如 /etc/ssl/client.key',
 	'dialog.browse': '浏览…',
 	'dialog.savePassword': '保存密码',
+	'dialog.verifyCert': '强制验证证书',
+	'dialog.verifyCertOff': '默认关闭。不在系统信任链中的 SQL Server 证书也会被接受。',
+	'dialog.verifyCertOn': '服务器证书必须链接到受信任的根证书。下面的 CA 文件可选。',
+	'dialog.verifyCertOffOracle': '默认关闭，不要求服务器证书受信任。',
+	'dialog.verifyCertOnOracle':
+		'启用 TLS。服务器证书必须链接到受信任的根证书。下面的 CA 文件可选。',
 	'dialog.cancel': '取消',
 	'dialog.save': '保存',
 	'dialog.delete': '删除',
@@ -114,7 +120,6 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.serviceName': '服务名',
 	'dialog.oracleCreateHint':
 		'新建的 Oracle 模式是一个数据库用户。密码为模式名加上 “#Ora1”，并授予 USERS 表空间配额以及创建表、视图、序列、过程和触发器的权限。',
-	'dialog.sslCaPlaceholderMssql': '可选；填写任意内容即加密并信任服务器证书',
 	'dialog.invalidUrl': '连接 URL 无效',
 	'dialog.urlDetected': '已检测并应用连接 URL',
 	'dialog.urlApplied': '已将 URL 应用到连接字段',
