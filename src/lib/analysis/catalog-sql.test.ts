@@ -21,6 +21,7 @@ describe('catalogSql', () => {
 		expect(sql.foreignKeys).toContain('sys.foreign_keys');
 		expect(sql.objects).not.toContain('Adventure');
 		expect(sql.columns).toContain('MS_Description');
+		expect(sql.views).toContain('ORDER BY s.name, v.name');
 	});
 
 	it('reads Oracle foreign keys from all_constraints', () => {

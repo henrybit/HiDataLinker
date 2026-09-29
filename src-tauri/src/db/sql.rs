@@ -182,11 +182,57 @@ fn looks_like_top_clause(cur: &mut Cursor<'_>) -> bool {
     ok
 }
 
-fn limit_clause(dialect: SqlDialect, limit: u32) -> String {
+fn limit_clause(sql: &str, dialect: SqlDialect, limit: u32) -> String {
     match dialect {
         SqlDialect::MySql | SqlDialect::Postgres => format!("LIMIT {limit}"),
+        // SQL Server rejects OFFSET/FETCH unless the statement has a top-level ORDER BY.
+        SqlDialect::Mssql if !has_top_level_order_by(sql) => {
+            format!("ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY")
+        }
         SqlDialect::Mssql | SqlDialect::Oracle => {
             format!("OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY")
+        }
+    }
+}
+
+/// True when ORDER BY appears outside parentheses, strings, and comments.
+/// Window `OVER (ORDER BY …)` and subquery sorts do not count.
+fn has_top_level_order_by(sql: &str) -> bool {
+    let mut cur = Cursor::new(sql, SqlDialect::Mssql);
+    loop {
+        cur.skip_ws_and_comments();
+        if cur.eof() || cur.peek() == Some(';') {
+            return false;
+        }
+        match cur.peek() {
+            Some('(') => {
+                if !cur.skip_balanced_paren() {
+                    return false;
+                }
+            }
+            Some('\'') | Some('"') | Some('`') => {
+                if !cur.skip_quoted() {
+                    return false;
+                }
+            }
+            Some('[') => {
+                if !cur.skip_bracket_ident() {
+                    return false;
+                }
+            }
+            Some(ch) if is_ident_start(ch) => {
+                let start = cur.i;
+                cur.skip_ident();
+                if sql[start..cur.i].eq_ignore_ascii_case("ORDER")
+                    && cur.take_keyword("BY").is_some()
+                {
+                    return true;
+                }
+            }
+            Some(_) => {
+                cur.bump();
+            }
+            None => return false,
         }
     }
 }
@@ -205,7 +251,7 @@ fn insert_limit(sql: &str, limit: u32, dialect: SqlDialect) -> String {
     let idx = insertion_index(sql, dialect).unwrap_or(sql.len());
     let prefix = sql[..idx].trim_end();
     let suffix = sql[idx..].trim_start();
-    let clause = limit_clause(dialect, limit);
+    let clause = limit_clause(sql, dialect, limit);
     if suffix.is_empty() {
         format!("{prefix} {clause}")
     } else if suffix.starts_with(';') {
@@ -696,11 +742,37 @@ mod tests {
         assert!(mssql.applied);
         assert_eq!(
             mssql.sql,
-            "SELECT * FROM [dbo].[t] OFFSET 0 ROWS FETCH NEXT 500 ROWS ONLY"
+            "SELECT * FROM [dbo].[t] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 500 ROWS ONLY"
         );
         let oracle = apply_default_query_limit("SELECT * FROM t", SqlDialect::Oracle);
         assert!(oracle.applied);
         assert!(oracle.sql.contains("FETCH NEXT 500 ROWS ONLY"));
+        assert!(!oracle.sql.contains("ORDER BY"));
+    }
+
+    #[test]
+    fn sql_server_offset_keeps_an_existing_order_by() {
+        let ordered =
+            apply_default_query_limit("SELECT * FROM t ORDER BY id DESC", SqlDialect::Mssql);
+        assert_eq!(
+            ordered.sql,
+            "SELECT * FROM t ORDER BY id DESC OFFSET 0 ROWS FETCH NEXT 500 ROWS ONLY"
+        );
+
+        let nested = apply_default_query_limit(
+            "SELECT * FROM (SELECT * FROM u ORDER BY id) x",
+            SqlDialect::Mssql,
+        );
+        assert_eq!(
+            nested.sql,
+            "SELECT * FROM (SELECT * FROM u ORDER BY id) x ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 500 ROWS ONLY"
+        );
+
+        let window = apply_default_query_limit(
+            "SELECT ROW_NUMBER() OVER (ORDER BY id) AS n FROM t",
+            SqlDialect::Mssql,
+        );
+        assert!(window.sql.contains("ORDER BY (SELECT NULL) OFFSET 0 ROWS"));
     }
 
     #[test]

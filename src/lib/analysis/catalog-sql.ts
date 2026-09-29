@@ -188,7 +188,8 @@ SELECT s.name + '.' + v.name AS object_name,
 FROM sys.views v
 JOIN sys.schemas s ON s.schema_id = v.schema_id
 JOIN sys.sql_modules m ON m.object_id = v.object_id
-WHERE ${userSchemas}`.trim()
+WHERE ${userSchemas}
+ORDER BY s.name, v.name`.trim()
 	};
 }
 
