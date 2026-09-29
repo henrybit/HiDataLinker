@@ -15,12 +15,18 @@
 	import RelationshipAnalysis from '$lib/components/analysis/RelationshipAnalysis.svelte';
 	import LlmSettingsDialog from '$lib/components/dialogs/LlmSettingsDialog.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
-	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
+	import { hydrateLocale } from '$lib/i18n/i18n.svelte';
+	import { hydrateLlmCatalogFromDisk, llmSettingsDialog } from '$lib/llm/catalog.svelte';
+	import { isTauriRuntime } from '$lib/api/tauri';
 	import ContextMenu from '$lib/components/layout/ContextMenu.svelte';
 
 	let { children } = $props();
 
 	onMount(() => {
+		if (isTauriRuntime()) {
+			void hydrateLocale();
+			void hydrateLlmCatalogFromDisk();
+		}
 		void workspace.boot();
 		const onKey = (event: KeyboardEvent) => {
 			if (event.key === 'F5') {

@@ -1,4 +1,5 @@
 import { DEFAULT_MODELS, type LlmProvider, type LlmSettings } from '$lib/analysis/llm';
+import { api, isTauriRuntime } from '$lib/api/tauri';
 
 export type LlmProviderKind = LlmProvider;
 
@@ -50,6 +51,26 @@ export function readCatalog(
 	return emptyCatalog();
 }
 
+export function catalogJson(catalog: LlmCatalog): string {
+	return JSON.stringify({
+		providers: catalog.providers,
+		selectedId: catalog.selectedId
+	});
+}
+
+/** Prefer the home-directory file. Browser storage is only a one-time migration source. */
+export function resolveStoredCatalog(
+	fileText: string,
+	browserCurrent: string | null,
+	legacy: string | null
+): { catalog: LlmCatalog; writeFile: boolean } {
+	if (fileText.trim()) {
+		const parsed = parseCatalogJson(fileText);
+		if (parsed) return { catalog: parsed, writeFile: false };
+	}
+	return { catalog: readCatalog(browserCurrent, legacy), writeFile: true };
+}
+
 export function loadLlmCatalog(): LlmCatalog {
 	if (typeof localStorage === 'undefined') return emptyCatalog();
 	const current = localStorage.getItem(STORAGE_KEY);
@@ -59,14 +80,25 @@ export function loadLlmCatalog(): LlmCatalog {
 }
 
 export function saveLlmCatalog(catalog: LlmCatalog) {
+	const json = catalogJson(catalog);
+	if (isTauriRuntime()) {
+		void api.writeLlmCatalog(json).catch((error) => {
+			console.error('[storage] llm catalog', error);
+		});
+		return;
+	}
 	if (typeof localStorage === 'undefined') return;
-	localStorage.setItem(
-		STORAGE_KEY,
-		JSON.stringify({
-			providers: catalog.providers,
-			selectedId: catalog.selectedId
-		})
-	);
+	localStorage.setItem(STORAGE_KEY, json);
+}
+
+export async function hydrateLlmCatalog(): Promise<LlmCatalog> {
+	const fileText = await api.readLlmCatalog();
+	const browserCurrent =
+		typeof localStorage === 'undefined' ? null : localStorage.getItem(STORAGE_KEY);
+	const legacy = typeof localStorage === 'undefined' ? null : localStorage.getItem(LEGACY_KEY);
+	const resolved = resolveStoredCatalog(fileText, browserCurrent, legacy);
+	if (resolved.writeFile) await api.writeLlmCatalog(catalogJson(resolved.catalog));
+	return resolved.catalog;
 }
 
 export function upsertProvider(catalog: LlmCatalog, profile: LlmProviderProfile): LlmCatalog {

@@ -1,5 +1,6 @@
 import type { QueryResult } from '$lib/api/types';
 import { catalogSql } from './catalog-sql';
+import type { AnalysisLogEvent, CatalogQueryName } from './log';
 import {
 	objectId,
 	type AnalysisWarning,
@@ -16,21 +17,57 @@ export interface CatalogQueryRunner {
 export async function loadSchemaCatalog(
 	scopes: SchemaScope[],
 	runQuery: CatalogQueryRunner,
-	onScope?: (scope: SchemaScope) => void
+	onLog?: (event: AnalysisLogEvent) => void
 ): Promise<SchemaCatalog> {
 	const loaded: ScopeDump[] = [];
 	for (const scope of scopes) {
-		onScope?.(scope);
+		const name = `${scope.connectionName}.${scope.schema}`;
+		onLog?.({ type: 'catalog-scope', name });
 		const sql = catalogSql(scope.engine, scope.schema);
+		const timed = (query: CatalogQueryName, statement: string) =>
+			runCatalogQuery(scope, query, statement, runQuery, onLog);
 		loaded.push({
 			scope,
-			objects: await runQuery(scope, sql.objects),
-			columns: await runQuery(scope, sql.columns),
-			foreignKeys: await runQuery(scope, sql.foreignKeys),
-			views: await runQuery(scope, sql.views)
+			objects: await timed('objects', sql.objects),
+			columns: await timed('columns', sql.columns),
+			foreignKeys: await timed('foreignKeys', sql.foreignKeys),
+			views: await timed('views', sql.views)
 		});
 	}
-	return catalogFromDumps(loaded);
+	const catalog = catalogFromDumps(loaded);
+	onLog?.({
+		type: 'catalog-done',
+		objects: catalog.objects.filter((object) => !object.external).length,
+		foreignKeys: catalog.foreignKeys.length
+	});
+	for (const warning of catalog.warnings) {
+		onLog?.({
+			type: 'catalog-warning',
+			code: warning.code,
+			name: `${warning.connectionName}.${warning.schema}`
+		});
+	}
+	return catalog;
+}
+
+async function runCatalogQuery(
+	scope: SchemaScope,
+	query: CatalogQueryName,
+	statement: string,
+	runQuery: CatalogQueryRunner,
+	onLog?: (event: AnalysisLogEvent) => void
+): Promise<QueryResult> {
+	const started = performance.now();
+	const result = await runQuery(scope, statement);
+	onLog?.({
+		type: 'catalog-query',
+		name: `${scope.connectionName}.${scope.schema}`,
+		query,
+		rows: result.rows.length,
+		durationMs: Math.round(performance.now() - started),
+		truncated: result.truncated
+	});
+	return result;
 }
 
 interface ScopeDump {

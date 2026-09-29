@@ -46,22 +46,93 @@ describe('inferRelationships', () => {
 			}
 		} as StructuredCaller;
 
+		const events: string[] = [];
 		const graph = await inferRelationships({
 			catalog,
 			documents: '# billing.md\norders may belong to several accounts',
 			locale: 'en',
 			caller,
-			commentBatchSize: 2
+			commentBatchSize: 2,
+			onLog: (event) => events.push(event.type)
 		});
 
 		expect(calls.filter((call) => call.startsWith('TASK: comments'))).toHaveLength(2);
 		expect(calls.filter((call) => call.startsWith('TASK: relations'))).toHaveLength(1);
+		expect(events).toEqual([
+			'comments-batch',
+			'comments-batch-done',
+			'comments-batch',
+			'comments-batch-done',
+			'relations-start',
+			'relations-done'
+		]);
 		const orders = graph.nodes.find((node) => node.name === 'orders');
 		expect(orders?.columns.every((column) => column.inferredComment)).toBe(true);
 		expect(graph.edges.filter((edge) => edge.origin === 'inferred')).toHaveLength(1);
 		expect(graph.edges.find((edge) => edge.origin === 'inferred')?.cardinality).toBe(
 			'many_to_many'
 		);
+	});
+
+	it('keeps inferring relationships when a comment batch fails', async () => {
+		let commentCalls = 0;
+		const caller = {
+			async complete(_schema: unknown, _system: string, human: string) {
+				if (human.startsWith('TASK: comments')) {
+					commentCalls += 1;
+					if (commentCalls === 1) {
+						throw Object.assign(new Error('schema mismatch'), {
+							status: 422,
+							llmOutput: '{"comments":"bad"}',
+							request_id: 'req_comment'
+						});
+					}
+					return { comments: [] };
+				}
+				return {
+					relations: [
+						{
+							fromId: 'o2',
+							toId: 'o1',
+							fromColumns: ['user_id'],
+							toColumns: ['id'],
+							strength: 'strong' as const,
+							cardinality: 'many_to_one' as const,
+							reason: 'user_id points at users.id',
+							confidence: 'high' as const
+						}
+					]
+				};
+			}
+		} as StructuredCaller;
+
+		const events: Array<{ type: string; detail?: string }> = [];
+		const graph = await inferRelationships({
+			catalog: sampleCatalog(),
+			documents: '',
+			locale: 'zh',
+			caller,
+			commentBatchSize: 2,
+			onLog: (event) =>
+				events.push({
+					type: event.type,
+					detail: event.type === 'comments-batch-failed' ? event.detail : undefined
+				})
+		});
+
+		expect(events.map((event) => event.type)).toEqual([
+			'comments-batch',
+			'comments-batch-failed',
+			'comments-batch',
+			'comments-batch-done',
+			'relations-start',
+			'relations-done'
+		]);
+		expect(events[1]?.detail).toContain('schema mismatch');
+		expect(events[1]?.detail).toContain('HTTP 422');
+		expect(events[1]?.detail).toContain('request-id req_comment');
+		expect(events[1]?.detail).toContain('output: {"comments":"bad"}');
+		expect(graph.edges.filter((edge) => edge.origin === 'inferred')).toHaveLength(1);
 	});
 });
 

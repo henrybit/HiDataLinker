@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
+	AnalysisHistoryRecord,
+	AnalysisHistorySummary,
+	NewAnalysisHistory
+} from '$lib/analysis/history';
+import type {
 	CharsetCatalog,
 	ColumnInfo,
 	ConnectResult,
@@ -133,7 +138,34 @@ export const api = {
 		call<number>('table_row_count', { connectionId, schema, table }),
 
 	executeSql: (connectionId: string, sql: string, schema?: string | null) =>
-		call<QueryResult>('execute_sql', { connectionId, schema: schema ?? null, sql })
+		call<QueryResult>('execute_sql', { connectionId, schema: schema ?? null, sql }),
+
+	readLlmCatalog: () => call<string>('read_llm_catalog'),
+
+	writeLlmCatalog: (contents: string) => call<void>('write_llm_catalog', { contents }),
+
+	readLocale: () => call<string>('read_locale'),
+
+	writeLocale: (locale: 'en' | 'zh') => call<void>('write_locale', { locale }),
+
+	listAnalysisHistory: () => call<AnalysisHistorySummary[]>('list_analysis_history'),
+
+	readAnalysisHistory: (id: string) => call<AnalysisHistoryRecord>('read_analysis_history', { id }),
+
+	saveAnalysisHistory: (request: NewAnalysisHistory) =>
+		call<AnalysisHistorySummary>('save_analysis_history', { request }),
+
+	deleteAnalysisHistory: (id: string) => call<void>('delete_analysis_history', { id }),
+
+	completeLlm: (request: {
+		provider: 'openai' | 'anthropic';
+		apiKey: string;
+		model: string;
+		baseUrl: string;
+		system: string;
+		human: string;
+		schema: Record<string, unknown>;
+	}) => call<unknown>('complete_llm', { request })
 };
 
 export function errorMessage(error: unknown): string {

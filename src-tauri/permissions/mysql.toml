@@ -1,7 +1,16 @@
 [[permission]]
 identifier = "mysql"
-description = "Allows the frontend to manage MySQL and PostgreSQL connections, inspect schema objects, and run SQL"
+description = "Allows the frontend to manage database connections, inspect schema objects, run SQL, and call the analysis model"
 commands.allow = [
+  "complete_llm",
+  "list_analysis_history",
+  "read_analysis_history",
+  "read_llm_catalog",
+  "write_llm_catalog",
+  "read_locale",
+  "write_locale",
+  "save_analysis_history",
+  "delete_analysis_history",
   "list_connections",
   "upsert_connection",
   "delete_connection",
@@ -12,6 +21,11 @@ commands.allow = [
   "create_database",
   "drop_database",
   "dump_database",
+  "dump_table",
+  "write_text_file",
+  "write_query_cache",
+  "read_query_cache",
+  "delete_query_cache",
   "migrate_database",
   "list_charset_catalog",
   "list_tables",

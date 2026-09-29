@@ -1,4 +1,5 @@
 import {
+	hydrateLlmCatalog,
 	loadLlmCatalog,
 	saveLlmCatalog,
 	type LlmCatalog,
@@ -13,6 +14,12 @@ export const llmCatalog = $state<LlmCatalog>({
 });
 
 export const llmSettingsDialog = $state({ open: false });
+
+export async function hydrateLlmCatalogFromDisk() {
+	const next = await hydrateLlmCatalog();
+	llmCatalog.providers = next.providers;
+	llmCatalog.selectedId = next.selectedId;
+}
 
 export function replaceLlmCatalog(next: LlmCatalog) {
 	llmCatalog.providers = next.providers;

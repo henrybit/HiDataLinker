@@ -1,6 +1,7 @@
 use crate::db::{DatabaseEngine, LiveEngine};
 use crate::error::{AppError, AppResult};
 use crate::models::{ConnectResult, ConnectionProfile};
+use crate::paths::{migrate_analysis, migrate_file, AppPaths};
 use crate::runtime::{run_blocking, run_db};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ struct StoredProfiles {
 pub struct AppState {
     data_file: PathBuf,
     query_cache_dir: PathBuf,
+    analysis_history_dir: PathBuf,
+    llm_catalog_path: PathBuf,
+    locale_path: PathBuf,
     profiles: RwLock<Vec<ConnectionProfile>>,
     sessions: DashMap<String, LiveEngine>,
     session_order: Mutex<Vec<String>>,
@@ -25,11 +29,18 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn load(data_dir: PathBuf) -> AppResult<Self> {
-        std::fs::create_dir_all(&data_dir)?;
-        let data_file = data_dir.join("connections.json");
-        let query_cache_dir = data_dir.join("query-cache");
+    pub fn load(paths: AppPaths, legacy_dir: Option<PathBuf>) -> AppResult<Self> {
+        paths.ensure()?;
+        if let Some(legacy) = legacy_dir.as_deref() {
+            migrate_file(&legacy.join("connections.json"), &paths.connections)?;
+            migrate_analysis(&legacy.join("analysis-history"), &paths.analysis)?;
+        }
+        let data_file = paths.connections;
+        let query_cache_dir = paths.queries;
         reset_query_cache_dir(&query_cache_dir)?;
+        let analysis_history_dir = paths.analysis;
+        let llm_catalog_path = paths.llm;
+        let locale_path = paths.locale;
         let profiles = if data_file.exists() {
             let raw = std::fs::read_to_string(&data_file)?;
             serde_json::from_str::<StoredProfiles>(&raw)?.connections
@@ -40,6 +51,9 @@ impl AppState {
         Ok(Self {
             data_file,
             query_cache_dir,
+            analysis_history_dir,
+            llm_catalog_path,
+            locale_path,
             profiles: RwLock::new(profiles),
             sessions: DashMap::new(),
             session_order: Mutex::new(Vec::new()),
@@ -189,6 +203,18 @@ impl AppState {
 
     pub fn query_cache_dir(&self) -> &PathBuf {
         &self.query_cache_dir
+    }
+
+    pub fn analysis_history_dir(&self) -> &PathBuf {
+        &self.analysis_history_dir
+    }
+
+    pub fn llm_catalog_path(&self) -> &PathBuf {
+        &self.llm_catalog_path
+    }
+
+    pub fn locale_path(&self) -> &PathBuf {
+        &self.locale_path
     }
 
     async fn persist(&self) -> AppResult<()> {

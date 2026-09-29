@@ -955,7 +955,10 @@ mod tests {
     #[test]
     fn certificate_verification_is_optional() {
         assert_eq!(mssql_trust(false, None), MssqlTrust::AcceptInvalid);
-        assert_eq!(mssql_trust(false, Some("ca.pem")), MssqlTrust::AcceptInvalid);
+        assert_eq!(
+            mssql_trust(false, Some("ca.pem")),
+            MssqlTrust::AcceptInvalid
+        );
         assert_eq!(mssql_trust(true, None), MssqlTrust::System);
         assert_eq!(mssql_trust(true, Some("  ")), MssqlTrust::System);
         assert_eq!(

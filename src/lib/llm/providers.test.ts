@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	emptyCatalog,
 	loadLlmCatalog,
+	resolveStoredCatalog,
 	readCatalog,
 	removeProvider,
 	saveLlmCatalog,
@@ -141,6 +142,28 @@ describe('upsertProvider and removeProvider', () => {
 			selectedId: 'an'
 		});
 		expect(removeProvider({ providers: [second], selectedId: 'an' }, 'an')).toEqual(emptyCatalog());
+	});
+});
+
+describe('resolveStoredCatalog', () => {
+	it('keeps the file copy and ignores browser storage', () => {
+		const resolved = resolveStoredCatalog(
+			JSON.stringify({ providers: [openai], selectedId: 'oa' }),
+			JSON.stringify({ providers: [{ ...openai, id: 'other' }], selectedId: 'other' }),
+			null
+		);
+		expect(resolved.writeFile).toBe(false);
+		expect(resolved.catalog.selectedId).toBe('oa');
+	});
+
+	it('migrates browser storage when the file is missing', () => {
+		const resolved = resolveStoredCatalog(
+			'',
+			null,
+			JSON.stringify({ provider: 'openai', apiKey: 'sk-live', model: 'gpt-4o-mini', baseUrl: '' })
+		);
+		expect(resolved.writeFile).toBe(true);
+		expect(resolved.catalog.providers[0]?.apiKey).toBe('sk-live');
 	});
 });
 

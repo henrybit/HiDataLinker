@@ -679,9 +679,9 @@ fn oracle_tls(verify_cert: bool, ca: Option<&str>) -> OracleTls {
 fn apply_oracle_tls(config: Config, verify_cert: bool, ssl_ca: Option<&str>) -> AppResult<Config> {
     match oracle_tls(verify_cert, ssl_ca) {
         OracleTls::Plain => Ok(config),
-        OracleTls::VerifySystem => config.with_tls().map_err(|error| {
-            AppError::msg(format!("failed to enable Oracle TLS: {error}"))
-        }),
+        OracleTls::VerifySystem => config
+            .with_tls()
+            .map_err(|error| AppError::msg(format!("failed to enable Oracle TLS: {error}"))),
         OracleTls::VerifyCa(path) => {
             if !std::path::Path::new(&path).is_file() {
                 return Err(AppError::msg(format!("CA certificate not found: {path}")));
@@ -1144,7 +1144,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(service.service.service_name(), Some("FREEPDB1"));
-        assert!(service.build_connect_string().contains("(SERVICE_NAME=FREEPDB1)"));
+        assert!(service
+            .build_connect_string()
+            .contains("(SERVICE_NAME=FREEPDB1)"));
 
         let sid = build_config(
             "localhost",

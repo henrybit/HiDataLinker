@@ -1,6 +1,7 @@
+import { api, isTauriRuntime } from '$lib/api/tauri';
 import { en, type MessageKey } from './en';
 import { zh } from './zh';
-	import { isSchemaScoped } from '$lib/engine';
+import { isSchemaScoped } from '$lib/engine';
 import type { FolderKind } from '$lib/api/types';
 
 export type { MessageKey };
@@ -30,12 +31,27 @@ export function localeTag(): string {
 export function setLocale(next: Locale) {
 	if (locale === next) return;
 	locale = next;
-	try {
-		localStorage.setItem(STORAGE_KEY, next);
-	} catch {
-		/* ignore quota / private mode */
+	if (isTauriRuntime()) {
+		void api.writeLocale(next).catch((error) => {
+			console.error('[storage] locale', error);
+		});
+	} else {
+		try {
+			localStorage.setItem(STORAGE_KEY, next);
+		} catch {
+			/* ignore quota / private mode */
+		}
 	}
 	applyDocumentLang(next);
+}
+
+export async function hydrateLocale() {
+	const stored = (await api.readLocale()).trim();
+	if (stored === 'en' || stored === 'zh') {
+		setLocale(stored);
+		return;
+	}
+	await api.writeLocale(getLocale());
 }
 
 function applyDocumentLang(next: Locale) {

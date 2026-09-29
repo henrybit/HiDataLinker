@@ -1,5 +1,6 @@
 import { loadSchemaCatalog, type CatalogQueryRunner } from './collect';
 import { combineDocuments } from './documents';
+import type { AnalysisLogEvent } from './log';
 import { inferRelationships, type StructuredCaller } from './workflow';
 import type { AnalysisLocale, RelationshipGraph, SchemaScope } from './types';
 
@@ -9,19 +10,14 @@ export async function runRelationshipAnalysis(input: {
 	locale: AnalysisLocale;
 	caller: StructuredCaller;
 	runQuery: CatalogQueryRunner;
-	onProgress?: (event: {
-		phase: 'catalog' | 'comments' | 'relations';
-		scope?: SchemaScope;
-	}) => void;
+	onLog?: (event: AnalysisLogEvent) => void;
 }): Promise<RelationshipGraph> {
-	const catalog = await loadSchemaCatalog(input.scopes, input.runQuery, (scope) => {
-		input.onProgress?.({ phase: 'catalog', scope });
-	});
+	const catalog = await loadSchemaCatalog(input.scopes, input.runQuery, input.onLog);
 	return inferRelationships({
 		catalog,
 		documents: combineDocuments(input.documents),
 		locale: input.locale,
 		caller: input.caller,
-		onProgress: (phase) => input.onProgress?.({ phase })
+		onLog: input.onLog
 	});
 }

@@ -38,6 +38,7 @@ tiberius = { version = "0.12", features = ["chrono", "rust_decimal", "native-tls
 chrono = "0.4"
 rust_decimal = "1"
 oracle-rs = { path = "vendor/oracle-rs" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

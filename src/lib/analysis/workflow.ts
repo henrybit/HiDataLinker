@@ -13,6 +13,7 @@ import {
 	type CommentResponse,
 	type RelationResponse
 } from './prompts';
+import { formatAnalysisError, type AnalysisLogEvent } from './log';
 import type {
 	AnalysisLocale,
 	InferredComment,
@@ -50,40 +51,85 @@ export async function inferRelationships(input: {
 	locale: AnalysisLocale;
 	caller: StructuredCaller;
 	commentBatchSize?: number;
-	onProgress?: (phase: 'comments' | 'relations') => void;
+	onLog?: (event: AnalysisLogEvent) => void;
 }): Promise<RelationshipGraph> {
 	const batchSize = Math.max(1, input.commentBatchSize ?? DEFAULT_COMMENT_BATCH);
 	const aliases = objectAliases(input.catalog.objects);
 	const pending = missingCommentItems(input.catalog, aliases);
+	const realObjects = input.catalog.objects.filter((object) => !object.external);
+	if (realObjects.length === 0) input.onLog?.({ type: 'inference-skip' });
+	else if (pending.length === 0) input.onLog?.({ type: 'comments-skip' });
 
 	const inferComments = async (state: AnalysisState) => {
-		input.onProgress?.('comments');
 		const batch = pending.slice(state.commentCursor, state.commentCursor + batchSize);
 		if (batch.length === 0) {
 			return { commentCursor: state.commentCursor + batchSize };
 		}
-		const response = await input.caller.complete(
-			commentResponseSchema,
-			commentSystemPrompt(state.locale),
-			commentUserPrompt(batch, state.documents)
-		);
-		return {
-			comments: mapComments(response, batch),
-			commentCursor: state.commentCursor + batchSize
-		};
+		const current = Math.floor(state.commentCursor / batchSize) + 1;
+		const total = Math.max(1, Math.ceil(pending.length / batchSize));
+		const human = commentUserPrompt(batch, state.documents);
+		input.onLog?.({ type: 'comments-batch', current, total, count: batch.length });
+		const started = performance.now();
+		try {
+			const response = await input.caller.complete(
+				commentResponseSchema,
+				commentSystemPrompt(state.locale),
+				human
+			);
+			const comments = mapComments(response, batch);
+			input.onLog?.({
+				type: 'comments-batch-done',
+				current,
+				total,
+				accepted: comments.length,
+				durationMs: Math.round(performance.now() - started)
+			});
+			return {
+				comments,
+				commentCursor: state.commentCursor + batchSize
+			};
+		} catch (caught) {
+			console.error('[analysis] comment batch failed', caught);
+			input.onLog?.({
+				type: 'comments-batch-failed',
+				current,
+				total,
+				count: batch.length,
+				durationMs: Math.round(performance.now() - started),
+				ids: batch.slice(0, 8).map((item) => item.id),
+				promptChars: human.length,
+				detail: formatAnalysisError(caught)
+			});
+			return {
+				comments: [],
+				commentCursor: state.commentCursor + batchSize
+			};
+		}
 	};
 
 	const inferRelations = async (state: AnalysisState) => {
-		input.onProgress?.('relations');
 		const commented = assembleGraph(state.catalog, state.comments, []).nodes;
 		const catalog = { ...state.catalog, objects: commented };
 		const known = assembleGraph(catalog, [], []).edges;
+		input.onLog?.({
+			type: 'relations-start',
+			objects: commented.filter((object) => !object.external).length,
+			known: known.length
+		});
+		const started = performance.now();
 		const response = await input.caller.complete(
 			relationResponseSchema,
 			relationSystemPrompt(state.locale),
 			relationUserPrompt(catalog, aliases, known, state.documents)
 		);
-		return { relations: mapRelations(response, aliases) };
+		const relations = mapRelations(response, aliases);
+		input.onLog?.({
+			type: 'relations-done',
+			returned: response.relations.length,
+			kept: relations.length,
+			durationMs: Math.round(performance.now() - started)
+		});
+		return { relations };
 	};
 
 	const routeStart = (state: AnalysisState) => {

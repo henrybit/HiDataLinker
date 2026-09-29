@@ -26,8 +26,8 @@ pub fn handle() -> Handle {
     runtime().handle().clone()
 }
 
-/// Run MySQL work on the dedicated multi-thread pool so Tauri's UI/IPC loop stays free.
-pub async fn run_db<F, T>(fut: F) -> AppResult<T>
+/// Run async work on the dedicated multi-thread pool so Tauri's UI/IPC loop stays free.
+pub async fn run_worker<F, T>(fut: F) -> AppResult<T>
 where
     F: Future<Output = AppResult<T>> + Send + 'static,
     T: Send + 'static,
@@ -37,7 +37,16 @@ where
         let _ = tx.send(fut.await);
     });
     rx.await
-        .map_err(|error| AppError::msg(format!("database worker cancelled: {error}")))?
+        .map_err(|error| AppError::msg(format!("worker cancelled: {error}")))?
+}
+
+/// Database calls share the same worker pool as other async I/O.
+pub async fn run_db<F, T>(fut: F) -> AppResult<T>
+where
+    F: Future<Output = AppResult<T>> + Send + 'static,
+    T: Send + 'static,
+{
+    run_worker(fut).await
 }
 
 pub async fn run_blocking<T, F>(work: F) -> AppResult<T>
