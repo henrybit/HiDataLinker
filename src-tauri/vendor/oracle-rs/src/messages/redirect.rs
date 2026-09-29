@@ -53,9 +53,7 @@ impl RedirectMessage {
         let data_length = buf.read_u16_be()? as usize;
 
         if data_length == 0 || !buf.has_remaining(data_length) {
-            return Err(Error::Internal(
-                "invalid redirect data length".to_string(),
-            ));
+            return Err(Error::Internal("invalid redirect data length".to_string()));
         }
 
         // Read the redirect data
@@ -207,9 +205,8 @@ mod tests {
 
     #[test]
     fn test_extract_host_port() {
-        let (host, port) = RedirectMessage::extract_host_port(
-            "(ADDRESS=(PROTOCOL=TCP)(HOST=myhost)(PORT=1523))",
-        );
+        let (host, port) =
+            RedirectMessage::extract_host_port("(ADDRESS=(PROTOCOL=TCP)(HOST=myhost)(PORT=1523))");
         assert_eq!(host.as_deref(), Some("myhost"));
         assert_eq!(port, Some(1523));
 
@@ -234,7 +231,10 @@ mod tests {
             host: Some("host.example.com".to_string()),
             port: Some(1522),
         };
-        assert_eq!(redirect.socket_addr().as_deref(), Some("host.example.com:1522"));
+        assert_eq!(
+            redirect.socket_addr().as_deref(),
+            Some("host.example.com:1522")
+        );
 
         let redirect = RedirectMessage {
             address: String::new(),
@@ -242,7 +242,10 @@ mod tests {
             host: Some("host.example.com".to_string()),
             port: None,
         };
-        assert_eq!(redirect.socket_addr().as_deref(), Some("host.example.com:1521"));
+        assert_eq!(
+            redirect.socket_addr().as_deref(),
+            Some("host.example.com:1521")
+        );
 
         let redirect = RedirectMessage {
             address: String::new(),

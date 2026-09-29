@@ -4,8 +4,7 @@
 //! that are negotiated between client and server during connection establishment.
 
 use crate::constants::{
-    accept_flags, ccap_index, ccap_value, charset, rcap_index, rcap_value, service_options,
-    version,
+    accept_flags, ccap_index, ccap_value, charset, rcap_index, rcap_value, service_options, version,
 };
 
 /// Driver name sent during protocol negotiation

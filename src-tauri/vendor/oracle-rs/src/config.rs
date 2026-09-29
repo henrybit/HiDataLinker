@@ -263,8 +263,8 @@ impl Config {
         wallet_path: impl Into<String>,
         wallet_password: Option<&str>,
     ) -> Result<Self> {
-        let tls_config = TlsConfig::new()
-            .with_wallet(wallet_path, wallet_password.map(|s| s.to_string()));
+        let tls_config =
+            TlsConfig::new().with_wallet(wallet_path, wallet_password.map(|s| s.to_string()));
         // Validate that TLS config can be built
         tls_config.build_client_config()?;
         self.tls_config = Some(tls_config);
@@ -453,9 +453,9 @@ impl FromStr for Config {
             // Parse host:port
             if let Some(colon_pos) = host_port.find(':') {
                 config.host = host_port[..colon_pos].to_string();
-                config.port = host_port[colon_pos + 1..]
-                    .parse()
-                    .map_err(|_| Error::InvalidConnectionString("invalid port number".to_string()))?;
+                config.port = host_port[colon_pos + 1..].parse().map_err(|_| {
+                    Error::InvalidConnectionString("invalid port number".to_string())
+                })?;
             } else {
                 config.host = host_port.to_string();
                 config.port = DEFAULT_PORT;
@@ -472,16 +472,16 @@ impl FromStr for Config {
                 2 => {
                     // host:port
                     config.host = parts[0].to_string();
-                    config.port = parts[1]
-                        .parse()
-                        .map_err(|_| Error::InvalidConnectionString("invalid port number".to_string()))?;
+                    config.port = parts[1].parse().map_err(|_| {
+                        Error::InvalidConnectionString("invalid port number".to_string())
+                    })?;
                 }
                 3 => {
                     // host:port:sid
                     config.host = parts[0].to_string();
-                    config.port = parts[1]
-                        .parse()
-                        .map_err(|_| Error::InvalidConnectionString("invalid port number".to_string()))?;
+                    config.port = parts[1].parse().map_err(|_| {
+                        Error::InvalidConnectionString("invalid port number".to_string())
+                    })?;
                     config.service = ServiceMethod::Sid(parts[2].to_string());
                 }
                 _ => {
@@ -493,9 +493,7 @@ impl FromStr for Config {
         }
 
         if config.host.is_empty() {
-            return Err(Error::InvalidConnectionString(
-                "missing host".to_string(),
-            ));
+            return Err(Error::InvalidConnectionString("missing host".to_string()));
         }
 
         Ok(config)

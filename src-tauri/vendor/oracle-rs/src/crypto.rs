@@ -442,10 +442,12 @@ mod tests {
         let password_key = generate_12c_password_key(password, &verifier_data, iterations);
         let expected_key = hex::decode(
             "12d8f06f9723d37947d1091a42adb4ad76dbac6e61d5decd8ed75df2380e81c1\
-             e6af08c27ea59957d9fd15a781916f597e74dc08a23bc6bbf4d3f7526c016b4d"
-        ).unwrap();
+             e6af08c27ea59957d9fd15a781916f597e74dc08a23bc6bbf4d3f7526c016b4d",
+        )
+        .unwrap();
         assert_eq!(
-            password_key, expected_key,
+            password_key,
+            expected_key,
             "Password key mismatch!\nGot: {}\nExpected: {}",
             hex::encode(&password_key),
             hex::encode(&expected_key)
@@ -453,9 +455,12 @@ mod tests {
 
         // Test password hash (SHA512(password_key || verifier_data)[:32])
         let password_hash = generate_12c_password_hash(password, &verifier_data, iterations);
-        let expected_hash = hex::decode("37eb93ac57f243a39a460ec61e898cba2fda3986cc76191778fdecdfac5ba7e3").unwrap();
+        let expected_hash =
+            hex::decode("37eb93ac57f243a39a460ec61e898cba2fda3986cc76191778fdecdfac5ba7e3")
+                .unwrap();
         assert_eq!(
-            password_hash, expected_hash,
+            password_hash,
+            expected_hash,
             "Password hash mismatch!\nGot: {}\nExpected: {}",
             hex::encode(&password_hash),
             hex::encode(&expected_hash)
@@ -468,9 +473,9 @@ mod tests {
         let password = b"testpass";
         let verifier_data = hex::decode("274824CFDDD22AF0B06FD1C86B3D4814").unwrap();
         let iterations = 4096u32;
-        let server_sesskey_encrypted = hex::decode(
-            "0C2E56F553EE1AFD5D2D7BCF925518400C8751FD000000000000000000000000"
-        ).unwrap();
+        let server_sesskey_encrypted =
+            hex::decode("0C2E56F553EE1AFD5D2D7BCF925518400C8751FD000000000000000000000000")
+                .unwrap();
         let csk_salt = hex::decode("F82C7BE30741A8C60699AFB6A9F3FE59").unwrap();
         let sder_count = 3u32;
 
@@ -485,7 +490,8 @@ mod tests {
         );
 
         // Decrypt server's session key
-        let session_key_part_a = decrypt_cbc_256(&password_hash, &server_sesskey_encrypted).unwrap();
+        let session_key_part_a =
+            decrypt_cbc_256(&password_hash, &server_sesskey_encrypted).unwrap();
         // Python: f7f30a3a89d0923291d81d61866d52f7ef7a249eac630365836910c2862d10ef
         assert_eq!(
             hex::encode(&session_key_part_a),
@@ -494,17 +500,17 @@ mod tests {
         );
 
         // Use fixed client session key
-        let session_key_part_b = hex::decode(
-            "0102030405060708091011121314151601020304050607080910111213141516"
-        ).unwrap();
+        let session_key_part_b =
+            hex::decode("0102030405060708091011121314151601020304050607080910111213141516")
+                .unwrap();
 
         // Encrypt client's session key
-        let client_sesskey_enc = encrypt_cbc_256_pkcs7(&password_hash, &session_key_part_b).unwrap();
+        let client_sesskey_enc =
+            encrypt_cbc_256_pkcs7(&password_hash, &session_key_part_b).unwrap();
         let client_sesskey = hex::encode_upper(&client_sesskey_enc[..32]);
         // Python: 67618D423B2F94D65521F7D7EC4EC178AD99C03AEEA4BF55CBBC544E80A34E35
         assert_eq!(
-            client_sesskey,
-            "67618D423B2F94D65521F7D7EC4EC178AD99C03AEEA4BF55CBBC544E80A34E35",
+            client_sesskey, "67618D423B2F94D65521F7D7EC4EC178AD99C03AEEA4BF55CBBC544E80A34E35",
             "Client session key encryption mismatch"
         );
 

@@ -9,8 +9,10 @@
 //! - INT8: 8-bit signed integers
 //! - BINARY: 8-bit unsigned integers (packed bits)
 
+use super::binary::{
+    decode_binary_double, decode_binary_float, encode_binary_double, encode_binary_float,
+};
 use crate::error::{Error, Result};
-use super::binary::{decode_binary_float, encode_binary_float, decode_binary_double, encode_binary_double};
 
 // Vector format constants
 const VECTOR_MAGIC_BYTE: u8 = 0xDB;
@@ -52,7 +54,10 @@ impl VectorFormat {
             VECTOR_FORMAT_FLOAT64 => Ok(VectorFormat::Float64),
             VECTOR_FORMAT_INT8 => Ok(VectorFormat::Int8),
             VECTOR_FORMAT_BINARY => Ok(VectorFormat::Binary),
-            _ => Err(Error::Protocol(format!("Unsupported vector format: {}", value))),
+            _ => Err(Error::Protocol(format!(
+                "Unsupported vector format: {}",
+                value
+            ))),
         }
     }
 
@@ -236,7 +241,9 @@ pub fn decode_vector(data: &[u8]) -> Result<OracleVector> {
         let mut indices = Vec::with_capacity(num_sparse);
         for _ in 0..num_sparse {
             if data.len() < pos + 4 {
-                return Err(Error::Protocol("Sparse vector indices truncated".to_string()));
+                return Err(Error::Protocol(
+                    "Sparse vector indices truncated".to_string(),
+                ));
             }
             let idx = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
             indices.push(idx);
@@ -258,7 +265,11 @@ pub fn decode_vector(data: &[u8]) -> Result<OracleVector> {
     }
 }
 
-fn decode_vector_values(data: &[u8], num_elements: usize, format: VectorFormat) -> Result<VectorData> {
+fn decode_vector_values(
+    data: &[u8],
+    num_elements: usize,
+    format: VectorFormat,
+) -> Result<VectorData> {
     match format {
         VectorFormat::Float32 => {
             let mut values = Vec::with_capacity(num_elements);
@@ -319,9 +330,7 @@ pub fn encode_vector(vector: &OracleVector) -> Vec<u8> {
             };
             (data.format(), num, false)
         }
-        OracleVector::Sparse(sparse) => {
-            (sparse.values.format(), sparse.num_dimensions, true)
-        }
+        OracleVector::Sparse(sparse) => (sparse.values.format(), sparse.num_dimensions, true),
     };
 
     // Determine version
@@ -462,7 +471,7 @@ mod tests {
     #[test]
     fn test_encode_decode_sparse() {
         let original = OracleVector::sparse(
-            100, // 100 dimensions
+            100,                 // 100 dimensions
             vec![0, 10, 50, 99], // non-zero at these indices
             VectorData::Float32(vec![1.0, 2.0, 3.0, 4.0]),
         );

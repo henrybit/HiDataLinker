@@ -332,13 +332,13 @@ mod tests {
     fn test_decode_date() {
         // 2024-03-15 14:30:45
         let data = vec![
-            120,  // century: 20 + 100 = 120
-            124,  // year: 24 + 100 = 124
-            3,    // month: 3
-            15,   // day: 15
-            15,   // hour: 14 + 1 = 15
-            31,   // minute: 30 + 1 = 31
-            46,   // second: 45 + 1 = 46
+            120, // century: 20 + 100 = 120
+            124, // year: 24 + 100 = 124
+            3,   // month: 3
+            15,  // day: 15
+            15,  // hour: 14 + 1 = 15
+            31,  // minute: 30 + 1 = 31
+            46,  // second: 45 + 1 = 46
         ];
 
         let date = decode_oracle_date(&data).unwrap();
@@ -426,13 +426,9 @@ mod tests {
     fn test_negative_year() {
         // Year -100 (100 BC)
         let data = vec![
-            99,   // century: -1 + 100 = 99
-            100,  // year: 0 + 100 = 100
-            1,
-            1,
-            1,
-            1,
-            1,
+            99,  // century: -1 + 100 = 99
+            100, // year: 0 + 100 = 100
+            1, 1, 1, 1, 1,
         ];
 
         let date = decode_oracle_date(&data).unwrap();

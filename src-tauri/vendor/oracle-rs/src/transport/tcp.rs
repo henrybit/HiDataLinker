@@ -84,9 +84,7 @@ impl TcpTransport {
 
     /// Get mutable access to the underlying stream
     fn stream_mut(&mut self) -> Result<&mut TcpStream> {
-        self.stream
-            .as_mut()
-            .ok_or(Error::ConnectionClosed)
+        self.stream.as_mut().ok_or(Error::ConnectionClosed)
     }
 
     /// Read exactly n bytes from the stream

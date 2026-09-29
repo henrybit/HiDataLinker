@@ -6,7 +6,7 @@ mod tcp;
 pub mod tls;
 
 pub use tcp::TcpTransport;
-pub use tls::{Protocol, TlsConfig, TlsOracleStream, connect_tls};
+pub use tls::{connect_tls, Protocol, TlsConfig, TlsOracleStream};
 
 use bytes::Bytes;
 

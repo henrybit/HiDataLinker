@@ -504,13 +504,19 @@ mod tests {
         // Exponent byte: ~(0x80 + 2 + 65) = ~0xC3 = 0x3C (but actual calc differs)
 
         // Last byte MUST be 0x66 (102) for negative numbers
-        assert_eq!(*encoded.last().unwrap(), 0x66,
-            "Negative numbers must end with terminator byte 0x66 (102)");
+        assert_eq!(
+            *encoded.last().unwrap(),
+            0x66,
+            "Negative numbers must end with terminator byte 0x66 (102)"
+        );
 
         // Verify it's not present for positive numbers
         let pos_encoded = encode_oracle_number("123").unwrap();
-        assert_ne!(*pos_encoded.last().unwrap(), 0x66,
-            "Positive numbers must NOT have terminator byte");
+        assert_ne!(
+            *pos_encoded.last().unwrap(),
+            0x66,
+            "Positive numbers must NOT have terminator byte"
+        );
     }
 
     /// Oracle NUMBER exponent byte calculation:
@@ -531,17 +537,26 @@ mod tests {
         // Positive single-digit (exponent = 0)
         // 5 → exponent=0, mantissa=05 → [0xC1, 0x06] (5+1)
         let five = encode_oracle_number("5").unwrap();
-        assert_eq!(five[0], 0xC1, "Single digit positive has exponent byte 0xC1");
+        assert_eq!(
+            five[0], 0xC1,
+            "Single digit positive has exponent byte 0xC1"
+        );
 
         // Positive three-digit (exponent = 1)
         // 123 → exponent=1, mantissa=01 23 → [0xC2, 0x02, 0x18]
         let one23 = encode_oracle_number("123").unwrap();
-        assert_eq!(one23[0], 0xC2, "Three digit positive has exponent byte 0xC2");
+        assert_eq!(
+            one23[0], 0xC2,
+            "Three digit positive has exponent byte 0xC2"
+        );
 
         // Negative (inverted)
         // -5 → exponent=0, mantissa=05 → [~0xC1, 101-5, 0x66] = [0x3E, 0x60, 0x66]
         let neg5 = encode_oracle_number("-5").unwrap();
-        assert_eq!(neg5[0], 0x3E, "Single digit negative has exponent byte 0x3E (~0xC1)");
+        assert_eq!(
+            neg5[0], 0x3E,
+            "Single digit negative has exponent byte 0x3E (~0xC1)"
+        );
     }
 
     /// Oracle NUMBER mantissa uses base-100 encoding
@@ -558,12 +573,18 @@ mod tests {
         // Encoded as [exponent, 12+1] = [0xC1, 0x0D]
         let twelve = encode_oracle_number("12").unwrap();
         assert_eq!(twelve.len(), 2);
-        assert_eq!(twelve[1], 13, "12 encoded as base-100 digit 12, stored as 13 (12+1)");
+        assert_eq!(
+            twelve[1], 13,
+            "12 encoded as base-100 digit 12, stored as 13 (12+1)"
+        );
 
         // 99 → single base-100 digit: 99
         // Encoded as [exponent, 99+1] = [0xC1, 0x64]
         let ninetynine = encode_oracle_number("99").unwrap();
-        assert_eq!(ninetynine[1], 100, "99 encoded as base-100 digit 99, stored as 100 (99+1)");
+        assert_eq!(
+            ninetynine[1], 100,
+            "99 encoded as base-100 digit 99, stored as 100 (99+1)"
+        );
 
         // 100 → CRITICAL: Oracle NUMBER removes trailing zeros!
         // The digits [1, 0, 0] become [1] after trailing zero removal.
@@ -572,9 +593,16 @@ mod tests {
         // Exponent adjusted for decimal position: (3+1)/2 + 192 = 194 = 0xC2
         // Encoded as [0xC2, 0x02] where 0x02 = 2 = 1 + 1 (digit "1" encoded)
         let hundred = encode_oracle_number("100").unwrap();
-        assert_eq!(hundred.len(), 2, "100 is just 2 bytes - trailing zeros removed");
+        assert_eq!(
+            hundred.len(),
+            2,
+            "100 is just 2 bytes - trailing zeros removed"
+        );
         assert_eq!(hundred[0], 0xC2, "Exponent byte: 194 = (4/2) + 192");
-        assert_eq!(hundred[1], 2, "Single digit 1 (with prepend_zero), stored as 2 (1+1)");
+        assert_eq!(
+            hundred[1], 2,
+            "Single digit 1 (with prepend_zero), stored as 2 (1+1)"
+        );
 
         // 1234 → two base-100 digits: 12, 34
         // No trailing zeros to remove

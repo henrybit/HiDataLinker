@@ -171,8 +171,8 @@ impl AcceptMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::packet::PacketHeader;
     use crate::constants::PacketType;
+    use crate::packet::PacketHeader;
     use bytes::Bytes;
 
     fn make_accept_packet(payload: &[u8]) -> Packet {
@@ -300,6 +300,9 @@ mod tests {
         let packet = make_accept_packet(&payload);
         let result = AcceptMessage::parse(&packet);
 
-        assert!(matches!(result, Err(Error::NativeNetworkEncryptionRequired)));
+        assert!(matches!(
+            result,
+            Err(Error::NativeNetworkEncryptionRequired)
+        ));
     }
 }

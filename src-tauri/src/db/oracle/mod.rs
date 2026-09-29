@@ -106,9 +106,7 @@ impl OracleEngine {
             Some(connection) => connection.ping().await.is_err(),
         };
         if reconnect {
-            *guard = Some(Arc::new(
-                Connection::connect_with_config(self.config.clone()).await?,
-            ));
+            *guard = Some(Arc::new(open_connection(self.config.clone()).await?));
         }
         guard
             .as_ref()
@@ -729,6 +727,33 @@ fn apply_oracle_version(config: Config, version: Option<&str>) -> Config {
     }
 }
 
+/// 11.2 listeners often close a 12c CONNECT packet without a TNS error.
+/// Automatic mode retries once with the 11g packet. An explicit version does not.
+async fn open_connection(config: Config) -> AppResult<Connection> {
+    match Connection::connect_with_config(config.clone()).await {
+        Ok(connection) => Ok(connection),
+        Err(error) if config.protocol_desired == 0 && listener_closed_without_packet(&error) => {
+            Connection::connect_with_config(config.protocol_version(314))
+                .await
+                .map_err(AppError::from)
+        }
+        Err(error) => Err(AppError::from(error)),
+    }
+}
+
+fn listener_closed_without_packet(error: &oracle_rs::Error) -> bool {
+    match error {
+        oracle_rs::Error::ConnectionClosedByServer(message) => message.contains("early eof"),
+        oracle_rs::Error::Io(io) => matches!(
+            io.kind(),
+            std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::UnexpectedEof
+                | std::io::ErrorKind::BrokenPipe
+        ),
+        _ => false,
+    }
+}
+
 /// `sid:` prefix or connect mode `sid` selects the instance SID.
 /// Anything else is a service name.
 fn oracle_target<'a>(database: &'a str, connect_as: Option<&str>) -> AppResult<(bool, &'a str)> {
@@ -1118,6 +1143,19 @@ mod tests {
         assert_eq!(oracle_protocol(Some("19c")), Some(318));
         assert_eq!(oracle_protocol(Some("12.2")), Some(316));
         assert_eq!(oracle_protocol(Some("nope")), None);
+    }
+
+    #[test]
+    fn retries_only_the_automatic_protocol_after_a_silent_listener_close() {
+        let silent = oracle_rs::Error::ConnectionClosedByServer(
+            "I/O error: early eof. The listener closed the connection without sending an error packet.".into(),
+        );
+        let refused = oracle_rs::Error::InvalidServiceName {
+            service_name: Some("DB11G".into()),
+            message: None,
+        };
+        assert!(listener_closed_without_packet(&silent));
+        assert!(!listener_closed_without_packet(&refused));
     }
 
     #[test]

@@ -15,7 +15,9 @@ use std::collections::HashMap;
 
 use crate::buffer::{ReadBuffer, WriteBuffer};
 use crate::capabilities::Capabilities;
-use crate::constants::{auth_mode, verifier_type, FunctionCode, MessageType, PacketType, PACKET_HEADER_SIZE};
+use crate::constants::{
+    auth_mode, verifier_type, FunctionCode, MessageType, PacketType, PACKET_HEADER_SIZE,
+};
 use crate::crypto::{
     decrypt_cbc_192, decrypt_cbc_256, encrypt_cbc_192, encrypt_cbc_256_pkcs7,
     generate_11g_combo_key, generate_11g_password_hash, generate_12c_combo_key,
@@ -126,11 +128,7 @@ pub enum AuthPhase {
 
 impl AuthMessage {
     /// Create a new authentication message
-    pub fn new(
-        username: &str,
-        password: &[u8],
-        service_name: &str,
-    ) -> Self {
+    pub fn new(username: &str, password: &[u8], service_name: &str) -> Self {
         Self {
             username: username.to_uppercase(),
             password: password.to_vec(),
@@ -142,7 +140,12 @@ impl AuthMessage {
             client_session_key: None,
             terminal: std::env::var("TERM").unwrap_or_else(|_| "unknown".to_string()),
             program: std::env::current_exe()
-                .map(|p| p.file_name().unwrap_or_default().to_string_lossy().to_string())
+                .map(|p| {
+                    p.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_else(|_| "oracle-rs".to_string()),
             machine: hostname::get()
                 .map(|h| h.to_string_lossy().to_string())
@@ -194,7 +197,9 @@ impl AuthMessage {
         match self.phase {
             AuthPhase::One => self.build_phase_one(caps, large_sdu),
             AuthPhase::Two => self.build_phase_two(caps, large_sdu),
-            AuthPhase::Complete => Err(Error::Protocol("Authentication already complete".to_string())),
+            AuthPhase::Complete => Err(Error::Protocol(
+                "Authentication already complete".to_string(),
+            )),
         }
     }
 
@@ -276,7 +281,9 @@ impl AuthMessage {
     fn build_phase_two(&self, caps: &Capabilities, large_sdu: bool) -> Result<Bytes> {
         // This requires session data from phase one response
         let encoded_password = self.encode_password()?;
-        let session_key = self.client_session_key.as_ref()
+        let session_key = self
+            .client_session_key
+            .as_ref()
             .ok_or_else(|| Error::Protocol("Client session key not generated".to_string()))?;
 
         let mut buf = WriteBuffer::with_capacity(1024);
@@ -342,7 +349,11 @@ impl AuthMessage {
         // Session key (client portion)
         let session_key_hex = hex::encode_upper(session_key);
         // For 12c, use first 64 chars; for 11g, use first 96 chars
-        let key_len = if self.verifier_type == verifier_type::V12C { 64 } else { 96 };
+        let key_len = if self.verifier_type == verifier_type::V12C {
+            64
+        } else {
+            96
+        };
         let key_str = &session_key_hex[..key_len.min(session_key_hex.len())];
         self.write_key_value(&mut buf, "AUTH_SESSKEY", key_str, 1)?;
 
@@ -417,7 +428,9 @@ impl AuthMessage {
         // Read message type
         let msg_type = buf.read_u8()?;
         if msg_type == MessageType::Error as u8 {
-            return Err(Error::AuthenticationFailed("Server returned error".to_string()));
+            return Err(Error::AuthenticationFailed(
+                "Server returned error".to_string(),
+            ));
         }
 
         // Parse return parameters
@@ -481,12 +494,18 @@ impl AuthMessage {
 
     /// Generate the verifier (session keys and combo key)
     fn generate_verifier(&mut self) -> Result<()> {
-        let vfr_data = self.session_data.auth_vfr_data.as_ref()
+        let vfr_data = self
+            .session_data
+            .auth_vfr_data
+            .as_ref()
             .ok_or_else(|| Error::AuthenticationFailed("Missing AUTH_VFR_DATA".to_string()))?;
         let vfr_bytes = hex::decode(vfr_data)
             .map_err(|e| Error::Protocol(format!("Invalid AUTH_VFR_DATA hex: {}", e)))?;
 
-        let server_key = self.session_data.auth_sesskey.as_ref()
+        let server_key = self
+            .session_data
+            .auth_sesskey
+            .as_ref()
             .ok_or_else(|| Error::AuthenticationFailed("Missing AUTH_SESSKEY".to_string()))?;
         let server_key_bytes = hex::decode(server_key)
             .map_err(|e| Error::Protocol(format!("Invalid AUTH_SESSKEY hex: {}", e)))?;
@@ -502,8 +521,9 @@ impl AuthMessage {
 
     /// Generate 12c verifier
     fn generate_12c_verifier(&mut self, vfr_data: &[u8], server_key: &[u8]) -> Result<()> {
-        let iterations = self.session_data.auth_pbkdf2_vgen_count
-            .ok_or_else(|| Error::AuthenticationFailed("Missing AUTH_PBKDF2_VGEN_COUNT".to_string()))?;
+        let iterations = self.session_data.auth_pbkdf2_vgen_count.ok_or_else(|| {
+            Error::AuthenticationFailed("Missing AUTH_PBKDF2_VGEN_COUNT".to_string())
+        })?;
 
         // Generate password hash
         let password_hash = generate_12c_password_hash(&self.password, vfr_data, iterations);
@@ -519,12 +539,18 @@ impl AuthMessage {
         self.client_session_key = Some(encrypted_client_key);
 
         // Generate combo key
-        let csk_salt = self.session_data.auth_pbkdf2_csk_salt.as_ref()
-            .ok_or_else(|| Error::AuthenticationFailed("Missing AUTH_PBKDF2_CSK_SALT".to_string()))?;
+        let csk_salt = self
+            .session_data
+            .auth_pbkdf2_csk_salt
+            .as_ref()
+            .ok_or_else(|| {
+                Error::AuthenticationFailed("Missing AUTH_PBKDF2_CSK_SALT".to_string())
+            })?;
         let csk_salt_bytes = hex::decode(csk_salt)
             .map_err(|e| Error::Protocol(format!("Invalid CSK_SALT hex: {}", e)))?;
-        let sder_count = self.session_data.auth_pbkdf2_sder_count
-            .ok_or_else(|| Error::AuthenticationFailed("Missing AUTH_PBKDF2_SDER_COUNT".to_string()))?;
+        let sder_count = self.session_data.auth_pbkdf2_sder_count.ok_or_else(|| {
+            Error::AuthenticationFailed("Missing AUTH_PBKDF2_SDER_COUNT".to_string())
+        })?;
 
         self.combo_key = Some(generate_12c_combo_key(
             &session_key_part_a,
@@ -562,7 +588,9 @@ impl AuthMessage {
 
     /// Encrypt the password using the combo key
     fn encode_password(&self) -> Result<String> {
-        let combo_key = self.combo_key.as_ref()
+        let combo_key = self
+            .combo_key
+            .as_ref()
             .ok_or_else(|| Error::Protocol("Combo key not generated".to_string()))?;
 
         // Add random salt to password
@@ -586,16 +614,23 @@ impl AuthMessage {
             return Ok(None);
         }
 
-        let combo_key = self.combo_key.as_ref()
+        let combo_key = self
+            .combo_key
+            .as_ref()
             .ok_or_else(|| Error::Protocol("Combo key not generated".to_string()))?;
 
         // Generate speedy key data
-        let vfr_data = self.session_data.auth_vfr_data.as_ref()
+        let vfr_data = self
+            .session_data
+            .auth_vfr_data
+            .as_ref()
             .ok_or_else(|| Error::AuthenticationFailed("Missing AUTH_VFR_DATA".to_string()))?;
         let vfr_bytes = hex::decode(vfr_data)
             .map_err(|e| Error::Protocol(format!("Invalid AUTH_VFR_DATA hex: {}", e)))?;
 
-        let iterations = self.session_data.auth_pbkdf2_vgen_count
+        let iterations = self
+            .session_data
+            .auth_pbkdf2_vgen_count
             .ok_or_else(|| Error::AuthenticationFailed("Missing iterations".to_string()))?;
 
         // Create salt for password key derivation
@@ -615,7 +650,9 @@ impl AuthMessage {
     /// Verify server response after phase two
     fn verify_server_response(&self) -> Result<()> {
         if let Some(response) = &self.session_data.auth_svr_response {
-            let combo_key = self.combo_key.as_ref()
+            let combo_key = self
+                .combo_key
+                .as_ref()
                 .ok_or_else(|| Error::Protocol("Combo key not available".to_string()))?;
 
             let encrypted = hex::decode(response)
@@ -631,7 +668,9 @@ impl AuthMessage {
             if decrypted.len() >= 32 && &decrypted[16..32] == b"SERVER_TO_CLIENT" {
                 Ok(())
             } else {
-                Err(Error::AuthenticationFailed("Invalid server response".to_string()))
+                Err(Error::AuthenticationFailed(
+                    "Invalid server response".to_string(),
+                ))
             }
         } else {
             // No response to verify (older servers may not send this)
@@ -718,7 +757,10 @@ mod tests {
         assert_eq!(packet[4], PacketType::Data as u8);
 
         // Verify function code
-        assert_eq!(packet[PACKET_HEADER_SIZE + 3], FunctionCode::AuthPhaseOne as u8);
+        assert_eq!(
+            packet[PACKET_HEADER_SIZE + 3],
+            FunctionCode::AuthPhaseOne as u8
+        );
     }
 
     #[test]

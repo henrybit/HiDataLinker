@@ -174,7 +174,9 @@ impl DbObjectType {
 
     /// Get an attribute by name
     pub fn attribute(&self, name: &str) -> Option<&DbObjectAttr> {
-        self.attributes.iter().find(|a| a.name.eq_ignore_ascii_case(name))
+        self.attributes
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case(name))
     }
 
     /// Get the number of attributes
@@ -314,9 +316,7 @@ mod tests {
     fn test_object_type_with_attributes() {
         let mut obj_type = DbObjectType::new("HR", "EMPLOYEE_TYPE");
         obj_type.add_attribute(DbObjectAttr::new("ID", OracleType::Number));
-        obj_type.add_attribute(
-            DbObjectAttr::new("NAME", OracleType::Varchar).with_max_size(100),
-        );
+        obj_type.add_attribute(DbObjectAttr::new("NAME", OracleType::Varchar).with_max_size(100));
 
         assert_eq!(obj_type.attribute_count(), 2);
         assert!(obj_type.attribute("ID").is_some());

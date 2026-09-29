@@ -90,8 +90,8 @@ mod tests {
         let data = Bytes::from_static(&[
             0x00, 0x0a, // Length: 10
             0x00, 0x00, // Packet checksum
-            0x01,       // Type: CONNECT
-            0x00,       // Flags
+            0x01, // Type: CONNECT
+            0x00, // Flags
             0x00, 0x00, // Header checksum
             0x41, 0x42, // Payload: "AB"
         ]);

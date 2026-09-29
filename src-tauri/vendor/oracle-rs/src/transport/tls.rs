@@ -154,7 +154,8 @@ impl TlsConfig {
         } else if let Some(wallet_path) = &self.wallet_path {
             // Try to load client cert from wallet
             let certs_result = load_client_certs_from_wallet(wallet_path);
-            let key_result = load_private_key_from_wallet(wallet_path, self.wallet_password.as_deref());
+            let key_result =
+                load_private_key_from_wallet(wallet_path, self.wallet_password.as_deref());
 
             if let (Ok(certs), Ok(Some(key))) = (certs_result, key_result) {
                 if !certs.is_empty() {
@@ -265,9 +266,7 @@ fn load_certs_from_file(path: &str) -> Result<Vec<CertificateDer<'static>>> {
         .map_err(|e| Error::Internal(format!("Failed to open cert file {}: {}", path, e)))?;
     let mut reader = BufReader::new(file);
 
-    let certs: Vec<CertificateDer<'static>> = certs(&mut reader)
-        .filter_map(|r| r.ok())
-        .collect();
+    let certs: Vec<CertificateDer<'static>> = certs(&mut reader).filter_map(|r| r.ok()).collect();
 
     if certs.is_empty() {
         return Err(Error::Internal(format!(
@@ -345,7 +344,9 @@ fn load_private_key_from_wallet(
     if pem_contents.contains("-----BEGIN ENCRYPTED PRIVATE KEY-----") {
         // Need password to decrypt
         let password = wallet_password.ok_or_else(|| {
-            Error::Internal("Wallet contains encrypted private key but no password provided".to_string())
+            Error::Internal(
+                "Wallet contains encrypted private key but no password provided".to_string(),
+            )
         })?;
 
         // Parse PEM to get DER bytes using SecretDocument
@@ -449,10 +450,7 @@ mod tests {
             .with_client_cert("/path/to/client.pem", "/path/to/client.key")
             .with_server_dn_match(Some("CN=oracle".to_string()));
 
-        assert_eq!(
-            config.server_name,
-            Some("oracle.example.com".to_string())
-        );
+        assert_eq!(config.server_name, Some("oracle.example.com".to_string()));
         assert_eq!(config.ca_cert_path, Some("/path/to/ca.pem".to_string()));
         assert_eq!(
             config.client_cert_path,
@@ -467,7 +465,8 @@ mod tests {
 
     #[test]
     fn test_tls_config_wallet() {
-        let config = TlsConfig::new().with_wallet("/opt/oracle/wallet", Some("password".to_string()));
+        let config =
+            TlsConfig::new().with_wallet("/opt/oracle/wallet", Some("password".to_string()));
 
         assert_eq!(config.wallet_path, Some("/opt/oracle/wallet".to_string()));
         assert_eq!(config.wallet_password, Some("password".to_string()));

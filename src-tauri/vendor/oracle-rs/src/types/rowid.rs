@@ -269,10 +269,10 @@ mod tests {
     fn test_base64_encoding() {
         // Test known values
         let rowid = RowId::new(
-            0,      // RBA
-            4,      // Partition ID (AAE in base64)
-            0x1A2,  // Block Number
-            0,      // Slot Number
+            0,     // RBA
+            4,     // Partition ID (AAE in base64)
+            0x1A2, // Block Number
+            0,     // Slot Number
         );
         let s = rowid.to_string().unwrap();
 

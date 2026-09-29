@@ -70,25 +70,36 @@ impl ConnectMessage {
     pub fn from_config(config: &Config) -> Self {
         let connect_data = config.build_connect_string();
 
+        let desired = desired_protocol(config);
+        // 11g and 10g listeners reset the socket when they see the 12c CONNECT
+        // layout (offset 74, DISABLE_NA). They expect the 34-byte packet.
+        let legacy = desired < version::MIN_LARGE_SDU;
         let mut service_opts = service_options::DONT_CARE;
         let mut connect_flags_2 = 0u32;
-
-        // Enable OOB support
-        service_opts |= service_options::CAN_RECV_ATTENTION;
-        connect_flags_2 |= connection::CHECK_OOB;
+        let nsi_flags = if legacy {
+            0x01
+        } else {
+            service_opts |= service_options::CAN_RECV_ATTENTION;
+            connect_flags_2 |= connection::CHECK_OOB;
+            nsi_flags::SUPPORT_SECURITY_RENEG | nsi_flags::DISABLE_NA
+        };
 
         Self {
-            version_desired: desired_protocol(config),
-            version_minimum: version::MIN_ACCEPTED,
+            version_desired: desired,
+            version_minimum: if legacy {
+                version::MINIMUM
+            } else {
+                version::MIN_ACCEPTED
+            },
             service_options: service_opts,
             sdu: config.sdu,
             tdu: connection::DEFAULT_TDU as u32,
             protocol_characteristics: connection::PROTOCOL_CHARACTERISTICS,
-            nsi_flags: nsi_flags::SUPPORT_SECURITY_RENEG | nsi_flags::DISABLE_NA,
+            nsi_flags,
             connect_flags_1: 0,
             connect_flags_2,
             connect_data,
-            supports_oob: true,
+            supports_oob: !legacy,
         }
     }
 }
@@ -102,14 +113,52 @@ fn desired_protocol(config: &Config) -> u16 {
 }
 
 impl ConnectMessage {
+    fn legacy_packet(&self) -> bool {
+        self.version_desired < version::MIN_LARGE_SDU
+    }
+
     /// Build the CONNECT packet bytes
     pub fn build(&self) -> Result<Bytes> {
+        self.build_packet(true)
+    }
+
+    fn build_packet(&self, include_data: bool) -> Result<Bytes> {
+        if self.legacy_packet() {
+            self.build_legacy(include_data)
+        } else {
+            self.build_modern(include_data)
+        }
+    }
+
+    /// 10g/11g CONNECT packet. Connect data starts at byte 34.
+    fn build_legacy(&self, include_data: bool) -> Result<Bytes> {
+        const DATA_OFFSET: u16 = 34;
+        let connect_data_bytes = self.connect_data.as_bytes();
+        let mut buf = WriteBuffer::with_capacity(256);
+        buf.write_zeros(PACKET_HEADER_SIZE)?;
+        buf.write_u16_be(self.version_desired)?;
+        buf.write_u16_be(self.version_minimum)?;
+        buf.write_u16_be(self.service_options)?;
+        buf.write_u16_be(self.sdu.min(65535) as u16)?;
+        buf.write_u16_be(self.tdu.min(32767) as u16)?;
+        buf.write_u16_be(self.protocol_characteristics)?;
+        buf.write_u16_be(0)?;
+        buf.write_u16_be(1)?;
+        buf.write_u16_be(connect_data_bytes.len() as u16)?;
+        buf.write_u16_be(DATA_OFFSET)?;
+        buf.write_u32_be(0)?;
+        buf.write_u8(self.nsi_flags)?;
+        buf.write_u8(self.nsi_flags)?;
+        if include_data {
+            buf.write_bytes(connect_data_bytes)?;
+        }
+        Self::finish_packet(buf, false)
+    }
+
+    /// 12c and later CONNECT packet. Connect data starts at byte 74.
+    fn build_modern(&self, include_data: bool) -> Result<Bytes> {
         let connect_data_bytes = self.connect_data.as_bytes();
         let connect_data_len = connect_data_bytes.len();
-
-        // Determine if we need to split the packet
-        // If connect data > 230 bytes, we need a separate DATA packet
-        let needs_split = connect_data_len > connection::MAX_CONNECT_DATA as usize;
 
         // Build the main CONNECT packet
         let mut buf = WriteBuffer::with_capacity(512);
@@ -165,33 +214,34 @@ impl ConnectMessage {
         buf.write_u32_be(self.connect_flags_2)?;
 
         // Now we're at offset 74
-
-        // If connect data fits, write it here
-        if !needs_split {
+        if include_data {
             buf.write_bytes(connect_data_bytes)?;
         }
-        // If needs_split, connect data goes in a separate DATA packet
+        Self::finish_packet(buf, false)
+    }
 
-        // Calculate total length and write header
+    fn finish_packet(buf: WriteBuffer, large_sdu: bool) -> Result<Bytes> {
         let total_len = buf.len() as u32;
-
-        // Go back and write the packet header
-        let header = if needs_split {
-            // Empty connect data in this packet
-            PacketHeader::new(PacketType::Connect, total_len)
-        } else {
-            PacketHeader::new(PacketType::Connect, total_len)
-        };
-
-        // Patch the header at the beginning
+        let header = PacketHeader::new(PacketType::Connect, total_len);
         let mut header_buf = WriteBuffer::with_capacity(PACKET_HEADER_SIZE);
-        header.write(&mut header_buf, false)?;
-
-        // Get the full buffer and patch the header
+        header.write(&mut header_buf, large_sdu)?;
         let mut result = buf.into_inner();
         result[..PACKET_HEADER_SIZE].copy_from_slice(header_buf.as_slice());
-
         Ok(result.freeze())
+    }
+
+    fn data_packet(connect_data: &[u8]) -> Result<Bytes> {
+        let mut data_buf = WriteBuffer::with_capacity(PACKET_HEADER_SIZE + 2 + connect_data.len());
+        data_buf.write_zeros(PACKET_HEADER_SIZE)?;
+        data_buf.write_u16_be(0)?;
+        data_buf.write_bytes(connect_data)?;
+        let data_len = data_buf.len() as u32;
+        let data_header = PacketHeader::new(PacketType::Data, data_len);
+        let mut data_header_buf = WriteBuffer::with_capacity(PACKET_HEADER_SIZE);
+        data_header.write(&mut data_header_buf, false)?;
+        let mut data_result = data_buf.into_inner();
+        data_result[..PACKET_HEADER_SIZE].copy_from_slice(data_header_buf.as_slice());
+        Ok(data_result.freeze())
     }
 
     /// Build the CONNECT packet and optional DATA packet for large connect strings
@@ -199,71 +249,14 @@ impl ConnectMessage {
     /// Returns a tuple of (CONNECT packet, optional DATA packet)
     pub fn build_with_continuation(&self) -> Result<(Bytes, Option<Bytes>)> {
         let connect_data_bytes = self.connect_data.as_bytes();
-        let connect_data_len = connect_data_bytes.len();
-
-        let needs_split = connect_data_len > connection::MAX_CONNECT_DATA as usize;
-
+        let needs_split = connect_data_bytes.len() > connection::MAX_CONNECT_DATA as usize;
         if !needs_split {
             return Ok((self.build()?, None));
         }
-
-        // Build CONNECT packet without data
-        let mut connect_buf = WriteBuffer::with_capacity(128);
-
-        // Header placeholder
-        connect_buf.write_zeros(PACKET_HEADER_SIZE)?;
-
-        // Protocol versions
-        connect_buf.write_u16_be(self.version_desired)?;
-        connect_buf.write_u16_be(self.version_minimum)?;
-        connect_buf.write_u16_be(self.service_options)?;
-        connect_buf.write_u16_be(self.sdu.min(65535) as u16)?;
-        connect_buf.write_u16_be(self.tdu.min(65535) as u16)?;
-        connect_buf.write_u16_be(self.protocol_characteristics)?;
-        connect_buf.write_u16_be(0)?; // line turnaround
-        connect_buf.write_u16_be(1)?; // value of 1
-        connect_buf.write_u16_be(connect_data_len as u16)?;
-        connect_buf.write_u16_be(74)?; // offset
-        connect_buf.write_u32_be(0)?; // max receivable
-        connect_buf.write_u8(self.nsi_flags)?;
-        connect_buf.write_u8(self.nsi_flags)?;
-        connect_buf.write_zeros(24)?; // obsolete
-        connect_buf.write_u32_be(self.sdu)?;
-        connect_buf.write_u32_be(self.tdu)?;
-        connect_buf.write_u32_be(self.connect_flags_1)?;
-        connect_buf.write_u32_be(self.connect_flags_2)?;
-
-        // Patch header
-        let connect_len = connect_buf.len() as u32;
-        let header = PacketHeader::new(PacketType::Connect, connect_len);
-        let mut header_buf = WriteBuffer::with_capacity(PACKET_HEADER_SIZE);
-        header.write(&mut header_buf, false)?;
-
-        let mut connect_result = connect_buf.into_inner();
-        connect_result[..PACKET_HEADER_SIZE].copy_from_slice(header_buf.as_slice());
-
-        // Build DATA packet with connect data
-        let mut data_buf = WriteBuffer::with_capacity(PACKET_HEADER_SIZE + 2 + connect_data_len);
-
-        // Header placeholder
-        data_buf.write_zeros(PACKET_HEADER_SIZE)?;
-
-        // Data flags (0 for connect continuation)
-        data_buf.write_u16_be(0)?;
-
-        // Connect data
-        data_buf.write_bytes(connect_data_bytes)?;
-
-        // Patch header
-        let data_len = data_buf.len() as u32;
-        let data_header = PacketHeader::new(PacketType::Data, data_len);
-        let mut data_header_buf = WriteBuffer::with_capacity(PACKET_HEADER_SIZE);
-        data_header.write(&mut data_header_buf, false)?;
-
-        let mut data_result = data_buf.into_inner();
-        data_result[..PACKET_HEADER_SIZE].copy_from_slice(data_header_buf.as_slice());
-
-        Ok((connect_result.freeze(), Some(data_result.freeze())))
+        Ok((
+            self.build_packet(false)?,
+            Some(Self::data_packet(connect_data_bytes)?),
+        ))
     }
 }
 
@@ -296,6 +289,7 @@ mod tests {
         // Check version in packet
         assert_eq!(packet[8], (version::DESIRED >> 8) as u8);
         assert_eq!(packet[9], (version::DESIRED & 0xff) as u8);
+        assert_eq!(u16::from_be_bytes([packet[26], packet[27]]), 74);
     }
 
     #[test]
@@ -328,9 +322,26 @@ mod tests {
 
     #[test]
     fn test_connect_message_offers_11g() {
-        let config = Config::new("localhost", 1521, "FREEPDB1", "user", "pass").protocol_version(314);
+        let config =
+            Config::with_sid("172.19.3.141", 7026, "DB11G", "user", "pass").protocol_version(314);
         let msg = ConnectMessage::from_config(&config);
         assert_eq!(msg.version_desired, 314);
-        assert_eq!(msg.version_minimum, version::MIN_ACCEPTED);
+        assert_eq!(msg.version_minimum, version::MINIMUM);
+        assert_eq!(msg.nsi_flags, 0x01);
+
+        let packet = msg.build().unwrap();
+        assert_eq!(packet[4], PacketType::Connect as u8);
+        assert_eq!(u16::from_be_bytes([packet[8], packet[9]]), 314);
+        assert_eq!(
+            u16::from_be_bytes([packet[10], packet[11]]),
+            version::MINIMUM
+        );
+        assert_eq!(u16::from_be_bytes([packet[26], packet[27]]), 34);
+        assert_eq!(packet[32], 0x01);
+        assert_ne!(packet[32] & 0x04, 0x04);
+        let descriptor = std::str::from_utf8(&packet[34..]).unwrap();
+        assert!(descriptor.contains("(SID=DB11G)"));
+        assert!(descriptor.contains("(PORT=7026)"));
+        assert!(!descriptor.contains("SERVICE_NAME"));
     }
 }

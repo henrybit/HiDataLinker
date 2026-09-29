@@ -263,10 +263,17 @@ pub(crate) fn closed_response(bytes: &[u8]) -> Error {
 pub(crate) fn server_error_text(bytes: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(bytes);
     let upper = text.to_ascii_uppercase();
-    let start = ["(DESCRIPTION", "(ERR=", "ORA-", "TNS-", "ERROR_STACK", "(ERROR="]
-        .iter()
-        .filter_map(|marker| upper.find(marker))
-        .min()?;
+    let start = [
+        "(DESCRIPTION",
+        "(ERR=",
+        "ORA-",
+        "TNS-",
+        "ERROR_STACK",
+        "(ERROR=",
+    ]
+    .iter()
+    .filter_map(|marker| upper.find(marker))
+    .min()?;
     let message = trim_server_text(&text[start..]);
     if message.is_empty() {
         None
@@ -276,9 +283,11 @@ pub(crate) fn server_error_text(bytes: &[u8]) -> Option<String> {
 }
 
 fn trim_server_text(text: &str) -> String {
-    text.trim_matches(|c: char| c == '\0' || (c.is_control() && c != '\n' && c != '\r' && c != '\t'))
-        .trim()
-        .to_string()
+    text.trim_matches(|c: char| {
+        c == '\0' || (c.is_control() && c != '\n' && c != '\r' && c != '\t')
+    })
+    .trim()
+    .to_string()
 }
 
 fn bytes_preview(bytes: &[u8]) -> String {
@@ -315,10 +324,7 @@ mod tests {
     #[test]
     fn test_oracle_error_display() {
         let err = Error::oracle(1017, "invalid username/password");
-        assert_eq!(
-            err.to_string(),
-            "ORA-01017: invalid username/password"
-        );
+        assert_eq!(err.to_string(), "ORA-01017: invalid username/password");
     }
 
     #[test]

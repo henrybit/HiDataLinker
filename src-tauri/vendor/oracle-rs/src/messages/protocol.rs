@@ -262,10 +262,7 @@ mod tests {
         assert!(result.is_ok());
 
         assert_eq!(msg.server_version, 6);
-        assert_eq!(
-            msg.server_banner.as_deref(),
-            Some("Oracle Database 19c")
-        );
+        assert_eq!(msg.server_banner.as_deref(), Some("Oracle Database 19c"));
         assert_eq!(caps.charset_id, 873);
     }
 

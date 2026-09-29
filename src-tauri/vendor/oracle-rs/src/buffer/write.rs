@@ -440,7 +440,10 @@ mod tests {
     fn test_write_u64_be() {
         let mut buf = WriteBuffer::new();
         buf.write_u64_be(0x0102030405060708).unwrap();
-        assert_eq!(buf.as_slice(), &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+        assert_eq!(
+            buf.as_slice(),
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        );
     }
 
     #[test]
@@ -509,7 +512,8 @@ mod tests {
     #[test]
     fn test_write_bytes_with_length_short() {
         let mut buf = WriteBuffer::new();
-        buf.write_bytes_with_length(Some(&[0x41, 0x42, 0x43])).unwrap();
+        buf.write_bytes_with_length(Some(&[0x41, 0x42, 0x43]))
+            .unwrap();
         assert_eq!(buf.as_slice(), &[0x03, 0x41, 0x42, 0x43]);
     }
 
@@ -624,26 +628,36 @@ mod tests {
         let result = buf.as_slice();
 
         // First byte must be LONG_INDICATOR (0xFE = 254)
-        assert_eq!(result[0], 0xFE,
-            "Long data must start with TNS_LONG_LENGTH_INDICATOR (0xFE)");
+        assert_eq!(
+            result[0], 0xFE,
+            "Long data must start with TNS_LONG_LENGTH_INDICATOR (0xFE)"
+        );
 
         // Chunk length uses write_ub4 (variable-length encoding):
         // - 300 decimal = 0x012C
         // - write_ub4(300) writes: [0x02, 0x01, 0x2C] (prefix 2 = "2 bytes follow", then BE value)
         assert_eq!(result[1], 2, "ub4(300) prefix: 2 bytes follow");
         let chunk_len = u16::from_be_bytes([result[2], result[3]]);
-        assert_eq!(chunk_len as usize, long_data.len(),
-            "Chunk length must match data length");
+        assert_eq!(
+            chunk_len as usize,
+            long_data.len(),
+            "Chunk length must match data length"
+        );
 
         // Followed by data starting at byte 4
         assert_eq!(&result[4..4 + long_data.len()], &long_data[..]);
 
         // Ends with terminating zero using write_ub4(0) = single 0x00 byte
         let term_pos = 4 + long_data.len();
-        assert_eq!(result[term_pos], 0x00,
-            "Chunked data must end with ub4(0) terminator");
-        assert_eq!(result.len(), term_pos + 1,
-            "Total length: 1 (0xFE) + 3 (ub4(300)) + 300 (data) + 1 (ub4(0))");
+        assert_eq!(
+            result[term_pos], 0x00,
+            "Chunked data must end with ub4(0) terminator"
+        );
+        assert_eq!(
+            result.len(),
+            term_pos + 1,
+            "Total length: 1 (0xFE) + 3 (ub4(300)) + 300 (data) + 1 (ub4(0))"
+        );
     }
 
     /// Short data format (<=252 bytes) uses single-byte length prefix
@@ -658,8 +672,7 @@ mod tests {
         let result = buf.as_slice();
 
         // First byte is length (252 = 0xFC)
-        assert_eq!(result[0], 252,
-            "Short data length must be single byte");
+        assert_eq!(result[0], 252, "Short data length must be single byte");
 
         // Total length: 1 (length byte) + 252 (data)
         assert_eq!(result.len(), 253);

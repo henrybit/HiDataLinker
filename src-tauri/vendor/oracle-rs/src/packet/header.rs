@@ -244,8 +244,8 @@ mod tests {
         let data = [
             0x00, 0x64, // Length: 100
             0x00, 0x00, // Packet checksum
-            0x01,       // Type: CONNECT
-            0x08,       // Flags: TLS_RENEG
+            0x01, // Type: CONNECT
+            0x08, // Flags: TLS_RENEG
             0x00, 0x00, // Header checksum
         ];
 
@@ -261,9 +261,9 @@ mod tests {
         // Large SDU header: length (4) + type (1) + flags (1) + hdr_checksum (2)
         let data = [
             0x00, 0x00, 0x20, 0x00, // Length: 8192
-            0x06,                   // Type: DATA
-            0x00,                   // Flags
-            0x00, 0x00,             // Header checksum
+            0x06, // Type: DATA
+            0x00, // Flags
+            0x00, 0x00, // Header checksum
         ];
 
         let header = PacketHeader::parse_large_sdu(&data).unwrap();
@@ -278,13 +278,16 @@ mod tests {
         let mut buf = WriteBuffer::new();
         header.write(&mut buf, false).unwrap();
 
-        assert_eq!(buf.as_slice(), &[
-            0x00, 0x64, // Length: 100
-            0x00, 0x00, // Packet checksum
-            0x01,       // Type: CONNECT
-            0x00,       // Flags
-            0x00, 0x00, // Header checksum
-        ]);
+        assert_eq!(
+            buf.as_slice(),
+            &[
+                0x00, 0x64, // Length: 100
+                0x00, 0x00, // Packet checksum
+                0x01, // Type: CONNECT
+                0x00, // Flags
+                0x00, 0x00, // Header checksum
+            ]
+        );
     }
 
     #[test]
@@ -294,12 +297,15 @@ mod tests {
         let mut buf = WriteBuffer::new();
         header.write(&mut buf, true).unwrap();
 
-        assert_eq!(buf.as_slice(), &[
-            0x00, 0x00, 0x20, 0x00, // Length: 8192
-            0x06,                   // Type: DATA
-            0x00,                   // Flags
-            0x00, 0x00,             // Header checksum
-        ]);
+        assert_eq!(
+            buf.as_slice(),
+            &[
+                0x00, 0x00, 0x20, 0x00, // Length: 8192
+                0x06, // Type: DATA
+                0x00, // Flags
+                0x00, 0x00, // Header checksum
+            ]
+        );
     }
 
     #[test]
@@ -367,8 +373,8 @@ mod tests {
         let data = [
             0x00, 0x08, // Length: 8
             0x00, 0x00, // Packet checksum
-            0xFF,       // Invalid type
-            0x00,       // Flags
+            0xFF, // Invalid type
+            0x00, // Flags
             0x00, 0x00, // Header checksum
         ];
 

@@ -7,7 +7,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::buffer::WriteBuffer;
 use crate::capabilities::Capabilities;
-use crate::constants::{FetchOrientation, FunctionCode, MessageType, PacketType, PACKET_HEADER_SIZE};
+use crate::constants::{
+    FetchOrientation, FunctionCode, MessageType, PacketType, PACKET_HEADER_SIZE,
+};
 use crate::error::Result;
 
 /// Fetch message to retrieve rows from a cursor

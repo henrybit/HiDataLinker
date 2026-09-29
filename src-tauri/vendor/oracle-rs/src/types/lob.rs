@@ -214,10 +214,9 @@ impl LobLocator {
         }
 
         // Read directory name
-        let dir_name = String::from_utf8_lossy(
-            &self.locator[dir_name_offset..dir_name_offset + dir_name_len],
-        )
-        .to_string();
+        let dir_name =
+            String::from_utf8_lossy(&self.locator[dir_name_offset..dir_name_offset + dir_name_len])
+                .to_string();
 
         // Read file name length (big-endian uint16)
         let file_name_len = u16::from_be_bytes([
@@ -315,9 +314,7 @@ impl LobValue {
         match self {
             Self::Null => Ok(None),
             Self::Empty => Ok(Some(String::new())),
-            Self::Inline(data) => {
-                Ok(Some(String::from_utf8_lossy(data).to_string()))
-            }
+            Self::Inline(data) => Ok(Some(String::from_utf8_lossy(data).to_string())),
             Self::Locator(_) => Err(Error::Protocol(
                 "LOB data requires explicit read operation".to_string(),
             )),
@@ -348,13 +345,7 @@ mod tests {
         locator_bytes[5] = lob_flags::LOC_FLAGS_INIT; // Set initialized flag
         locator_bytes[lob_flags::LOC_OFFSET_FLAG_4] = lob_flags::LOC_FLAGS_TEMP; // Set temp flag
 
-        let locator = LobLocator::new(
-            Bytes::from(locator_bytes),
-            1000,
-            8060,
-            OracleType::Clob,
-            1,
-        );
+        let locator = LobLocator::new(Bytes::from(locator_bytes), 1000, 8060, OracleType::Clob, 1);
 
         assert!(locator.is_initialized());
         assert!(locator.is_temp());
@@ -392,7 +383,7 @@ mod tests {
         let file_name = "test.txt";
 
         let mut locator_bytes = vec![0u8; 16]; // Fixed header
-        // Directory name length (big-endian)
+                                               // Directory name length (big-endian)
         locator_bytes.push((dir_name.len() >> 8) as u8);
         locator_bytes.push(dir_name.len() as u8);
         // Directory name
@@ -403,13 +394,7 @@ mod tests {
         // File name
         locator_bytes.extend_from_slice(file_name.as_bytes());
 
-        let locator = LobLocator::new(
-            Bytes::from(locator_bytes),
-            0,
-            0,
-            OracleType::Bfile,
-            0,
-        );
+        let locator = LobLocator::new(Bytes::from(locator_bytes), 0, 0, OracleType::Bfile, 0);
 
         assert!(locator.is_bfile());
         let (dir, file) = locator.get_file_name().expect("Should parse BFILE locator");
@@ -437,22 +422,18 @@ mod tests {
     fn test_bfile_locator_get_file_name_empty_names() {
         // BFILE with empty directory and filename
         let mut locator_bytes = vec![0u8; 16]; // Fixed header
-        // Empty directory (length 0)
+                                               // Empty directory (length 0)
         locator_bytes.push(0);
         locator_bytes.push(0);
         // Empty filename (length 0)
         locator_bytes.push(0);
         locator_bytes.push(0);
 
-        let locator = LobLocator::new(
-            Bytes::from(locator_bytes),
-            0,
-            0,
-            OracleType::Bfile,
-            0,
-        );
+        let locator = LobLocator::new(Bytes::from(locator_bytes), 0, 0, OracleType::Bfile, 0);
 
-        let (dir, file) = locator.get_file_name().expect("Should parse empty BFILE locator");
+        let (dir, file) = locator
+            .get_file_name()
+            .expect("Should parse empty BFILE locator");
         assert_eq!(dir, "");
         assert_eq!(file, "");
     }

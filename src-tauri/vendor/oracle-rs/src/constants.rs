@@ -680,7 +680,11 @@ impl OracleType {
     pub fn is_lob(&self) -> bool {
         matches!(
             self,
-            OracleType::Clob | OracleType::Blob | OracleType::Bfile | OracleType::Json | OracleType::Vector
+            OracleType::Clob
+                | OracleType::Blob
+                | OracleType::Bfile
+                | OracleType::Json
+                | OracleType::Vector
         )
     }
 
@@ -796,8 +800,9 @@ impl TryFrom<u8> for BindDirection {
     type Error = crate::error::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        BindDirection::from_wire(value)
-            .ok_or_else(|| crate::error::Error::Protocol(format!("Invalid bind direction: {}", value)))
+        BindDirection::from_wire(value).ok_or_else(|| {
+            crate::error::Error::Protocol(format!("Invalid bind direction: {}", value))
+        })
     }
 }
 
@@ -892,8 +897,8 @@ pub mod obj_flags {
     pub const TOID_PREFIX: [u8; 2] = [0x00, 0x22];
     /// Extent OID (16 bytes) - appended to TOID after type OID
     pub const EXTENT_OID: [u8; 16] = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x01,
     ];
 }
 

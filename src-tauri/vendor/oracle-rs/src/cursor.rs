@@ -225,16 +225,27 @@ mod tests {
 
     #[test]
     fn test_scroll_mode_conversion() {
-        assert_eq!(FetchOrientation::from(ScrollMode::First), FetchOrientation::First);
-        assert_eq!(FetchOrientation::from(ScrollMode::Last), FetchOrientation::Last);
-        assert_eq!(FetchOrientation::from(ScrollMode::Relative), FetchOrientation::Relative);
-        assert_eq!(FetchOrientation::from(ScrollMode::Absolute), FetchOrientation::Absolute);
+        assert_eq!(
+            FetchOrientation::from(ScrollMode::First),
+            FetchOrientation::First
+        );
+        assert_eq!(
+            FetchOrientation::from(ScrollMode::Last),
+            FetchOrientation::Last
+        );
+        assert_eq!(
+            FetchOrientation::from(ScrollMode::Relative),
+            FetchOrientation::Relative
+        );
+        assert_eq!(
+            FetchOrientation::from(ScrollMode::Absolute),
+            FetchOrientation::Absolute
+        );
     }
 
     #[test]
     fn test_scrollable_cursor_options() {
-        let opts = ScrollableCursorOptions::new()
-            .with_array_size(50);
+        let opts = ScrollableCursorOptions::new().with_array_size(50);
         assert_eq!(opts.array_size, 50);
     }
 }

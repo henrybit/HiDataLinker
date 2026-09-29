@@ -263,9 +263,8 @@ fn decode_value(buf: &mut ReadBuffer, oracle_type: OracleType) -> Result<Value> 
     match oracle_type {
         OracleType::Varchar | OracleType::Char => {
             let bytes = buf.read_bytes_vec(len)?;
-            let s = String::from_utf8(bytes).map_err(|e| {
-                Error::DataConversionError(format!("Invalid UTF-8: {}", e))
-            })?;
+            let s = String::from_utf8(bytes)
+                .map_err(|e| Error::DataConversionError(format!("Invalid UTF-8: {}", e)))?;
             Ok(Value::String(s))
         }
         OracleType::Number => {
@@ -415,11 +414,16 @@ fn encode_value(buf: &mut WriteBuffer, value: &Value, oracle_type: OracleType) -
             buf.write_bytes(&bytes)?;
         }
         // Complex types not yet supported in collections
-        Value::RowId(_) | Value::Lob(_) | Value::Json(_) | Value::Vector(_)
-        | Value::Cursor(_) | Value::Collection(_) => {
-            return Err(Error::DataConversionError(
-                format!("Type {:?} not supported in collections", value),
-            ));
+        Value::RowId(_)
+        | Value::Lob(_)
+        | Value::Json(_)
+        | Value::Vector(_)
+        | Value::Cursor(_)
+        | Value::Collection(_) => {
+            return Err(Error::DataConversionError(format!(
+                "Type {:?} not supported in collections",
+                value
+            )));
         }
     }
     Ok(())
@@ -445,7 +449,12 @@ mod tests {
 
     #[test]
     fn test_decode_empty_collection() {
-        let obj_type = DbObjectType::collection("TEST", "NUM_ARRAY", CollectionType::Varray, OracleType::Number);
+        let obj_type = DbObjectType::collection(
+            "TEST",
+            "NUM_ARRAY",
+            CollectionType::Varray,
+            OracleType::Number,
+        );
         let obj = decode_collection(&obj_type, &[]).unwrap();
         assert!(obj.is_collection);
         assert_eq!(obj.elements.len(), 0);
@@ -453,7 +462,12 @@ mod tests {
 
     #[test]
     fn test_encode_decode_roundtrip() {
-        let obj_type = DbObjectType::collection("TEST", "NUM_ARRAY", CollectionType::Varray, OracleType::Number);
+        let obj_type = DbObjectType::collection(
+            "TEST",
+            "NUM_ARRAY",
+            CollectionType::Varray,
+            OracleType::Number,
+        );
 
         let mut obj = DbObject::collection("TEST.NUM_ARRAY");
         obj.append(Value::Integer(1));
@@ -471,7 +485,12 @@ mod tests {
 
     #[test]
     fn test_encode_decode_strings() {
-        let obj_type = DbObjectType::collection("TEST", "STR_ARRAY", CollectionType::Varray, OracleType::Varchar);
+        let obj_type = DbObjectType::collection(
+            "TEST",
+            "STR_ARRAY",
+            CollectionType::Varray,
+            OracleType::Varchar,
+        );
 
         let mut obj = DbObject::collection("TEST.STR_ARRAY");
         obj.append(Value::String("hello".to_string()));
@@ -505,7 +524,12 @@ mod tests {
     /// Reference: Python python-oracledb dbobject.pyx lines 614-624
     #[test]
     fn test_wire_collection_image_flags_must_be_0x88() {
-        let obj_type = DbObjectType::collection("TEST", "NUM_ARRAY", CollectionType::Varray, OracleType::Number);
+        let obj_type = DbObjectType::collection(
+            "TEST",
+            "NUM_ARRAY",
+            CollectionType::Varray,
+            OracleType::Number,
+        );
         let mut obj = DbObject::collection("TEST.NUM_ARRAY");
         obj.append(Value::Integer(42));
 
@@ -514,8 +538,10 @@ mod tests {
         // Byte 0: image_flags - MUST be 0x88 for collections
         // 0x88 = IS_VERSION_81 (0x80) | IS_COLLECTION (0x08)
         // Using 0x04 (NO_PREFIX_SEG) causes connection reset!
-        assert_eq!(encoded[0], 0x88,
-            "Collection image_flags must be 0x88 (IS_VERSION_81 | IS_COLLECTION), not 0x04");
+        assert_eq!(
+            encoded[0], 0x88,
+            "Collection image_flags must be 0x88 (IS_VERSION_81 | IS_COLLECTION), not 0x04"
+        );
 
         // Byte 1: image_version - always 0x01
         assert_eq!(encoded[1], 0x01);
@@ -540,7 +566,8 @@ mod tests {
     /// length-prefixed formats.
     #[test]
     fn test_wire_pickle_header_layout() {
-        let obj_type = DbObjectType::collection("TEST", "ARR", CollectionType::Varray, OracleType::Number);
+        let obj_type =
+            DbObjectType::collection("TEST", "ARR", CollectionType::Varray, OracleType::Number);
         let mut obj = DbObject::collection("TEST.ARR");
         obj.append(Value::Integer(10));
         obj.append(Value::Integer(20));
@@ -551,12 +578,18 @@ mod tests {
         // Header structure
         assert_eq!(encoded[0], 0x88, "image_flags");
         assert_eq!(encoded[1], 0x01, "image_version");
-        assert_eq!(encoded[2], 0xFE, "length_indicator (TNS_LONG_LENGTH_INDICATOR)");
+        assert_eq!(
+            encoded[2], 0xFE,
+            "length_indicator (TNS_LONG_LENGTH_INDICATOR)"
+        );
 
         // Total length field (bytes 3-6) contains TOTAL pickle size
         let total_len = u32::from_be_bytes([encoded[3], encoded[4], encoded[5], encoded[6]]);
-        assert_eq!(total_len as usize, encoded.len(),
-            "Length field must equal total pickle size, not data-after-header");
+        assert_eq!(
+            total_len as usize,
+            encoded.len(),
+            "Length field must equal total pickle size, not data-after-header"
+        );
 
         // Prefix segment (required for collections)
         assert_eq!(encoded[7], 0x01, "prefix_seg_len");
@@ -581,21 +614,28 @@ mod tests {
     #[test]
     fn test_wire_collection_type_codes() {
         // VARRAY
-        let varray_type = DbObjectType::collection("T", "V", CollectionType::Varray, OracleType::Number);
+        let varray_type =
+            DbObjectType::collection("T", "V", CollectionType::Varray, OracleType::Number);
         let mut varray = DbObject::collection("T.V");
         varray.append(Value::Integer(1));
         let encoded = encode_collection(&varray, &varray_type).unwrap();
         assert_eq!(encoded[9], 3, "VARRAY wire code must be 3");
 
         // Nested Table
-        let nested_type = DbObjectType::collection("T", "N", CollectionType::NestedTable, OracleType::Number);
+        let nested_type =
+            DbObjectType::collection("T", "N", CollectionType::NestedTable, OracleType::Number);
         let mut nested = DbObject::collection("T.N");
         nested.append(Value::Integer(1));
         let encoded = encode_collection(&nested, &nested_type).unwrap();
         assert_eq!(encoded[9], 2, "Nested Table wire code must be 2");
 
         // PL/SQL Index-By Table
-        let idx_type = DbObjectType::collection("T", "I", CollectionType::PlsqlIndexTable, OracleType::Number);
+        let idx_type = DbObjectType::collection(
+            "T",
+            "I",
+            CollectionType::PlsqlIndexTable,
+            OracleType::Number,
+        );
         let mut idx = DbObject::collection("T.I");
         idx.append(Value::Integer(1));
         let encoded = encode_collection(&idx, &idx_type).unwrap();

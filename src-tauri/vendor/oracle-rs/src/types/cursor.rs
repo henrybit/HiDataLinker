@@ -67,5 +67,4 @@ impl RefCursor {
     pub fn is_fetched(&self) -> bool {
         self.fetched
     }
-
 }

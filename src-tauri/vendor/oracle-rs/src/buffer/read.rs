@@ -364,7 +364,7 @@ impl ReadBuffer {
     /// Read the UB length byte (masks off the high bit which indicates sign)
     fn read_ub_length(&mut self) -> Result<u8> {
         let len = self.read_u8()?;
-        Ok(len & 0x7F)  // Mask off high bit (sign indicator)
+        Ok(len & 0x7F) // Mask off high bit (sign indicator)
     }
 
     /// Read a TNS length-prefixed byte sequence

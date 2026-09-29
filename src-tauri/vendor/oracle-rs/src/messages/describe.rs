@@ -10,10 +10,7 @@ use crate::error::{Error, Result};
 use crate::statement::ColumnInfo;
 
 /// Parse describe info (column metadata) from server response
-pub fn parse_describe_info(
-    buf: &mut ReadBuffer,
-    caps: &Capabilities,
-) -> Result<Vec<ColumnInfo>> {
+pub fn parse_describe_info(buf: &mut ReadBuffer, caps: &Capabilities) -> Result<Vec<ColumnInfo>> {
     // Skip raw bytes chunk header if present
     skip_raw_bytes_chunked(buf)?;
 

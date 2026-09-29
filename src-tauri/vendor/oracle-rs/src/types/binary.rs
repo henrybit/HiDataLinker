@@ -95,10 +95,8 @@ pub fn decode_binary_double(data: &[u8]) -> f64 {
         b7 = !b7;
     }
 
-    let high_bits =
-        ((b0 as u64) << 24) | ((b1 as u64) << 16) | ((b2 as u64) << 8) | (b3 as u64);
-    let low_bits =
-        ((b4 as u64) << 24) | ((b5 as u64) << 16) | ((b6 as u64) << 8) | (b7 as u64);
+    let high_bits = ((b0 as u64) << 24) | ((b1 as u64) << 16) | ((b2 as u64) << 8) | (b3 as u64);
+    let low_bits = ((b4 as u64) << 24) | ((b5 as u64) << 16) | ((b6 as u64) << 8) | (b7 as u64);
     let all_bits = (high_bits << 32) | (low_bits & 0xffffffff);
 
     f64::from_bits(all_bits)
@@ -206,13 +204,23 @@ mod tests {
 
     #[test]
     fn test_binary_float_roundtrip_various() {
-        let values = [0.5_f32, -0.5, 100.0, -100.0, 0.001, -0.001, f32::MAX, f32::MIN];
+        let values = [
+            0.5_f32,
+            -0.5,
+            100.0,
+            -100.0,
+            0.001,
+            -0.001,
+            f32::MAX,
+            f32::MIN,
+        ];
         for value in values {
             let encoded = encode_binary_float(value);
             let decoded = decode_binary_float(&encoded);
             if value.is_finite() {
                 assert!(
-                    (decoded - value).abs() < value.abs() * 0.0001 || (decoded - value).abs() < 0.0001,
+                    (decoded - value).abs() < value.abs() * 0.0001
+                        || (decoded - value).abs() < 0.0001,
                     "Roundtrip failed for {}: got {}",
                     value,
                     decoded
@@ -223,7 +231,16 @@ mod tests {
 
     #[test]
     fn test_binary_double_roundtrip_various() {
-        let values = [0.5_f64, -0.5, 100.0, -100.0, 0.001, -0.001, f64::MAX, f64::MIN];
+        let values = [
+            0.5_f64,
+            -0.5,
+            100.0,
+            -100.0,
+            0.001,
+            -0.001,
+            f64::MAX,
+            f64::MIN,
+        ];
         for value in values {
             let encoded = encode_binary_double(value);
             let decoded = decode_binary_double(&encoded);

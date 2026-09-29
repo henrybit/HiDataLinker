@@ -88,7 +88,9 @@ impl ImplicitResult {
 
     /// Get a column by name
     pub fn column(&self, name: &str) -> Option<&ColumnInfo> {
-        self.columns.iter().find(|c| c.name.eq_ignore_ascii_case(name))
+        self.columns
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case(name))
     }
 
     /// Get an iterator over the rows
@@ -116,7 +118,9 @@ pub struct ImplicitResults {
 impl ImplicitResults {
     /// Create a new empty collection
     pub fn new() -> Self {
-        Self { results: Vec::new() }
+        Self {
+            results: Vec::new(),
+        }
     }
 
     /// Add an implicit result set
@@ -166,9 +170,10 @@ mod tests {
             ColumnInfo::new("ID", OracleType::Number),
             ColumnInfo::new("NAME", OracleType::Varchar),
         ];
-        let rows = vec![
-            Row::new(vec![Value::Integer(1), Value::String("Alice".to_string())]),
-        ];
+        let rows = vec![Row::new(vec![
+            Value::Integer(1),
+            Value::String("Alice".to_string()),
+        ])];
         let result = ImplicitResult::new(1, columns, rows);
 
         assert_eq!(result.cursor_id, 1);
