@@ -3,6 +3,8 @@ identifier = "mysql"
 description = "Allows the frontend to manage database connections, inspect schema objects, run SQL, and call the analysis model"
 commands.allow = [
   "complete_llm",
+  "start_llm",
+  "poll_llm",
   "list_analysis_history",
   "read_analysis_history",
   "read_llm_catalog",

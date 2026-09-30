@@ -12,7 +12,7 @@ export type Confidence = 'high' | 'medium' | 'low';
 
 export type ReasonCode = 'foreign-key' | 'view-reference' | 'junction' | 'inferred';
 
-export type AnalysisWarningCode = 'truncated' | 'empty';
+export type AnalysisWarningCode = 'truncated' | 'empty' | 'comments' | 'relations';
 
 export interface SchemaScope {
 	connectionId: string;
@@ -60,6 +60,7 @@ export interface AnalysisWarning {
 	code: AnalysisWarningCode;
 	connectionName: string;
 	schema: string;
+	detail?: string;
 }
 
 export interface SchemaCatalog {

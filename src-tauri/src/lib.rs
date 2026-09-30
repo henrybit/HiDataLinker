@@ -13,9 +13,10 @@ use commands::{
     delete_query_cache, disconnect_session, drop_database, dump_database, dump_table, execute_sql,
     get_columns, get_ddl, list_analysis_history, list_charset_catalog, list_connections,
     list_databases, list_indexes, list_routines, list_tables, list_triggers, list_views,
-    migrate_database, preview_table, read_analysis_history, read_llm_catalog, read_locale,
-    read_query_cache, save_analysis_history, table_row_count, test_connection, upsert_connection,
-    write_llm_catalog, write_locale, write_query_cache, write_text_file,
+    migrate_database, poll_llm, preview_table, read_analysis_history, read_llm_catalog,
+    read_locale, read_query_cache, save_analysis_history, start_llm, table_row_count,
+    test_connection, upsert_connection, write_llm_catalog, write_locale, write_query_cache,
+    write_text_file,
 };
 use state::AppState;
 use tauri::Manager;
@@ -40,6 +41,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             complete_llm,
+            start_llm,
+            poll_llm,
             list_analysis_history,
             read_analysis_history,
             read_llm_catalog,

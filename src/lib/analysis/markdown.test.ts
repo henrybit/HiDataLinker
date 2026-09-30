@@ -38,6 +38,26 @@ describe('renderRelationshipMarkdown', () => {
 		expect(markdown).not.toContain('#### order|header');
 		expect(markdown).toContain('["shop.order/header"]');
 	});
+
+	it('keeps the physical network when inference is missing', () => {
+		setLocale('zh');
+		const graph = sampleGraph();
+		graph.warnings = [
+			{ code: 'comments', connectionName: '', schema: '' },
+			{
+				code: 'relations',
+				connectionName: '',
+				schema: '',
+				detail: 'model request timed out'
+			}
+		];
+		const markdown = renderRelationshipMarkdown(graph, 'now');
+		expect(markdown).toContain('部分注释没有推断出来');
+		expect(markdown).toContain('关联推断没有完成');
+		expect(markdown).toContain('model request timed out');
+		expect(markdown).toContain('已声明的外键');
+		expect(markdown).toContain('```mermaid');
+	});
 });
 
 function sampleGraph(): RelationshipGraph {

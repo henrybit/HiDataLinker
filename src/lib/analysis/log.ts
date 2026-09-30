@@ -37,7 +37,8 @@ export type AnalysisLogEvent =
 			detail: string;
 	  }
 	| { type: 'relations-start'; objects: number; known: number }
-	| { type: 'relations-done'; returned: number; kept: number; durationMs: number };
+	| { type: 'relations-done'; returned: number; kept: number; durationMs: number }
+	| { type: 'relations-failed'; durationMs: number; detail: string };
 
 export function analysisLogStage(event: AnalysisLogEvent): AnalysisStage {
 	switch (event.type) {
@@ -53,6 +54,7 @@ export function analysisLogStage(event: AnalysisLogEvent): AnalysisStage {
 			return 'comments';
 		case 'relations-start':
 		case 'relations-done':
+		case 'relations-failed':
 			return 'relations';
 		case 'inference-skip':
 			return 'done';
@@ -60,7 +62,7 @@ export function analysisLogStage(event: AnalysisLogEvent): AnalysisStage {
 }
 
 export function analysisLogLevel(event: AnalysisLogEvent): AnalysisLogLevel {
-	if (event.type === 'comments-batch-failed') return 'error';
+	if (event.type === 'comments-batch-failed' || event.type === 'relations-failed') return 'error';
 	if (event.type === 'catalog-warning' || event.type === 'inference-skip') return 'warning';
 	if (event.type === 'catalog-query' && event.truncated) return 'warning';
 	if (

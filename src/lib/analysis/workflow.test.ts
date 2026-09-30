@@ -133,6 +133,49 @@ describe('inferRelationships', () => {
 		expect(events[1]?.detail).toContain('request-id req_comment');
 		expect(events[1]?.detail).toContain('output: {"comments":"bad"}');
 		expect(graph.edges.filter((edge) => edge.origin === 'inferred')).toHaveLength(1);
+		expect(graph.warnings.some((warning) => warning.code === 'comments')).toBe(true);
+	});
+
+	it('keeps the physical graph when relationship inference fails', async () => {
+		const catalog = sampleCatalog();
+		const users = catalog.objects[0]?.id ?? '';
+		const orders = catalog.objects[1]?.id ?? '';
+		catalog.foreignKeys = [
+			{
+				id: 'fk1',
+				name: 'fk_orders_user',
+				connectionId: 'c1',
+				fromId: orders,
+				toId: users,
+				pairs: [{ fromColumn: 'user_id', toColumn: 'id' }]
+			}
+		];
+		const caller = {
+			async complete(_schema: unknown, _system: string, human: string) {
+				if (human.startsWith('TASK: comments')) return { comments: [] };
+				throw new Error('model request timed out\noperation timed out');
+			}
+		} as StructuredCaller;
+		const events: Array<{ type: string; detail?: string }> = [];
+		const graph = await inferRelationships({
+			catalog,
+			documents: '',
+			locale: 'zh',
+			caller,
+			onLog: (event) =>
+				events.push({
+					type: event.type,
+					detail: event.type === 'relations-failed' ? event.detail : undefined
+				})
+		});
+		expect(events.map((event) => event.type)).toContain('relations-failed');
+		expect(events.find((event) => event.type === 'relations-failed')?.detail).toContain(
+			'model request timed out'
+		);
+		expect(graph.nodes).toHaveLength(2);
+		expect(graph.edges.filter((edge) => edge.origin === 'physical')).toHaveLength(1);
+		expect(graph.edges.filter((edge) => edge.origin === 'inferred')).toHaveLength(0);
+		expect(graph.warnings.some((warning) => warning.code === 'relations')).toBe(true);
 	});
 });
 

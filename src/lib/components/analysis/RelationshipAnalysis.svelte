@@ -295,6 +295,11 @@
 					kept: event.kept,
 					duration: formatDuration(event.durationMs)
 				});
+			case 'relations-failed':
+				return t('analysis.log.relations.failed', {
+					duration: formatDuration(event.durationMs),
+					detail: event.detail
+				});
 		}
 	}
 
@@ -428,6 +433,12 @@
 	function warningText(warning: AnalysisWarning): string {
 		if (warning.code === 'truncated') {
 			return t('analysis.truncated', { name: `${warning.connectionName}.${warning.schema}` });
+		}
+		if (warning.code === 'comments') return t('analysis.warning.comments');
+		if (warning.code === 'relations') {
+			return warning.detail
+				? `${t('analysis.warning.relations')} ${warning.detail}`
+				: t('analysis.warning.relations');
 		}
 		return t('analysis.noObjects');
 	}

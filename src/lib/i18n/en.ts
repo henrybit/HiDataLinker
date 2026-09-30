@@ -408,6 +408,10 @@ export const en = {
 	'analysis.offlineScope': '{name} is offline. Connect it before analyzing.',
 	'analysis.truncated': '{name} returned a truncated catalog, so some objects may be missing.',
 	'analysis.noObjects': 'No tables or views were found in the selected schemas.',
+	'analysis.warning.comments':
+		'Some comments could not be inferred, so those notes are missing from the result and the export.',
+	'analysis.warning.relations':
+		'Relationship inference did not finish, so inferred relationships are missing from the result and the export.',
 	'analysis.file.unsupported': '{name} is not a Markdown, Word, or PDF file.',
 	'analysis.file.doc': '{name} is a legacy .doc file. Save it as .docx and add it again.',
 	'analysis.file.empty': '{name} has no readable text.',
@@ -446,6 +450,7 @@ export const en = {
 	'analysis.log.relations.start': 'Infer relationships · {objects} object(s) · {known} known',
 	'analysis.log.relations.done':
 		'Relationships done · model returned {returned} · kept {kept} · {duration}',
+	'analysis.log.relations.failed': 'Relationship inference failed · {duration}\n{detail}',
 	'analysis.log.failed': '{stage} failed\n{message}',
 	'analysis.log.stage.start': 'Prepare',
 	'analysis.log.stage.catalog': 'Read catalog',

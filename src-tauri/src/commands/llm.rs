@@ -1,5 +1,6 @@
 use crate::error::AppResult;
-use crate::llm::{complete, LlmCompleteRequest};
+use crate::llm::jobs::LlmJobStatus;
+use crate::llm::{complete, jobs, LlmCompleteRequest};
 use crate::runtime::run_worker;
 use serde_json::Value;
 
@@ -11,4 +12,16 @@ use serde_json::Value;
 #[tauri::command]
 pub async fn complete_llm(request: LlmCompleteRequest) -> AppResult<Value> {
     run_worker(async move { complete(request).await }).await
+}
+
+/// Start a model call and return before it finishes.
+#[tauri::command]
+pub fn start_llm(request: LlmCompleteRequest) -> AppResult<String> {
+    jobs::start(request)
+}
+
+/// Read a model call started by [`start_llm`].
+#[tauri::command]
+pub fn poll_llm(id: String) -> AppResult<LlmJobStatus> {
+    jobs::poll(&id)
 }

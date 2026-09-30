@@ -16,6 +16,7 @@ import {
 import { formatAnalysisError, type AnalysisLogEvent } from './log';
 import type {
 	AnalysisLocale,
+	AnalysisWarning,
 	InferredComment,
 	InferredRelation,
 	RelationshipGraph,
@@ -57,6 +58,7 @@ export async function inferRelationships(input: {
 	const aliases = objectAliases(input.catalog.objects);
 	const pending = missingCommentItems(input.catalog, aliases);
 	const realObjects = input.catalog.objects.filter((object) => !object.external);
+	const gaps: AnalysisWarning[] = [];
 	if (realObjects.length === 0) input.onLog?.({ type: 'inference-skip' });
 	else if (pending.length === 0) input.onLog?.({ type: 'comments-skip' });
 
@@ -100,6 +102,9 @@ export async function inferRelationships(input: {
 				promptChars: human.length,
 				detail: formatAnalysisError(caught)
 			});
+			if (!gaps.some((warning) => warning.code === 'comments')) {
+				gaps.push({ code: 'comments', connectionName: '', schema: '' });
+			}
 			return {
 				comments: [],
 				commentCursor: state.commentCursor + batchSize
@@ -117,19 +122,36 @@ export async function inferRelationships(input: {
 			known: known.length
 		});
 		const started = performance.now();
-		const response = await input.caller.complete(
-			relationResponseSchema,
-			relationSystemPrompt(state.locale),
-			relationUserPrompt(catalog, aliases, known, state.documents)
-		);
-		const relations = mapRelations(response, aliases);
-		input.onLog?.({
-			type: 'relations-done',
-			returned: response.relations.length,
-			kept: relations.length,
-			durationMs: Math.round(performance.now() - started)
-		});
-		return { relations };
+		try {
+			const response = await input.caller.complete(
+				relationResponseSchema,
+				relationSystemPrompt(state.locale),
+				relationUserPrompt(catalog, aliases, known, state.documents)
+			);
+			const relations = mapRelations(response, aliases);
+			input.onLog?.({
+				type: 'relations-done',
+				returned: response.relations.length,
+				kept: relations.length,
+				durationMs: Math.round(performance.now() - started)
+			});
+			return { relations };
+		} catch (caught) {
+			const detail = formatAnalysisError(caught);
+			console.error('[analysis] relationship inference failed', caught);
+			input.onLog?.({
+				type: 'relations-failed',
+				durationMs: Math.round(performance.now() - started),
+				detail
+			});
+			gaps.push({
+				code: 'relations',
+				connectionName: '',
+				schema: '',
+				detail: detail.split('\n')[0] ?? detail
+			});
+			return { relations: [] };
+		}
 	};
 
 	const routeStart = (state: AnalysisState) => {
@@ -150,18 +172,41 @@ export async function inferRelationships(input: {
 		.compile();
 
 	const steps = Math.ceil(pending.length / batchSize) + 4;
-	const result = await graph.invoke(
-		{
+	let result: AnalysisState;
+	try {
+		result = await graph.invoke(
+			{
+				catalog: input.catalog,
+				documents: input.documents,
+				locale: input.locale,
+				commentCursor: 0,
+				comments: [],
+				relations: []
+			},
+			{ recursionLimit: Math.max(25, steps) }
+		);
+	} catch (caught) {
+		const detail = formatAnalysisError(caught);
+		input.onLog?.({ type: 'relations-failed', durationMs: 0, detail });
+		if (!gaps.some((warning) => warning.code === 'relations')) {
+			gaps.push({
+				code: 'relations',
+				connectionName: '',
+				schema: '',
+				detail: detail.split('\n')[0] ?? detail
+			});
+		}
+		result = {
 			catalog: input.catalog,
 			documents: input.documents,
 			locale: input.locale,
-			commentCursor: 0,
+			commentCursor: pending.length,
 			comments: [],
 			relations: []
-		},
-		{ recursionLimit: Math.max(25, steps) }
-	);
-	return assembleGraph(input.catalog, result.comments ?? [], result.relations ?? []);
+		};
+	}
+	const built = assembleGraph(input.catalog, result.comments ?? [], result.relations ?? []);
+	return { ...built, warnings: [...built.warnings, ...gaps] };
 }
 
 function mapComments(

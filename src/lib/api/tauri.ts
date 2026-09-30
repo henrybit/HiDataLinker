@@ -165,7 +165,23 @@ export const api = {
 		system: string;
 		human: string;
 		schema: Record<string, unknown>;
-	}) => call<unknown>('complete_llm', { request })
+	}) => call<unknown>('complete_llm', { request }),
+
+	startLlm: (request: {
+		provider: 'openai' | 'anthropic';
+		apiKey: string;
+		model: string;
+		baseUrl: string;
+		system: string;
+		human: string;
+		schema: Record<string, unknown>;
+	}) => call<string>('start_llm', { request }),
+
+	pollLlm: (id: string) =>
+		call<{ status: 'pending' | 'done' | 'failed'; result?: unknown; error?: string | null }>(
+			'poll_llm',
+			{ id }
+		)
 };
 
 export function errorMessage(error: unknown): string {

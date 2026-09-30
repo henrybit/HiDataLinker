@@ -1,3 +1,5 @@
+pub mod jobs;
+
 use crate::error::{AppError, AppResult};
 use serde::Deserialize;
 use serde_json::{json, Value};
