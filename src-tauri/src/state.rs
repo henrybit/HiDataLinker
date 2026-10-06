@@ -20,6 +20,7 @@ pub struct AppState {
     data_file: PathBuf,
     query_cache_dir: PathBuf,
     analysis_history_dir: PathBuf,
+    migration_history_dir: PathBuf,
     llm_catalog_path: PathBuf,
     locale_path: PathBuf,
     profiles: RwLock<Vec<ConnectionProfile>>,
@@ -39,6 +40,7 @@ impl AppState {
         let query_cache_dir = paths.queries;
         reset_query_cache_dir(&query_cache_dir)?;
         let analysis_history_dir = paths.analysis;
+        let migration_history_dir = paths.migrations;
         let llm_catalog_path = paths.llm;
         let locale_path = paths.locale;
         let profiles = if data_file.exists() {
@@ -52,6 +54,7 @@ impl AppState {
             data_file,
             query_cache_dir,
             analysis_history_dir,
+            migration_history_dir,
             llm_catalog_path,
             locale_path,
             profiles: RwLock::new(profiles),
@@ -207,6 +210,10 @@ impl AppState {
 
     pub fn analysis_history_dir(&self) -> &PathBuf {
         &self.analysis_history_dir
+    }
+
+    pub fn migration_history_dir(&self) -> &PathBuf {
+        &self.migration_history_dir
     }
 
     pub fn llm_catalog_path(&self) -> &PathBuf {

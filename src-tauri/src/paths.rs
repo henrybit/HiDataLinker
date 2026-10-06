@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 ///   connections/connections.json
 ///   queries/
 ///   analysis/
+///   migrations/
 ///   llm/providers.json
 ///   settings/locale
 /// ```
@@ -17,6 +18,7 @@ pub struct AppPaths {
     pub connections: PathBuf,
     pub queries: PathBuf,
     pub analysis: PathBuf,
+    pub migrations: PathBuf,
     pub llm: PathBuf,
     pub locale: PathBuf,
 }
@@ -31,6 +33,7 @@ impl AppPaths {
             connections: root.join("connections").join("connections.json"),
             queries: root.join("queries"),
             analysis: root.join("analysis"),
+            migrations: root.join("migrations"),
             llm: root.join("llm").join("providers.json"),
             locale: root.join("settings").join("locale"),
             root,
@@ -42,6 +45,7 @@ impl AppPaths {
             self.connections.parent(),
             Some(self.queries.as_path()),
             Some(self.analysis.as_path()),
+            Some(self.migrations.as_path()),
             self.llm.parent(),
             self.locale.parent(),
         ] {
@@ -120,6 +124,10 @@ mod tests {
         assert_eq!(
             paths.analysis,
             PathBuf::from("/Users/ada/.hidatalinker/analysis")
+        );
+        assert_eq!(
+            paths.migrations,
+            PathBuf::from("/Users/ada/.hidatalinker/migrations")
         );
         assert_eq!(
             paths.llm,

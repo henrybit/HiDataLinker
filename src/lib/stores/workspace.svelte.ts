@@ -20,6 +20,7 @@ import type {
 	DatabaseInfo,
 	DropDatabasePrompt,
 	MigrateDatabasePrompt,
+	MigrateResult,
 	FolderKind,
 	IndexInfo,
 	ObjectKind,
@@ -365,8 +366,8 @@ class WorkspaceStore {
 		targetConnectionId: string,
 		targetName: string,
 		includeData: boolean
-	) {
-		if (!this.migrateDatabasePrompt) return;
+	): Promise<MigrateResult | null> {
+		if (!this.migrateDatabasePrompt) return null;
 		const prompt = this.migrateDatabasePrompt;
 		const key = `migrate-db:${prompt.connectionId}:${prompt.name}`;
 		this.begin(key);
@@ -387,8 +388,10 @@ class WorkspaceStore {
 				target: result.targetName,
 				count: result.statementCount
 			});
+			return result;
 		} catch (error) {
 			this.error = errorMessage(error);
+			return null;
 		} finally {
 			this.end(key);
 		}

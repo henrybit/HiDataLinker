@@ -14,6 +14,7 @@
 	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
 	import { engineLabel } from '$lib/engine';
 	import { getLocale, schemaNounLabel, setLocale, t, type Locale } from '$lib/i18n/i18n.svelte';
+	import { migrationPanel } from '$lib/migration/panel.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
 	const selected = $derived(workspace.selection);
@@ -23,6 +24,8 @@
 	const locale = $derived(getLocale());
 	let menuOpen = $state(false);
 	let menuRoot = $state<HTMLDivElement | null>(null);
+	let migrationMenuOpen = $state(false);
+	let migrationMenuRoot = $state<HTMLDivElement | null>(null);
 
 	function switchLocale(next: Locale) {
 		setLocale(next);
@@ -33,11 +36,27 @@
 		analysisPanel.open = true;
 	}
 
+	function openMigration() {
+		migrationMenuOpen = false;
+		migrationPanel.open = true;
+	}
+
 	onMount(() => {
 		const onPointerDown = (event: PointerEvent) => {
-			if (!menuOpen || !menuRoot) return;
-			if (event.target instanceof Node && menuRoot.contains(event.target)) return;
-			menuOpen = false;
+			if (
+				menuOpen &&
+				menuRoot &&
+				!(event.target instanceof Node && menuRoot.contains(event.target))
+			) {
+				menuOpen = false;
+			}
+			if (
+				migrationMenuOpen &&
+				migrationMenuRoot &&
+				!(event.target instanceof Node && migrationMenuRoot.contains(event.target))
+			) {
+				migrationMenuOpen = false;
+			}
 		};
 		window.addEventListener('pointerdown', onPointerDown);
 		return () => window.removeEventListener('pointerdown', onPointerDown);
@@ -105,7 +124,10 @@
 			type="button"
 			aria-haspopup="menu"
 			aria-expanded={menuOpen}
-			onclick={() => (menuOpen = !menuOpen)}
+			onclick={() => {
+				menuOpen = !menuOpen;
+				migrationMenuOpen = false;
+			}}
 		>
 			{t('toolbar.analyze')}
 			<ChevronDown size={14} />
@@ -114,6 +136,28 @@
 			<div class="analysis-menu-pop" role="menu">
 				<button type="button" role="menuitem" onclick={openAnalysis}
 					>{t('analysis.relationship')}</button
+				>
+			</div>
+		{/if}
+	</div>
+	<div class="analysis-menu" bind:this={migrationMenuRoot}>
+		<button
+			class="toolbar-btn"
+			type="button"
+			aria-haspopup="menu"
+			aria-expanded={migrationMenuOpen}
+			onclick={() => {
+				migrationMenuOpen = !migrationMenuOpen;
+				menuOpen = false;
+			}}
+		>
+			{t('toolbar.migrate')}
+			<ChevronDown size={14} />
+		</button>
+		{#if migrationMenuOpen}
+			<div class="analysis-menu-pop" role="menu">
+				<button type="button" role="menuitem" onclick={openMigration}
+					>{t('migration.center')}</button
 				>
 			</div>
 		{/if}

@@ -5,6 +5,11 @@ import type {
 	NewAnalysisHistory
 } from '$lib/analysis/history';
 import type {
+	MigrationHistoryRecord,
+	MigrationHistorySummary,
+	NewMigrationHistory
+} from '$lib/migration/history';
+import type {
 	CharsetCatalog,
 	ColumnInfo,
 	ConnectResult,
@@ -156,6 +161,16 @@ export const api = {
 		call<AnalysisHistorySummary>('save_analysis_history', { request }),
 
 	deleteAnalysisHistory: (id: string) => call<void>('delete_analysis_history', { id }),
+
+	listMigrationHistory: () => call<MigrationHistorySummary[]>('list_migration_history'),
+
+	readMigrationHistory: (id: string) =>
+		call<MigrationHistoryRecord>('read_migration_history', { id }),
+
+	saveMigrationHistory: (request: NewMigrationHistory) =>
+		call<MigrationHistorySummary>('save_migration_history', { request }),
+
+	deleteMigrationHistory: (id: string) => call<void>('delete_migration_history', { id }),
 
 	completeLlm: (request: {
 		provider: 'openai' | 'anthropic';

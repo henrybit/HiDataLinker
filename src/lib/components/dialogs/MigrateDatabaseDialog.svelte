@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import type { MigrateProgressEvent } from '$lib/api/types';
 	import { normalizeEngine } from '$lib/engine';
 	import { schemaNounLabel, schemaNounLower, t } from '$lib/i18n/i18n.svelte';
+	import { migrateLevelClass, migratePhaseLabel } from '$lib/migration/labels';
+	import { rememberMigration } from '$lib/migration/save';
 	import { workspace } from '$lib/stores/workspace.svelte';
-	import type { MigrateProgressEvent } from '$lib/api/types';
 
 	const prompt = $derived(workspace.migrateDatabasePrompt);
 	const noun = $derived(schemaNounLabel(prompt?.engine));
 	const nounLower = $derived(schemaNounLower(prompt?.engine));
 	const pending = $derived(
-		prompt
-			? workspace.isPending(`migrate-db:${prompt.connectionId}:${prompt.name}`)
-			: false
+		prompt ? workspace.isPending(`migrate-db:${prompt.connectionId}:${prompt.name}`) : false
 	);
 
 	const sameEngineTargets = $derived(
@@ -85,33 +85,26 @@
 		if (!canSubmit || !prompt) return;
 		logs = [];
 		finished = false;
-		void workspace.confirmMigrateDatabase(targetConnectionId, targetName.trim(), includeData).then(() => {
-			if (!workspace.error) finished = true;
-		});
-	}
-
-	function levelClass(level: string): string {
-		if (level === 'error') return 'error';
-		if (level === 'success') return 'success';
-		if (level === 'warning') return 'warning';
-		return 'info';
-	}
-
-	function phaseLabel(phase: string): string {
-		switch (phase) {
-			case 'validate':
-				return t('dialog.migratePhaseValidate');
-			case 'dump':
-				return t('dialog.migratePhaseDump');
-			case 'execute':
-				return t('dialog.migratePhaseExecute');
-			case 'rename':
-				return t('dialog.migratePhaseRename');
-			case 'done':
-				return t('dialog.migratePhaseDone');
-			default:
-				return phase;
-		}
+		const target = workspace.connections.find((item) => item.id === targetConnectionId);
+		const destination = targetName.trim();
+		void workspace
+			.confirmMigrateDatabase(targetConnectionId, destination, includeData)
+			.then(async (result) => {
+				const failed = workspace.error;
+				if (!failed) finished = true;
+				await rememberMigration({
+					status: failed ? 'failed' : 'success',
+					sourceConnection: prompt.connectionName,
+					sourceName: prompt.name,
+					targetConnection: target?.name ?? targetConnectionId,
+					targetName: destination,
+					engine: prompt.engine,
+					includeData,
+					statementCount: result?.statementCount ?? 0,
+					error: failed,
+					logs
+				});
+			});
 	}
 </script>
 
@@ -141,7 +134,10 @@
 
 					<label class="field">
 						<span>{t('dialog.migrateTargetConnection')}</span>
-						<select bind:value={targetConnectionId} disabled={pending || targetOptions.length === 0}>
+						<select
+							bind:value={targetConnectionId}
+							disabled={pending || targetOptions.length === 0}
+						>
 							{#if targetOptions.length === 0}
 								<option value="">{t('dialog.migrateNoTargets')}</option>
 							{:else}
@@ -175,8 +171,8 @@
 					{#if logs.length > 0}
 						<div class="migrate-log" bind:this={logBox} role="log" aria-live="polite">
 							{#each logs as entry, index (index)}
-								<div class="migrate-log-line {levelClass(entry.level)}">
-									<span class="phase">[{phaseLabel(entry.phase)}]</span>
+								<div class="migrate-log-line {migrateLevelClass(entry.level)}">
+									<span class="phase">[{migratePhaseLabel(entry.phase)}]</span>
 									{#if entry.objectKind && entry.objectName}
 										<span class="object">{entry.objectKind}:{entry.objectName}</span>
 									{/if}

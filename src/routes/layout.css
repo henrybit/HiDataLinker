@@ -1799,3 +1799,51 @@ button {
 		border-bottom: 1px solid var(--border);
 	}
 }
+
+.migration-panel .migration-form {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.migration-panel .migration-form .field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.migration-panel .migration-form .field > span {
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.migration-panel .migration-form select,
+.migration-panel .migration-form input[type='text'] {
+	height: 30px;
+	padding: 0 8px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: white;
+}
+
+.migration-panel .migration-form input[type='checkbox'] {
+	width: fit-content;
+}
+
+.migration-log-panel {
+	flex: 1;
+	min-height: 320px;
+	max-height: none;
+}
+
+.migration-status {
+	font-weight: 600;
+}
+
+.migration-status.success {
+	color: #15803d;
+}
+
+.migration-status.failed {
+	color: var(--danger);
+}

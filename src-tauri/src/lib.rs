@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod error;
 mod llm;
+mod migration_history;
 mod models;
 mod paths;
 mod runtime;
@@ -10,13 +11,13 @@ mod state;
 
 use commands::{
     complete_llm, connect_session, create_database, delete_analysis_history, delete_connection,
-    delete_query_cache, disconnect_session, drop_database, dump_database, dump_table, execute_sql,
-    get_columns, get_ddl, list_analysis_history, list_charset_catalog, list_connections,
-    list_databases, list_indexes, list_routines, list_tables, list_triggers, list_views,
-    migrate_database, poll_llm, preview_table, read_analysis_history, read_llm_catalog,
-    read_locale, read_query_cache, save_analysis_history, start_llm, table_row_count,
-    test_connection, upsert_connection, write_llm_catalog, write_locale, write_query_cache,
-    write_text_file,
+    delete_migration_history, delete_query_cache, disconnect_session, drop_database, dump_database,
+    dump_table, execute_sql, get_columns, get_ddl, list_analysis_history, list_charset_catalog,
+    list_connections, list_databases, list_indexes, list_migration_history, list_routines,
+    list_tables, list_triggers, list_views, migrate_database, poll_llm, preview_table,
+    read_analysis_history, read_llm_catalog, read_locale, read_migration_history, read_query_cache,
+    save_analysis_history, save_migration_history, start_llm, table_row_count, test_connection,
+    upsert_connection, write_llm_catalog, write_locale, write_query_cache, write_text_file,
 };
 use state::AppState;
 use tauri::Manager;
@@ -45,12 +46,16 @@ pub fn run() {
             poll_llm,
             list_analysis_history,
             read_analysis_history,
+            list_migration_history,
+            read_migration_history,
             read_llm_catalog,
             write_llm_catalog,
             read_locale,
             write_locale,
             save_analysis_history,
             delete_analysis_history,
+            save_migration_history,
+            delete_migration_history,
             list_connections,
             upsert_connection,
             delete_connection,

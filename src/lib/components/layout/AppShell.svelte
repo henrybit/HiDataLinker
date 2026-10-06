@@ -13,10 +13,12 @@
 	import DropDatabaseDialog from '$lib/components/dialogs/DropDatabaseDialog.svelte';
 	import MigrateDatabaseDialog from '$lib/components/dialogs/MigrateDatabaseDialog.svelte';
 	import RelationshipAnalysis from '$lib/components/analysis/RelationshipAnalysis.svelte';
+	import MigrationCenter from '$lib/components/migration/MigrationCenter.svelte';
 	import LlmSettingsDialog from '$lib/components/dialogs/LlmSettingsDialog.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { hydrateLocale } from '$lib/i18n/i18n.svelte';
 	import { hydrateLlmCatalogFromDisk, llmSettingsDialog } from '$lib/llm/catalog.svelte';
+	import { migrationPanel } from '$lib/migration/panel.svelte';
 	import { isTauriRuntime } from '$lib/api/tauri';
 	import ContextMenu from '$lib/components/layout/ContextMenu.svelte';
 
@@ -90,6 +92,9 @@
 {/if}
 {#if analysisPanel.open}
 	<RelationshipAnalysis />
+{/if}
+{#if migrationPanel.open}
+	<MigrationCenter />
 {/if}
 {#if llmSettingsDialog.open}
 	<LlmSettingsDialog />
