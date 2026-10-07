@@ -72,14 +72,11 @@
 	<StatusBar />
 </div>
 
-{#if workspace.dialogOpen}
-	<ConnectionDialog />
+{#if analysisPanel.open}
+	<RelationshipAnalysis />
 {/if}
-{#if workspace.confirmDelete}
-	<ConfirmDialog />
-{/if}
-{#if workspace.passwordPrompt}
-	<PasswordDialog />
+{#if migrationPanel.open}
+	<MigrationCenter />
 {/if}
 {#if workspace.createDatabasePrompt}
 	<CreateDatabaseDialog />
@@ -90,14 +87,17 @@
 {#if workspace.migrateDatabasePrompt}
 	<MigrateDatabaseDialog />
 {/if}
-{#if analysisPanel.open}
-	<RelationshipAnalysis />
-{/if}
-{#if migrationPanel.open}
-	<MigrationCenter />
-{/if}
 {#if llmSettingsDialog.open}
 	<LlmSettingsDialog />
+{/if}
+{#if workspace.dialogOpen}
+	<ConnectionDialog />
+{/if}
+{#if workspace.confirmDelete}
+	<ConfirmDialog />
+{/if}
+{#if workspace.passwordPrompt}
+	<PasswordDialog />
 {/if}
 {#if workspace.contextMenu}
 	<ContextMenu />
