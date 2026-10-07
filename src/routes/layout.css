@@ -1800,6 +1800,47 @@ button {
 	}
 }
 
+.migration-connection-actions {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.migration-checks {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px 10px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--surface, #fff) 92%, var(--border));
+	font-size: 12px;
+}
+
+.migration-check {
+	margin: 0;
+	color: var(--text-muted);
+}
+
+.migration-check.ok {
+	color: #15803d;
+}
+
+.migration-check.fail {
+	color: var(--danger);
+}
+
+.migration-check.pending {
+	color: var(--text);
+}
+
+.migration-check-detail {
+	display: block;
+	margin-top: 2px;
+	color: var(--text-muted);
+	word-break: break-word;
+}
+
 .migration-panel .migration-form {
 	display: flex;
 	flex-direction: column;

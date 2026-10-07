@@ -405,10 +405,11 @@ class WorkspaceStore {
 	}
 
 	connect(id: string, password?: string) {
-		void this.connectInBackground(id, password);
+		void this.connectAsync(id, password);
 	}
 
-	private async connectInBackground(id: string, password?: string) {
+	/** Establish a live session. Returns true on success. */
+	async connectAsync(id: string, password?: string): Promise<boolean> {
 		const key = `connect:${id}`;
 		this.begin(key);
 		this.error = null;
@@ -425,6 +426,7 @@ class WorkspaceStore {
 			this.expanded = new Set([...this.expanded, `conn:${id}`]);
 			void this.loadDatabases(id);
 			this.status = connectStatus(evictedNames);
+			return true;
 		} catch (error) {
 			const message = errorMessage(error);
 			const item = this.connections.find((c) => c.id === id);
@@ -432,6 +434,7 @@ class WorkspaceStore {
 				this.passwordPrompt = { id, name: item?.name ?? id };
 			}
 			this.error = message;
+			return false;
 		} finally {
 			this.end(key);
 		}
