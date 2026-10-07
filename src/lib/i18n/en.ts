@@ -350,7 +350,6 @@ export const en = {
 	'migration.newConnection': 'New connection',
 	'migration.offline': 'Offline',
 	'migration.online': 'Connected',
-	'migration.needSource': 'Choose a source connection.',
 	'migration.needTarget': 'Choose a same-engine target connection.',
 	'migration.needTauri': 'Run the desktop app to migrate databases.',
 	'migration.checkSource': 'Source',

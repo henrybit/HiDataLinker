@@ -343,7 +343,6 @@ export const zh: Record<MessageKey, string> = {
 	'migration.newConnection': '新建连接',
 	'migration.offline': '未连接',
 	'migration.online': '已连接',
-	'migration.needSource': '请选择源连接。',
 	'migration.needTarget': '请选择同类型的目标连接。',
 	'migration.needTauri': '请在桌面应用中执行数据库迁移。',
 	'migration.checkSource': '源',
