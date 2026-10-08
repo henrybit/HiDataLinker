@@ -12,9 +12,7 @@ describe('connection url', () => {
 			'postgresql://postgres:password@127.0.0.1:5432/postgres'
 		);
 		expect(connectionUrlPlaceholder('mssql')).toBe('mssql://sa:password@127.0.0.1:1433/master');
-		expect(connectionUrlPlaceholder('oracle')).toBe(
-			'oracle://system:password@127.0.0.1:1521/FREEPDB1'
-		);
+		expect(connectionUrlPlaceholder('oracle')).toBe('jdbc:oracle:thin:@127.0.0.1:1521:ORCL');
 	});
 
 	it('detects supported schemes', () => {
@@ -25,6 +23,8 @@ describe('connection url', () => {
 		expect(looksLikeConnectionUrl('mariadb://root@127.0.0.1/app')).toBe(true);
 		expect(looksLikeConnectionUrl('mssql://sa@127.0.0.1:1433/master')).toBe(true);
 		expect(looksLikeConnectionUrl('oracle://system@127.0.0.1:1521/FREEPDB1')).toBe(true);
+		expect(looksLikeConnectionUrl('jdbc:oracle:thin:@172.19.3.11:7026:DB11G')).toBe(true);
+		expect(looksLikeConnectionUrl('172.19.3.11:7026:DB11G')).toBe(true);
 		expect(looksLikeConnectionUrl('127.0.0.1')).toBe(false);
 	});
 
@@ -222,5 +222,64 @@ describe('connection url', () => {
 		const prefixed = parseConnectionUrl('oracle://system@db.example.com/sid:ORCL');
 		expect(prefixed?.oracleConnect).toBe('sid');
 		expect(prefixed?.database).toBe('ORCL');
+	});
+
+	it('parses DBeaver JDBC thin SID urls like host:port:SID', () => {
+		expect(parseConnectionUrl('jdbc:oracle:thin:@172.19.3.11:7026:DB11G')).toEqual({
+			engine: 'oracle',
+			host: '172.19.3.11',
+			port: 7026,
+			username: 'system',
+			password: '',
+			database: 'DB11G',
+			sslCa: '',
+			sslCert: '',
+			sslKey: '',
+			sslVerify: false,
+			oracleVersion: '',
+			oracleConnect: 'sid'
+		});
+		expect(
+			parseConnectionUrl('jdbc:oracle:thin:scott/tiger@172.19.3.11:7026:DB11G')
+		).toMatchObject({
+			engine: 'oracle',
+			host: '172.19.3.11',
+			port: 7026,
+			username: 'scott',
+			password: 'tiger',
+			database: 'DB11G',
+			oracleConnect: 'sid'
+		});
+	});
+
+	it('parses JDBC thin service-name urls with a slash', () => {
+		expect(parseConnectionUrl('jdbc:oracle:thin:@//db.example.com:1521/FREEPDB1')).toMatchObject({
+			engine: 'oracle',
+			host: 'db.example.com',
+			port: 1521,
+			database: 'FREEPDB1',
+			oracleConnect: 'service'
+		});
+		expect(parseConnectionUrl('jdbc:oracle:thin:@db.example.com:1521/ORCLPDB1')).toMatchObject({
+			database: 'ORCLPDB1',
+			oracleConnect: 'service'
+		});
+	});
+
+	it('parses bare Easy Connect SID and service targets', () => {
+		expect(parseConnectionUrl('172.19.3.11:7026:DB11G')).toMatchObject({
+			engine: 'oracle',
+			host: '172.19.3.11',
+			port: 7026,
+			database: 'DB11G',
+			oracleConnect: 'sid'
+		});
+		expect(parseConnectionUrl('//db.example.com:1521/FREEPDB1')).toMatchObject({
+			engine: 'oracle',
+			host: 'db.example.com',
+			port: 1521,
+			database: 'FREEPDB1',
+			oracleConnect: 'service'
+		});
 	});
 });

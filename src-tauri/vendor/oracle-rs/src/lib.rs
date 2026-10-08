@@ -221,7 +221,7 @@ pub mod types;
 // Re-export commonly used types
 pub use batch::{BatchBinds, BatchBuilder, BatchError, BatchOptions, BatchResult};
 pub use capabilities::Capabilities;
-pub use config::{Config, TlsMode};
+pub use config::{Config, ServiceMethod, TlsMode};
 pub use connection::{
     Connection, ConnectionState, PlsqlResult, QueryOptions, QueryResult, ServerInfo,
 };

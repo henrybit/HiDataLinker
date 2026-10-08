@@ -118,7 +118,7 @@ export const en = {
 	'dialog.hostPlaceholderMysql': 'host or paste mysql://…',
 	'dialog.hostPlaceholderPostgres': 'host or paste postgresql://…',
 	'dialog.hostPlaceholderMssql': 'host or paste mssql://…',
-	'dialog.hostPlaceholderOracle': 'host or paste oracle://…',
+	'dialog.hostPlaceholderOracle': 'host or paste jdbc:oracle:thin:@…',
 	'dialog.databaseHintMysql': 'optional',
 	'dialog.databaseHintPostgres': 'database to connect (default postgres)',
 	'dialog.databaseHintMssql': 'database to connect (default master)',
@@ -127,9 +127,9 @@ export const en = {
 	'dialog.sid': 'SID',
 	'dialog.oracleConnect': 'Connect by',
 	'dialog.servicePlaceholder': 'e.g. FREEPDB1',
-	'dialog.sidPlaceholder': 'e.g. ORCL',
+	'dialog.sidPlaceholder': 'e.g. ORCL / DB11G',
 	'dialog.oracleConnectHint':
-		'Service name uses SERVICE_NAME. Choose SID when the listener only registers an instance name.',
+		'DBeaver JDBC thin `@host:port:SID` is SID mode; `@//host:port/service` is service name. Pick SID when the listener only registers an instance name.',
 	'dialog.oracleCreateHint':
 		'A new Oracle schema is a database user. Its password is the schema name plus “#Ora1”, with quota on USERS and privileges to create tables, views, sequences, procedures, and triggers.',
 	'dialog.invalidUrl': 'Invalid connection URL',

@@ -343,5 +343,7 @@ mod tests {
         assert!(descriptor.contains("(SID=DB11G)"));
         assert!(descriptor.contains("(PORT=7026)"));
         assert!(!descriptor.contains("SERVICE_NAME"));
+        // Same shape as JDBC thin `@host:port:SID`
+        assert!(!descriptor.contains("SERVER="));
     }
 }
