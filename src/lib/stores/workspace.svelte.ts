@@ -1,5 +1,6 @@
 import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
-import { qualifyIdent } from '$lib/engine';
+import { oracleConnectLogDetail } from '$lib/connection-test';
+import { isOracle, qualifyIdent } from '$lib/engine';
 import { uid } from '$lib/format';
 import { folderMessageKey, schemaNounLabel, t } from '$lib/i18n/i18n.svelte';
 import { afterPaint, runExclusive } from '$lib/runtime/jobs';
@@ -430,6 +431,12 @@ class WorkspaceStore {
 		} catch (error) {
 			const message = errorMessage(error);
 			const item = this.connections.find((c) => c.id === id);
+			if (item && isOracle(item.engine)) {
+				console.error(
+					`[oracle] connect failed ${oracleConnectLogDetail(item)} | ${message}`,
+					error
+				);
+			}
 			if (message.toLowerCase().includes('access denied') || !item?.password) {
 				this.passwordPrompt = { id, name: item?.name ?? id };
 			}

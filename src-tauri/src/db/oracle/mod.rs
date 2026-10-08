@@ -66,7 +66,7 @@ pub struct OracleEngine {
 impl OracleEngine {
     pub fn from_profile(profile: &ConnectionProfile) -> AppResult<Self> {
         Ok(Self {
-            config: build_config(
+            config: logged_config(build_config(
                 &profile.host,
                 profile.port,
                 &profile.username,
@@ -76,14 +76,14 @@ impl OracleEngine {
                 profile.ssl_verify,
                 profile.oracle_version.as_deref(),
                 profile.oracle_connect.as_deref(),
-            )?,
+            ))?,
             conn: Arc::new(Mutex::new(None)),
         })
     }
 
     pub async fn test(request: &TestConnectionRequest) -> AppResult<()> {
         let engine = Self {
-            config: build_config(
+            config: logged_config(build_config(
                 &request.host,
                 request.port,
                 &request.username,
@@ -93,7 +93,7 @@ impl OracleEngine {
                 request.ssl_verify,
                 request.oracle_version.as_deref(),
                 request.oracle_connect.as_deref(),
-            )?,
+            ))?,
             conn: Arc::new(Mutex::new(None)),
         };
         engine.ping().await
@@ -103,7 +103,13 @@ impl OracleEngine {
         let mut guard = self.conn.lock().await;
         let reconnect = match guard.as_ref() {
             None => true,
-            Some(connection) => connection.ping().await.is_err(),
+            Some(connection) => match connection.ping().await {
+                Ok(()) => false,
+                Err(error) => {
+                    log::warn!("oracle session ping failed, reconnecting: {error:?}");
+                    true
+                }
+            },
         };
         if reconnect {
             *guard = Some(Arc::new(open_connection(self.config.clone()).await?));
@@ -727,6 +733,43 @@ fn apply_oracle_version(config: Config, version: Option<&str>) -> Config {
     }
 }
 
+/// Host, user, service or SID, protocol, and connect descriptor.
+/// The password is omitted on purpose.
+fn oracle_endpoint(config: &Config) -> String {
+    let method = match &config.service {
+        oracle_rs::ServiceMethod::ServiceName(name) => format!("service={name}"),
+        oracle_rs::ServiceMethod::Sid(name) => format!("sid={name}"),
+    };
+    let protocol = if config.protocol_desired == 0 {
+        "auto".to_string()
+    } else {
+        config.protocol_desired.to_string()
+    };
+    format!(
+        "host={} port={} user={} {method} protocol={protocol} tls={} descriptor={}",
+        config.host,
+        config.port,
+        config.username,
+        config.is_tls_enabled(),
+        config.build_connect_string()
+    )
+}
+
+fn logged_config(result: AppResult<Config>) -> AppResult<Config> {
+    if let Err(error) = &result {
+        log::error!("oracle config rejected: {}", error.user_message());
+    }
+    result
+}
+
+fn log_oracle_failure(stage: &str, config: &Config, error: &AppError) {
+    log::error!(
+        "oracle {stage} failed: {} | {} | {error:?}",
+        oracle_endpoint(config),
+        error.user_message()
+    );
+}
+
 /// Open a connection with the same semantics as JDBC thin:
 /// `jdbc:oracle:thin:@host:port:SID` → `(SID=…)` and
 /// `jdbc:oracle:thin:@//host:port/service` → `(SERVICE_NAME=…)`.
@@ -737,26 +780,52 @@ fn apply_oracle_version(config: Config, version: Option<&str>) -> Config {
 /// ORA-12505), retry once with the other identification method — DBeaver
 /// SID URLs commonly land in the service-name field by default.
 async fn open_connection(config: Config) -> AppResult<Connection> {
-    match connect_with_protocol_retry(config.clone()).await {
+    log::info!("oracle connect start: {}", oracle_endpoint(&config));
+    match connect_with_protocol_retry(config.clone(), "primary").await {
         Ok(connection) => Ok(connection),
         Err(error) => {
             let Some(flipped) = flip_connect_method(&config, &error) else {
                 return Err(error);
             };
-            connect_with_protocol_retry(flipped).await
+            log::warn!(
+                "oracle connect retrying with the other method after {} | next={}",
+                error.user_message(),
+                oracle_endpoint(&flipped)
+            );
+            connect_with_protocol_retry(flipped, "flipped").await
         }
     }
 }
 
-async fn connect_with_protocol_retry(config: Config) -> AppResult<Connection> {
+async fn connect_with_protocol_retry(config: Config, stage: &str) -> AppResult<Connection> {
     match Connection::connect_with_config(config.clone()).await {
-        Ok(connection) => Ok(connection),
-        Err(error) if config.protocol_desired == 0 && listener_closed_without_packet(&error) => {
-            Connection::connect_with_config(config.protocol_version(314))
-                .await
-                .map_err(AppError::from)
+        Ok(connection) => {
+            log::info!("oracle {stage} ok: {}", oracle_endpoint(&config));
+            Ok(connection)
         }
-        Err(error) => Err(AppError::from(error)),
+        Err(error) if config.protocol_desired == 0 && listener_closed_without_packet(&error) => {
+            log::warn!(
+                "oracle {stage} listener closed without a packet, retrying protocol 314: {} | {error:?}",
+                oracle_endpoint(&config)
+            );
+            let legacy = config.protocol_version(314);
+            match Connection::connect_with_config(legacy.clone()).await {
+                Ok(connection) => {
+                    log::info!("oracle {stage} ok: {}", oracle_endpoint(&legacy));
+                    Ok(connection)
+                }
+                Err(retry_error) => {
+                    let retry_error = AppError::from(retry_error);
+                    log_oracle_failure(&format!("{stage} protocol 314"), &legacy, &retry_error);
+                    Err(retry_error)
+                }
+            }
+        }
+        Err(error) => {
+            let error = AppError::from(error);
+            log_oracle_failure(stage, &config, &error);
+            Err(error)
+        }
     }
 }
 
@@ -1195,6 +1264,31 @@ mod tests {
         };
         assert!(listener_closed_without_packet(&silent));
         assert!(!listener_closed_without_packet(&refused));
+    }
+
+    #[test]
+    fn endpoint_log_omits_the_password() {
+        let config = build_config(
+            "172.19.3.11",
+            7026,
+            "system",
+            Some("s3cret-password"),
+            Some("DB11G"),
+            None,
+            false,
+            Some("11.2"),
+            Some("sid"),
+        )
+        .unwrap();
+        let line = oracle_endpoint(&config);
+        assert!(line.contains("host=172.19.3.11"));
+        assert!(line.contains("port=7026"));
+        assert!(line.contains("user=system"));
+        assert!(line.contains("sid=DB11G"));
+        assert!(line.contains("protocol=314"));
+        assert!(line.contains("tls=false"));
+        assert!(line.contains("(SID=DB11G)"));
+        assert!(!line.contains("s3cret-password"));
     }
 
     #[test]

@@ -1,6 +1,28 @@
 import { normalizeEngine } from '$lib/engine';
 import type { ConnectionListItem, TestConnectionRequest } from '$lib/api/types';
 
+/** Fields safe to print when an Oracle connect fails. Password is not included. */
+export function oracleConnectLogDetail(target: {
+	host?: string;
+	port?: number;
+	username?: string;
+	database?: string | null;
+	oracleVersion?: string | null;
+	oracleConnect?: string | null;
+	sslVerify?: boolean;
+}): string {
+	const connect = target.oracleConnect === 'sid' ? 'sid' : 'service';
+	return [
+		`host=${target.host ?? ''}`,
+		`port=${target.port ?? ''}`,
+		`user=${target.username ?? ''}`,
+		`database=${target.database ?? ''}`,
+		`version=${target.oracleVersion || 'auto'}`,
+		`connect=${connect}`,
+		`tlsVerify=${target.sslVerify === true}`
+	].join(' ');
+}
+
 /** Build a one-shot `test_connection` payload from a saved profile. */
 export function testRequestFromConnection(item: ConnectionListItem): TestConnectionRequest {
 	const engine = normalizeEngine(item.engine);

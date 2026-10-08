@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { oracleConnectLogDetail } from '$lib/connection-test';
+import { isOracle } from '$lib/engine';
 import type {
 	AnalysisHistoryRecord,
 	AnalysisHistorySummary,
@@ -46,7 +48,21 @@ export const api = {
 
 	deleteConnection: (id: string) => call<void>('delete_connection', { id }),
 
-	testConnection: (request: TestConnectionRequest) => call<void>('test_connection', { request }),
+	testConnection: async (request: TestConnectionRequest) => {
+		const oracle = isOracle(request.engine);
+		if (oracle) console.info(`[oracle] test connection ${oracleConnectLogDetail(request)}`);
+		try {
+			return await call<void>('test_connection', { request });
+		} catch (error) {
+			if (oracle) {
+				console.error(
+					`[oracle] test connection failed ${oracleConnectLogDetail(request)} | ${errorMessage(error)}`,
+					error
+				);
+			}
+			throw error;
+		}
+	},
 
 	connect: (id: string, password?: string | null) =>
 		call<ConnectResult>('connect_session', { id, password: password ?? null }),
