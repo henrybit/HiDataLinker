@@ -106,8 +106,12 @@
 		profile.sslKey = parsed.sslKey;
 		profile.sslVerify = parsed.sslVerify;
 		profile.oracleVersion = parsed.oracleVersion || 'auto';
-		if (parsed.engine === 'oracle' && parsed.oracleConnect) {
-			profile.oracleConnect = parsed.oracleConnect;
+		if (parsed.engine === 'oracle') {
+			// JDBC thin `@host:port:SID` must keep SID mode; slash form keeps service name.
+			profile.oracleConnect =
+				parsed.oracleConnect === 'sid' || parsed.oracleConnect === 'service'
+					? parsed.oracleConnect
+					: profile.oracleConnect || 'service';
 		}
 		if (isDefaultConnectionName(profile.name)) {
 			profile.name = ENGINE_PRESETS[parsed.engine].name;

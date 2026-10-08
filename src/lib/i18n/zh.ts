@@ -116,7 +116,7 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.hostPlaceholderMysql': '主机，或粘贴 mysql://…',
 	'dialog.hostPlaceholderPostgres': '主机，或粘贴 postgresql://…',
 	'dialog.hostPlaceholderMssql': '主机，或粘贴 mssql://…',
-	'dialog.hostPlaceholderOracle': '主机，或粘贴 oracle://…',
+	'dialog.hostPlaceholderOracle': '主机，或粘贴 jdbc:oracle:thin:@…',
 	'dialog.databaseHintMysql': '可选',
 	'dialog.databaseHintPostgres': '连接的数据库（默认 postgres）',
 	'dialog.databaseHintMssql': '连接的数据库（默认 master）',
@@ -125,9 +125,9 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.sid': 'SID',
 	'dialog.oracleConnect': '连接方式',
 	'dialog.servicePlaceholder': '例如 FREEPDB1',
-	'dialog.sidPlaceholder': '例如 ORCL',
+	'dialog.sidPlaceholder': '例如 ORCL / DB11G',
 	'dialog.oracleConnectHint':
-		'服务名使用 SERVICE_NAME。只登记了实例名的库请选 SID，否则监听可能直接断开。',
+		'DBeaver JDBC thin 的 `@主机:端口:SID` 是 SID 模式；`@//主机:端口/服务名` 才是服务名。只登记了实例名的库请选 SID。',
 	'dialog.oracleCreateHint':
 		'新建的 Oracle 模式是一个数据库用户。密码为模式名加上 “#Ora1”，并授予 USERS 表空间配额以及创建表、视图、序列、过程和触发器的权限。',
 	'dialog.invalidUrl': '连接 URL 无效',

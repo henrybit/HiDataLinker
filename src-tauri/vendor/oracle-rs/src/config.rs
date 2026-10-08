@@ -367,10 +367,11 @@ impl Config {
             protocol, self.host, self.port
         ));
 
-        // Connect data
+        // Connect data — SID form matches JDBC thin `@host:port:SID`
+        // (`(CONNECT_DATA=(SID=…))` without forcing SERVER=DEDICATED).
         let service_part = match &self.service {
             ServiceMethod::ServiceName(name) => format!("(SERVICE_NAME={})", name),
-            ServiceMethod::Sid(sid) => format!("(SID={sid})(SERVER=DEDICATED)"),
+            ServiceMethod::Sid(sid) => format!("(SID={sid})"),
         };
         parts.push(format!("(CONNECT_DATA={})", service_part));
 
@@ -594,7 +595,10 @@ mod tests {
     fn test_build_connect_string_sid() {
         let config = Config::with_sid("myhost", 1522, "ORCL", "user", "pass");
         let connect_str = config.build_connect_string();
-        assert!(connect_str.contains("(SID=ORCL)"));
+        assert_eq!(
+            connect_str,
+            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=myhost)(PORT=1522))(CONNECT_DATA=(SID=ORCL)))"
+        );
     }
 
     #[test]

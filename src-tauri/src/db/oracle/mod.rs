@@ -727,9 +727,28 @@ fn apply_oracle_version(config: Config, version: Option<&str>) -> Config {
     }
 }
 
+/// Open a connection with the same semantics as JDBC thin:
+/// `jdbc:oracle:thin:@host:port:SID` → `(SID=…)` and
+/// `jdbc:oracle:thin:@//host:port/service` → `(SERVICE_NAME=…)`.
+///
 /// 11.2 listeners often close a 12c CONNECT packet without a TNS error.
-/// Automatic mode retries once with the 11g packet. An explicit version does not.
+/// Automatic protocol mode retries once with the 11g packet.
+/// When the listener rejects SERVICE_NAME with ORA-12514 (or SID with
+/// ORA-12505), retry once with the other identification method — DBeaver
+/// SID URLs commonly land in the service-name field by default.
 async fn open_connection(config: Config) -> AppResult<Connection> {
+    match connect_with_protocol_retry(config.clone()).await {
+        Ok(connection) => Ok(connection),
+        Err(error) => {
+            let Some(flipped) = flip_connect_method(&config, &error) else {
+                return Err(error);
+            };
+            connect_with_protocol_retry(flipped).await
+        }
+    }
+}
+
+async fn connect_with_protocol_retry(config: Config) -> AppResult<Connection> {
     match Connection::connect_with_config(config.clone()).await {
         Ok(connection) => Ok(connection),
         Err(error) if config.protocol_desired == 0 && listener_closed_without_packet(&error) => {
@@ -751,6 +770,26 @@ fn listener_closed_without_packet(error: &oracle_rs::Error) -> bool {
                 | std::io::ErrorKind::BrokenPipe
         ),
         _ => false,
+    }
+}
+
+fn flip_connect_method(config: &Config, error: &AppError) -> Option<Config> {
+    let AppError::Oracle(oracle_error) = error else {
+        return None;
+    };
+    let mut flipped = config.clone();
+    match oracle_error {
+        oracle_rs::Error::InvalidServiceName { .. } => {
+            let name = config.service.service_name()?.to_string();
+            flipped.service = oracle_rs::ServiceMethod::Sid(name);
+            Some(flipped)
+        }
+        oracle_rs::Error::InvalidSid { .. } => {
+            let name = config.service.sid()?.to_string();
+            flipped.service = oracle_rs::ServiceMethod::ServiceName(name);
+            Some(flipped)
+        }
+        _ => None,
     }
 }
 
@@ -1199,7 +1238,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sid.service.sid(), Some("ORCL"));
-        assert!(sid.build_connect_string().contains("(SID=ORCL)"));
+        let sid_descriptor = sid.build_connect_string();
+        assert!(sid_descriptor.contains("(SID=ORCL)"));
+        assert!(!sid_descriptor.contains("SERVICE_NAME"));
+        // Match JDBC thin `@host:port:SID` — no forced SERVER=DEDICATED.
+        assert!(!sid_descriptor.contains("SERVER="));
+
+        let jdbc_style = build_config(
+            "172.19.3.11",
+            7026,
+            "system",
+            Some("secret"),
+            Some("DB11G"),
+            None,
+            false,
+            Some("11.2"),
+            Some("sid"),
+        )
+        .unwrap();
+        assert_eq!(jdbc_style.service.sid(), Some("DB11G"));
+        assert_eq!(jdbc_style.protocol_desired, 314);
+        assert_eq!(
+            jdbc_style.build_connect_string(),
+            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=172.19.3.11)(PORT=7026))(CONNECT_DATA=(SID=DB11G)))"
+        );
 
         let prefixed = build_config(
             "localhost",
@@ -1214,5 +1276,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(prefixed.service.sid(), Some("ORCL"));
+    }
+
+    #[test]
+    fn flips_service_name_to_sid_after_ora_12514() {
+        let config = Config::new("172.19.3.11", 7026, "DB11G", "system", "secret");
+        let error = AppError::from(oracle_rs::Error::InvalidServiceName {
+            service_name: Some("DB11G".into()),
+            message: None,
+        });
+        let flipped = flip_connect_method(&config, &error).expect("flip to SID");
+        assert_eq!(flipped.service.sid(), Some("DB11G"));
+        assert!(flipped.build_connect_string().contains("(SID=DB11G)"));
+    }
+
+    #[test]
+    fn flips_sid_to_service_name_after_ora_12505() {
+        let config = Config::with_sid("172.19.3.11", 7026, "DB11G", "system", "secret");
+        let error = AppError::from(oracle_rs::Error::InvalidSid {
+            sid: Some("DB11G".into()),
+            message: None,
+        });
+        let flipped = flip_connect_method(&config, &error).expect("flip to service");
+        assert_eq!(flipped.service.service_name(), Some("DB11G"));
     }
 }
