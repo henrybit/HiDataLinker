@@ -5,22 +5,22 @@ description = "A modular desktop database manager"
 authors = ["you"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = [] }
-tauri-plugin-log = "2"
-tauri-plugin-dialog = "2"
+tauri = { version = "2.12", features = [] }
+tauri-plugin-log = "2.10"
+tauri-plugin-dialog = "2.8"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 mysql_async = { version = "0.36", features = ["native-tls-tls"] }
