@@ -369,11 +369,15 @@ impl Config {
 
         // Connect data — SID form matches JDBC thin `@host:port:SID`
         // (`(CONNECT_DATA=(SID=…))` without forcing SERVER=DEDICATED).
+        // CID is what JDBC thin and other thin clients always send; some 11g
+        // listeners reset when it is missing.
         let service_part = match &self.service {
             ServiceMethod::ServiceName(name) => format!("(SERVICE_NAME={})", name),
             ServiceMethod::Sid(sid) => format!("(SID={sid})"),
         };
-        parts.push(format!("(CONNECT_DATA={})", service_part));
+        parts.push(format!(
+            "(CONNECT_DATA={service_part}(CID=(PROGRAM=db-gui)(HOST=__jdbc__)(USER=db-gui)))"
+        ));
 
         format!("(DESCRIPTION={})", parts.join(""))
     }
@@ -597,7 +601,7 @@ mod tests {
         let connect_str = config.build_connect_string();
         assert_eq!(
             connect_str,
-            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=myhost)(PORT=1522))(CONNECT_DATA=(SID=ORCL)))"
+            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=myhost)(PORT=1522))(CONNECT_DATA=(SID=ORCL)(CID=(PROGRAM=db-gui)(HOST=__jdbc__)(USER=db-gui))))"
         );
     }
 

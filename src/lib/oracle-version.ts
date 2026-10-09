@@ -14,6 +14,12 @@ export const ORACLE_VERSIONS = [
 
 export type OracleVersionId = (typeof ORACLE_VERSIONS)[number]['id'] | 'auto';
 
+/** 11g and 10g connect through ODPI-C and need an Instant Client directory. */
+export function needsOracleInstantClient(value: string | null | undefined): boolean {
+	const id = normalizeOracleVersion(value);
+	return id === '11.2' || id === '11.1' || id === '10.2' || id === '10.1';
+}
+
 export function normalizeOracleVersion(value: string | null | undefined): OracleVersionId {
 	const trimmed = value?.trim() ?? '';
 	if (!trimmed || trimmed.toLowerCase() === 'auto') return 'auto';

@@ -1389,7 +1389,33 @@ button {
 }
 
 .analysis-panel footer .hint {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
 	margin-right: auto;
+}
+
+.analysis-progress {
+	min-width: 0;
+}
+
+.analysis-elapsed {
+	flex: none;
+	color: var(--text);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.analysis-panel.log-resizing,
+.analysis-panel.log-resizing * {
+	cursor: row-resize !important;
+	user-select: none !important;
+}
+
+.split-handle.horizontal.analysis-log-resize {
+	flex: none;
+	height: 8px;
 }
 
 .analysis-body {
@@ -1786,7 +1812,23 @@ button {
 }
 
 .analysis-log {
-	max-height: 168px;
+	display: flex;
+	flex-direction: column;
+	flex: none;
+	max-height: none;
+	overflow: hidden;
+	border-top: 0;
+}
+
+.analysis-log .query-exec-log-title {
+	flex: none;
+}
+
+.analysis-log .query-exec-log-list,
+.analysis-log .analysis-log-empty {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
 }
 
 @media (max-width: 800px) {

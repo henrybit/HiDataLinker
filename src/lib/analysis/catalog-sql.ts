@@ -1,4 +1,5 @@
 import { normalizeEngine, quoteLiteral } from '$lib/engine';
+import { needsOracleInstantClient } from '$lib/oracle-version';
 
 export interface CatalogSql {
 	objects: string;
@@ -7,12 +8,16 @@ export interface CatalogSql {
 	views: string;
 }
 
-export function catalogSql(engine: string, schema: string): CatalogSql {
+export function catalogSql(
+	engine: string,
+	schema: string,
+	oracleVersion?: string | null
+): CatalogSql {
 	const literal = quoteLiteral(schema);
 	const kind = normalizeEngine(engine);
 	if (kind === 'postgres') return postgresSql(literal);
 	if (kind === 'mssql') return mssqlSql();
-	if (kind === 'oracle') return oracleSql(literal);
+	if (kind === 'oracle') return oracleSql(literal, needsOracleInstantClient(oracleVersion));
 	return mysqlSql(literal);
 }
 
@@ -193,12 +198,14 @@ ORDER BY s.name, v.name`.trim()
 	};
 }
 
-function oracleSql(owner: string): CatalogSql {
+function oracleSql(owner: string, legacy: boolean): CatalogSql {
+	// COMMENT is reserved. An unquoted alias is a parse error (ORA-00923).
+	const comment = '"comment"';
 	return {
 		objects: `
 SELECT table_name AS object_name,
        CASE WHEN table_type = 'VIEW' THEN 'view' ELSE 'table' END AS object_kind,
-       comments AS comment
+       comments AS ${comment}
 FROM all_tab_comments
 WHERE owner = ${owner}
   AND table_type IN ('TABLE', 'VIEW')
@@ -212,7 +219,7 @@ SELECT c.table_name AS object_name,
          WHEN uk.column_name IS NOT NULL THEN 'UNI'
          ELSE ''
        END AS column_key,
-       cc.comments AS comment,
+       cc.comments AS ${comment},
        c.column_id AS ordinal_position
 FROM all_tab_columns c
 LEFT JOIN all_col_comments cc
@@ -251,10 +258,25 @@ JOIN all_cons_columns rc
 WHERE c.owner = ${owner}
   AND c.constraint_type = 'R'
 ORDER BY c.constraint_name, cc.position`.trim(),
-		views: `
+		views: oracleViewsSql(owner, legacy)
+	};
+}
+
+function oracleViewsSql(owner: string, legacy: boolean): string {
+	// ALL_VIEWS.TEXT is LONG. 12c FETCH NEXT and the 11g subquery limiter both
+	// reject it, so 12c reads TEXT_VC. On 11g a top-level ROWNUM predicate keeps
+	// the limiter from wrapping TEXT.
+	if (legacy) {
+		return `
 SELECT view_name AS object_name,
        text AS definition
 FROM all_views
-WHERE owner = ${owner}`.trim()
-	};
+WHERE owner = ${owner}
+  AND ROWNUM > 0`.trim();
+	}
+	return `
+SELECT view_name AS object_name,
+       text_vc AS definition
+FROM all_views
+WHERE owner = ${owner}`.trim();
 }

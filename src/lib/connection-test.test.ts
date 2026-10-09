@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { oracleConnectLogDetail, testRequestFromConnection } from './connection-test';
+import { needsOracleInstantClient } from './oracle-version';
 import type { ConnectionListItem } from './api/types';
 
 function base(overrides: Partial<ConnectionListItem> = {}): ConnectionListItem {
@@ -18,11 +19,23 @@ function base(overrides: Partial<ConnectionListItem> = {}): ConnectionListItem {
 		sslVerify: false,
 		oracleVersion: null,
 		oracleConnect: null,
+		oracleInstantClient: null,
 		savePassword: true,
 		connected: false,
 		...overrides
 	};
 }
+
+describe('needsOracleInstantClient', () => {
+	it('is only the releases before 12c R1', () => {
+		expect(needsOracleInstantClient('11.2')).toBe(true);
+		expect(needsOracleInstantClient('11g R2')).toBe(true);
+		expect(needsOracleInstantClient('10.1')).toBe(true);
+		expect(needsOracleInstantClient('12.1')).toBe(false);
+		expect(needsOracleInstantClient('auto')).toBe(false);
+		expect(needsOracleInstantClient(null)).toBe(false);
+	});
+});
 
 describe('oracleConnectLogDetail', () => {
 	it('prints the target and leaves the password out', () => {
@@ -41,7 +54,7 @@ describe('oracleConnectLogDetail', () => {
 		);
 		const line = oracleConnectLogDetail(request);
 		expect(line).toBe(
-			'host=172.19.3.11 port=7026 user=system database=DB11G version=11.2 connect=sid tlsVerify=false'
+			'host=172.19.3.11 port=7026 user=system database=DB11G version=11.2 connect=sid tlsVerify=false client=PATH'
 		);
 		expect(line).not.toContain('s3cret-password');
 	});
@@ -61,7 +74,8 @@ describe('testRequestFromConnection', () => {
 			sslKey: null,
 			sslVerify: false,
 			oracleVersion: null,
-			oracleConnect: null
+			oracleConnect: null,
+			oracleInstantClient: null
 		});
 	});
 
@@ -78,5 +92,6 @@ describe('testRequestFromConnection', () => {
 		expect(request.oracleVersion).toBe('19c');
 		expect(request.oracleConnect).toBe('sid');
 		expect(request.sslVerify).toBe(true);
+		expect(request.oracleInstantClient).toBeNull();
 	});
 });

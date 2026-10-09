@@ -12,7 +12,9 @@ use crate::models::{
     ViewInfo,
 };
 use async_trait::async_trait;
-use oracle_rs::{BindParam, ColumnInfo as OracleColumn, Config, Connection, LobValue, Row, Value};
+use oracle_rs::{BindParam, ColumnInfo as OracleColumn, Config, Connection, LobValue, Value};
+
+mod thick;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -57,109 +59,214 @@ const SYSTEM_USERS: &[&str] = &[
     "XS$NULL",
 ];
 
+struct Grid {
+    columns: Vec<ColumnMeta>,
+    rows: Vec<Vec<Option<String>>>,
+    affected_rows: u64,
+    truncated: bool,
+}
+
+impl Grid {
+    fn into_result(self, kind: &str) -> QueryResult {
+        QueryResult {
+            columns: self.columns,
+            rows: self.rows,
+            affected_rows: self.affected_rows,
+            last_insert_id: None,
+            duration_ms: 0,
+            truncated: self.truncated,
+            statement_kind: kind.to_string(),
+            messages: Vec::new(),
+        }
+    }
+}
+
+#[async_trait]
+trait OracleSession: Send + Sync {
+    async fn ping(&self) -> AppResult<()>;
+    async fn query(&self, sql: &str, params: &[String]) -> AppResult<Grid>;
+    async fn execute(&self, sql: &str) -> AppResult<u64>;
+    async fn commit(&self) -> AppResult<()>;
+    async fn close(&self) -> AppResult<()>;
+}
+
+#[derive(Clone)]
+enum OracleDriver {
+    Thin(Config),
+    Odpi(thick::OdpiSettings),
+}
+
 #[derive(Clone)]
 pub struct OracleEngine {
-    config: Config,
-    conn: Arc<Mutex<Option<Arc<Connection>>>>,
+    driver: OracleDriver,
+    conn: Arc<Mutex<Option<Arc<dyn OracleSession>>>>,
 }
 
 impl OracleEngine {
     pub fn from_profile(profile: &ConnectionProfile) -> AppResult<Self> {
-        Ok(Self {
-            config: logged_config(build_config(
-                &profile.host,
-                profile.port,
-                &profile.username,
-                profile.password.as_deref(),
-                profile.database.as_deref(),
-                profile.ssl_ca.as_deref(),
-                profile.ssl_verify,
-                profile.oracle_version.as_deref(),
-                profile.oracle_connect.as_deref(),
-            ))?,
-            conn: Arc::new(Mutex::new(None)),
-        })
+        Ok(Self::new(driver_for(
+            &profile.host,
+            profile.port,
+            &profile.username,
+            profile.password.as_deref(),
+            profile.database.as_deref(),
+            profile.ssl_ca.as_deref(),
+            profile.ssl_verify,
+            profile.oracle_version.as_deref(),
+            profile.oracle_connect.as_deref(),
+            profile.oracle_instant_client.as_deref(),
+        )?))
     }
 
     pub async fn test(request: &TestConnectionRequest) -> AppResult<()> {
-        let engine = Self {
-            config: logged_config(build_config(
-                &request.host,
-                request.port,
-                &request.username,
-                request.password.as_deref(),
-                request.database.as_deref(),
-                request.ssl_ca.as_deref(),
-                request.ssl_verify,
-                request.oracle_version.as_deref(),
-                request.oracle_connect.as_deref(),
-            ))?,
-            conn: Arc::new(Mutex::new(None)),
-        };
+        let engine = Self::new(driver_for(
+            &request.host,
+            request.port,
+            &request.username,
+            request.password.as_deref(),
+            request.database.as_deref(),
+            request.ssl_ca.as_deref(),
+            request.ssl_verify,
+            request.oracle_version.as_deref(),
+            request.oracle_connect.as_deref(),
+            request.oracle_instant_client.as_deref(),
+        )?);
         engine.ping().await
     }
 
-    async fn connection(&self) -> AppResult<Arc<Connection>> {
+    fn new(driver: OracleDriver) -> Self {
+        Self {
+            driver,
+            conn: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn uses_odpi(&self) -> bool {
+        matches!(self.driver, OracleDriver::Odpi(_))
+    }
+
+    async fn session(&self) -> AppResult<Arc<dyn OracleSession>> {
         let mut guard = self.conn.lock().await;
         let reconnect = match guard.as_ref() {
             None => true,
-            Some(connection) => match connection.ping().await {
+            Some(session) => match session.ping().await {
                 Ok(()) => false,
                 Err(error) => {
-                    log::warn!("oracle session ping failed, reconnecting: {error:?}");
+                    log::warn!(
+                        "oracle session ping failed, reconnecting: {}",
+                        error.user_message()
+                    );
                     true
                 }
             },
         };
         if reconnect {
-            *guard = Some(Arc::new(open_connection(self.config.clone()).await?));
+            if let Some(previous) = guard.take() {
+                if let Err(error) = previous.close().await {
+                    log::warn!(
+                        "oracle session close before reconnect failed: {}",
+                        error.user_message()
+                    );
+                }
+            }
+            *guard = Some(open_session(&self.driver).await?);
         }
         guard
             .as_ref()
             .cloned()
             .ok_or_else(|| AppError::msg("Oracle connection closed"))
     }
+}
 
-    async fn with_conn<T, F, Fut>(&self, f: F) -> AppResult<T>
-    where
-        F: FnOnce(Arc<Connection>) -> Fut,
-        Fut: std::future::Future<Output = AppResult<T>>,
-    {
-        let connection = self.connection().await?;
-        f(connection).await
+fn driver_for(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: Option<&str>,
+    database: Option<&str>,
+    ssl_ca: Option<&str>,
+    verify_cert: bool,
+    oracle_version: Option<&str>,
+    oracle_connect: Option<&str>,
+    oracle_instant_client: Option<&str>,
+) -> AppResult<OracleDriver> {
+    if uses_odpi_client(oracle_version) {
+        log::info!(
+            "oracle version {} is below 12c R1, using ODPI-C",
+            oracle_version.unwrap_or("").trim()
+        );
+        if let Some(path) = ssl_ca.map(str::trim).filter(|value| !value.is_empty()) {
+            log::warn!(
+                "oracle ODPI-C ignores CA file {path}; trust is configured by the Oracle Instant Client"
+            );
+        }
+        Ok(OracleDriver::Odpi(thick::settings(
+            host,
+            port,
+            username,
+            password,
+            database,
+            verify_cert,
+            oracle_connect,
+            oracle_instant_client,
+        )?))
+    } else {
+        Ok(OracleDriver::Thin(logged_config(build_config(
+            host,
+            port,
+            username,
+            password,
+            database,
+            ssl_ca,
+            verify_cert,
+            oracle_version,
+            oracle_connect,
+        ))?))
+    }
+}
+
+/// Oracle Database 12c Release 1 is TNS protocol 315. Anything older uses ODPI-C.
+fn uses_odpi_client(version: Option<&str>) -> bool {
+    matches!(oracle_protocol(version), Some(protocol) if protocol < 315)
+}
+
+async fn open_session(driver: &OracleDriver) -> AppResult<Arc<dyn OracleSession>> {
+    match driver {
+        OracleDriver::Thin(config) => {
+            let connection = open_connection(config.clone()).await?;
+            Ok(Arc::new(ThinSession {
+                conn: Arc::new(connection),
+            }))
+        }
+        OracleDriver::Odpi(settings) => thick::open(settings.clone()).await,
     }
 }
 
 #[async_trait]
 impl DatabaseEngine for OracleEngine {
     async fn ping(&self) -> AppResult<()> {
-        self.with_conn(|conn| async move {
-            conn.ping().await?;
-            Ok(())
-        })
-        .await
+        self.session().await?.ping().await
     }
 
     async fn list_databases(&self) -> AppResult<Vec<DatabaseInfo>> {
-        self.with_conn(|conn| async move {
-            let result = conn
-                .query("SELECT username FROM all_users ORDER BY username", &[])
-                .await?;
-            let mut databases = Vec::new();
-            for row in result.rows {
-                let Some(name) = cell_string(&row, 0) else {
-                    continue;
-                };
-                databases.push(DatabaseInfo {
-                    is_system: is_oracle_system(&name),
-                    name,
-                    charset: None,
-                    collation: None,
-                });
-            }
-            Ok(databases)
-        })
-        .await
+        let grid = self
+            .session()
+            .await?
+            .query("SELECT username FROM all_users ORDER BY username", &[])
+            .await?;
+        let mut databases = Vec::new();
+        for row in grid.rows {
+            let Some(name) = grid_text(&row, 0) else {
+                continue;
+            };
+            databases.push(DatabaseInfo {
+                is_system: is_oracle_system(&name),
+                name,
+                charset: None,
+                collation: None,
+            });
+        }
+        Ok(databases)
     }
 
     async fn create_database(
@@ -169,14 +276,12 @@ impl DatabaseEngine for OracleEngine {
         _collation: Option<&str>,
     ) -> AppResult<()> {
         let statements = create_oracle_schema_statements(name)?;
-        self.with_conn(move |conn| async move {
-            for sql in &statements {
-                run_statement(&conn, sql).await?;
-            }
-            conn.commit().await?;
-            Ok(())
-        })
-        .await
+        let session = self.session().await?;
+        for sql in &statements {
+            session.execute(sql).await?;
+        }
+        session.commit().await?;
+        Ok(())
     }
 
     async fn drop_database(&self, name: &str) -> AppResult<()> {
@@ -185,12 +290,10 @@ impl DatabaseEngine for OracleEngine {
             return Err(AppError::msg(format!("cannot drop system schema: {name}")));
         }
         let sql = drop_oracle_schema_sql(&name)?;
-        self.with_conn(move |conn| async move {
-            run_statement(&conn, &sql).await?;
-            conn.commit().await?;
-            Ok(())
-        })
-        .await
+        let session = self.session().await?;
+        session.execute(&sql).await?;
+        session.commit().await?;
+        Ok(())
     }
 
     async fn dump_database(
@@ -229,172 +332,167 @@ impl DatabaseEngine for OracleEngine {
     async fn list_tables(&self, schema: &str) -> AppResult<Vec<TableInfo>> {
         let schema = schema.trim().to_string();
         validate_ident(&schema)?;
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT t.table_name, t.tablespace_name, t.num_rows, NVL(c.comments, '')
-                     FROM all_tables t
-                     LEFT JOIN all_tab_comments c
-                       ON c.owner = t.owner AND c.table_name = t.table_name AND c.table_type = 'TABLE'
-                     WHERE t.owner = :1 AND t.nested = 'NO'
-                     ORDER BY t.table_name",
-                    &[Value::String(schema)],
-                )
-                .await?;
-            let mut tables = Vec::new();
-            for row in result.rows {
-                let Some(name) = cell_string(&row, 0) else {
-                    continue;
-                };
-                tables.push(TableInfo {
-                    name,
-                    engine: cell_string(&row, 1),
-                    table_rows: cell_u64(&row, 2),
-                    data_length: None,
-                    comment: cell_string(&row, 3).unwrap_or_default(),
-                    created_at: None,
-                    updated_at: None,
-                });
-            }
-            Ok(tables)
-        })
-        .await
+        let grid = self
+            .session()
+            .await?
+            .query(
+                "SELECT t.table_name, t.tablespace_name, t.num_rows, NVL(c.comments, '')
+                 FROM all_tables t
+                 LEFT JOIN all_tab_comments c
+                   ON c.owner = t.owner AND c.table_name = t.table_name AND c.table_type = 'TABLE'
+                 WHERE t.owner = :1 AND t.nested = 'NO'
+                 ORDER BY t.table_name",
+                &[schema],
+            )
+            .await?;
+        let mut tables = Vec::new();
+        for row in grid.rows {
+            let Some(name) = grid_text(&row, 0) else {
+                continue;
+            };
+            tables.push(TableInfo {
+                name,
+                engine: grid_text(&row, 1),
+                table_rows: grid_u64(&row, 2),
+                data_length: None,
+                comment: grid_text(&row, 3).unwrap_or_default(),
+                created_at: None,
+                updated_at: None,
+            });
+        }
+        Ok(tables)
     }
 
     async fn list_views(&self, schema: &str) -> AppResult<Vec<ViewInfo>> {
         let schema = schema.trim().to_string();
         validate_ident(&schema)?;
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT view_name FROM all_views WHERE owner = :1 ORDER BY view_name",
-                    &[Value::String(schema)],
-                )
-                .await?;
-            Ok(result
-                .rows
-                .iter()
-                .filter_map(|row| {
-                    Some(ViewInfo {
-                        name: cell_string(row, 0)?,
-                        updatable: false,
-                        check_option: None,
-                        security_type: None,
-                        definer: None,
-                    })
+        let grid = self
+            .session()
+            .await?
+            .query(
+                "SELECT view_name FROM all_views WHERE owner = :1 ORDER BY view_name",
+                &[schema],
+            )
+            .await?;
+        Ok(grid
+            .rows
+            .iter()
+            .filter_map(|row| {
+                Some(ViewInfo {
+                    name: grid_text(row, 0)?,
+                    updatable: false,
+                    check_option: None,
+                    security_type: None,
+                    definer: None,
                 })
-                .collect())
-        })
-        .await
+            })
+            .collect())
     }
 
     async fn list_indexes(&self, schema: &str) -> AppResult<Vec<IndexInfo>> {
         let schema = schema.trim().to_string();
         validate_ident(&schema)?;
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT i.index_name, i.table_name, i.uniqueness, i.index_type, ic.column_name,
-                            CASE WHEN c.constraint_type = 'P' THEN 1 ELSE 0 END
-                     FROM all_indexes i
-                     JOIN all_ind_columns ic
-                       ON ic.index_owner = i.owner AND ic.index_name = i.index_name
-                     LEFT JOIN all_constraints c
-                       ON c.owner = i.owner AND c.index_name = i.index_name AND c.constraint_type = 'P'
-                     WHERE i.owner = :1
-                     ORDER BY i.table_name, i.index_name, ic.column_position",
-                    &[Value::String(schema)],
-                )
-                .await?;
-            let mut indexes = Vec::<IndexInfo>::new();
-            for row in result.rows {
-                let Some(name) = cell_string(&row, 0) else {
+        let grid = self
+            .session()
+            .await?
+            .query(
+                "SELECT i.index_name, i.table_name, i.uniqueness, i.index_type, ic.column_name,
+                        CASE WHEN c.constraint_type = 'P' THEN 1 ELSE 0 END
+                 FROM all_indexes i
+                 JOIN all_ind_columns ic
+                   ON ic.index_owner = i.owner AND ic.index_name = i.index_name
+                 LEFT JOIN all_constraints c
+                   ON c.owner = i.owner AND c.index_name = i.index_name AND c.constraint_type = 'P'
+                 WHERE i.owner = :1
+                 ORDER BY i.table_name, i.index_name, ic.column_position",
+                &[schema],
+            )
+            .await?;
+        let mut indexes = Vec::<IndexInfo>::new();
+        for row in grid.rows {
+            let Some(name) = grid_text(&row, 0) else {
+                continue;
+            };
+            let Some(table_name) = grid_text(&row, 1) else {
+                continue;
+            };
+            let column = grid_text(&row, 4).unwrap_or_default();
+            if let Some(last) = indexes.last_mut() {
+                if last.name == name && last.table_name == table_name {
+                    last.columns.push(column);
                     continue;
-                };
-                let Some(table_name) = cell_string(&row, 1) else {
-                    continue;
-                };
-                let column = cell_string(&row, 4).unwrap_or_default();
-                if let Some(last) = indexes.last_mut() {
-                    if last.name == name && last.table_name == table_name {
-                        last.columns.push(column);
-                        continue;
-                    }
                 }
-                indexes.push(IndexInfo {
-                    name,
-                    table_name,
-                    unique: cell_string(&row, 2).is_some_and(|value| value.eq_ignore_ascii_case("UNIQUE")),
-                    primary: cell_u64(&row, 5) == Some(1),
-                    index_type: cell_string(&row, 3).unwrap_or_else(|| "INDEX".to_string()),
-                    columns: vec![column],
-                    comment: String::new(),
-                });
             }
-            Ok(indexes)
-        })
-        .await
+            indexes.push(IndexInfo {
+                name,
+                table_name,
+                unique: grid_text(&row, 2).is_some_and(|value| value.eq_ignore_ascii_case("UNIQUE")),
+                primary: grid_u64(&row, 5) == Some(1),
+                index_type: grid_text(&row, 3).unwrap_or_else(|| "INDEX".to_string()),
+                columns: vec![column],
+                comment: String::new(),
+            });
+        }
+        Ok(indexes)
     }
 
     async fn list_triggers(&self, schema: &str) -> AppResult<Vec<TriggerInfo>> {
         let schema = schema.trim().to_string();
         validate_ident(&schema)?;
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT trigger_name, table_name, triggering_event, trigger_type
-                     FROM all_triggers WHERE owner = :1 ORDER BY trigger_name",
-                    &[Value::String(schema)],
-                )
-                .await?;
-            Ok(result
-                .rows
-                .iter()
-                .filter_map(|row| {
-                    Some(TriggerInfo {
-                        name: cell_string(row, 0)?,
-                        table_name: cell_string(row, 1)?,
-                        event: cell_string(row, 2).unwrap_or_default(),
-                        timing: cell_string(row, 3).unwrap_or_default(),
-                        definer: None,
-                    })
+        let grid = self
+            .session()
+            .await?
+            .query(
+                "SELECT trigger_name, table_name, triggering_event, trigger_type
+                 FROM all_triggers WHERE owner = :1 ORDER BY trigger_name",
+                &[schema],
+            )
+            .await?;
+        Ok(grid
+            .rows
+            .iter()
+            .filter_map(|row| {
+                Some(TriggerInfo {
+                    name: grid_text(row, 0)?,
+                    table_name: grid_text(row, 1)?,
+                    event: grid_text(row, 2).unwrap_or_default(),
+                    timing: grid_text(row, 3).unwrap_or_default(),
+                    definer: None,
                 })
-                .collect())
-        })
-        .await
+            })
+            .collect())
     }
 
     async fn list_routines(&self, schema: &str) -> AppResult<Vec<RoutineInfo>> {
         let schema = schema.trim().to_string();
         validate_ident(&schema)?;
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT object_name, object_type
-                     FROM all_objects
-                     WHERE owner = :1 AND object_type IN ('FUNCTION', 'PROCEDURE', 'PACKAGE')
-                     ORDER BY object_type, object_name",
-                    &[Value::String(schema)],
-                )
-                .await?;
-            Ok(result
-                .rows
-                .iter()
-                .filter_map(|row| {
-                    Some(RoutineInfo {
-                        name: cell_string(row, 0)?,
-                        routine_type: cell_string(row, 1).unwrap_or_else(|| "FUNCTION".to_string()),
-                        returns: None,
-                        deterministic: false,
-                        data_access: None,
-                        security_type: None,
-                        definer: None,
-                        created_at: None,
-                    })
+        let grid = self
+            .session()
+            .await?
+            .query(
+                "SELECT object_name, object_type
+                 FROM all_objects
+                 WHERE owner = :1 AND object_type IN ('FUNCTION', 'PROCEDURE', 'PACKAGE')
+                 ORDER BY object_type, object_name",
+                &[schema],
+            )
+            .await?;
+        Ok(grid
+            .rows
+            .iter()
+            .filter_map(|row| {
+                Some(RoutineInfo {
+                    name: grid_text(row, 0)?,
+                    routine_type: grid_text(row, 1).unwrap_or_else(|| "FUNCTION".to_string()),
+                    returns: None,
+                    deterministic: false,
+                    data_access: None,
+                    security_type: None,
+                    definer: None,
+                    created_at: None,
                 })
-                .collect())
-        })
-        .await
+            })
+            .collect())
     }
 
     async fn get_columns(&self, schema: &str, table: &str) -> AppResult<Vec<ColumnInfo>> {
@@ -402,63 +500,62 @@ impl DatabaseEngine for OracleEngine {
         let table = table.trim().to_string();
         validate_ident(&schema)?;
         validate_ident(&table)?;
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT c.column_name, c.data_type, c.data_length, c.data_precision, c.data_scale,
-                            c.nullable, c.data_default, NVL(cm.comments, ''), c.column_id,
-                            CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END
-                     FROM all_tab_columns c
-                     LEFT JOIN all_col_comments cm
-                       ON cm.owner = c.owner AND cm.table_name = c.table_name AND cm.column_name = c.column_name
-                     LEFT JOIN (
-                        SELECT cc.owner, cc.table_name, cc.column_name
-                        FROM all_cons_columns cc
-                        JOIN all_constraints k
-                          ON k.owner = cc.owner AND k.constraint_name = cc.constraint_name
-                        WHERE k.constraint_type = 'P'
-                     ) pk ON pk.owner = c.owner AND pk.table_name = c.table_name AND pk.column_name = c.column_name
-                     WHERE c.owner = :1 AND c.table_name = :2
-                     ORDER BY c.column_id",
-                    &[Value::String(schema), Value::String(table)],
-                )
-                .await?;
-            let mut columns = Vec::new();
-            for row in result.rows {
-                let Some(name) = cell_string(&row, 0) else {
-                    continue;
-                };
-                let data_type = cell_string(&row, 1).unwrap_or_default();
-                let column_type = format_oracle_type(
-                    &data_type,
-                    cell_i64(&row, 2),
-                    cell_i64(&row, 3),
-                    cell_i64(&row, 4),
-                );
-                let default_value = cell_string(&row, 6);
-                let extra = if default_value
-                    .as_deref()
-                    .is_some_and(|value| value.to_ascii_lowercase().contains(".nextval"))
-                {
-                    "identity".to_string()
-                } else {
-                    String::new()
-                };
-                columns.push(ColumnInfo {
-                    name,
-                    column_type,
-                    data_type,
-                    nullable: cell_string(&row, 5).is_some_and(|value| value.eq_ignore_ascii_case("Y")),
-                    key: cell_string(&row, 9).unwrap_or_default(),
-                    default_value,
-                    extra,
-                    comment: cell_string(&row, 7).unwrap_or_default(),
-                    ordinal: cell_u64(&row, 8).unwrap_or(0) as u32,
-                });
-            }
-            Ok(columns)
-        })
-        .await
+        let grid = self
+            .session()
+            .await?
+            .query(
+                "SELECT c.column_name, c.data_type, c.data_length, c.data_precision, c.data_scale,
+                        c.nullable, c.data_default, NVL(cm.comments, ''), c.column_id,
+                        CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END
+                 FROM all_tab_columns c
+                 LEFT JOIN all_col_comments cm
+                   ON cm.owner = c.owner AND cm.table_name = c.table_name AND cm.column_name = c.column_name
+                 LEFT JOIN (
+                    SELECT cc.owner, cc.table_name, cc.column_name
+                    FROM all_cons_columns cc
+                    JOIN all_constraints k
+                      ON k.owner = cc.owner AND k.constraint_name = cc.constraint_name
+                    WHERE k.constraint_type = 'P'
+                 ) pk ON pk.owner = c.owner AND pk.table_name = c.table_name AND pk.column_name = c.column_name
+                 WHERE c.owner = :1 AND c.table_name = :2
+                 ORDER BY c.column_id",
+                &[schema, table],
+            )
+            .await?;
+        let mut columns = Vec::new();
+        for row in grid.rows {
+            let Some(name) = grid_text(&row, 0) else {
+                continue;
+            };
+            let data_type = grid_text(&row, 1).unwrap_or_default();
+            let column_type = format_oracle_type(
+                &data_type,
+                grid_i64(&row, 2),
+                grid_i64(&row, 3),
+                grid_i64(&row, 4),
+            );
+            let default_value = grid_text(&row, 6);
+            let extra = if default_value
+                .as_deref()
+                .is_some_and(|value| value.to_ascii_lowercase().contains(".nextval"))
+            {
+                "identity".to_string()
+            } else {
+                String::new()
+            };
+            columns.push(ColumnInfo {
+                name,
+                column_type,
+                data_type,
+                nullable: grid_text(&row, 5).is_some_and(|value| value.eq_ignore_ascii_case("Y")),
+                key: grid_text(&row, 9).unwrap_or_default(),
+                default_value,
+                extra,
+                comment: grid_text(&row, 7).unwrap_or_default(),
+                ordinal: grid_u64(&row, 8).unwrap_or(0) as u32,
+            });
+        }
+        Ok(columns)
     }
 
     async fn get_ddl(&self, schema: &str, kind: ObjectKind, name: &str) -> AppResult<String> {
@@ -474,37 +571,27 @@ impl DatabaseEngine for OracleEngine {
             ObjectKind::Function => "FUNCTION",
             ObjectKind::Procedure => "PROCEDURE",
         };
-        self.with_conn(move |conn| async move {
-            let result = conn
-                .query(
-                    "SELECT DBMS_METADATA.GET_DDL(:1, :2, :3) FROM dual",
-                    &[
-                        Value::String(object_type.to_string()),
-                        Value::String(name.clone()),
-                        Value::String(schema.clone()),
-                    ],
-                )
-                .await;
-            if let Ok(result) = result {
-                if let Some(row) = result.rows.first() {
-                    if let Some(value) = row.get(0) {
-                        if let Some(ddl) = lob_or_string(&conn, value).await? {
-                            let ddl = ddl.trim().to_string();
-                            if !ddl.is_empty() {
-                                return Ok(ddl);
-                            }
-                        }
-                    }
+        let session = self.session().await?;
+        let result = session
+            .query(
+                "SELECT DBMS_METADATA.GET_DDL(:1, :2, :3) FROM dual",
+                &[object_type.to_string(), name.clone(), schema.clone()],
+            )
+            .await;
+        if let Ok(grid) = result {
+            if let Some(ddl) = grid.rows.first().and_then(|row| grid_text(row, 0)) {
+                let ddl = ddl.trim().to_string();
+                if !ddl.is_empty() {
+                    return Ok(ddl);
                 }
             }
-            if kind == ObjectKind::Table {
-                return synthesized_table_ddl(&conn, &schema, &name).await;
-            }
-            Err(AppError::msg(format!(
-                "definition not found for {object_type} {schema}.{name}"
-            )))
-        })
-        .await
+        }
+        if kind == ObjectKind::Table {
+            return synthesized_table_ddl(session.as_ref(), &schema, &name).await;
+        }
+        Err(AppError::msg(format!(
+            "definition not found for {object_type} {schema}.{name}"
+        )))
     }
 
     async fn preview_table(
@@ -517,11 +604,23 @@ impl DatabaseEngine for OracleEngine {
         validate_ident(schema)?;
         validate_ident(table)?;
         let limit = limit.clamp(1, 1_000);
-        let sql = format!(
-            "SELECT * FROM {} OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY",
-            qualify_pg(schema, table)
-        );
-        self.execute_sql(Some(schema), &sql).await
+        let qualified = qualify_pg(schema, table);
+        let sql = if self.uses_odpi() {
+            let end = offset.saturating_add(u64::from(limit));
+            format!(
+                "SELECT * FROM (SELECT db_gui_inner.*, ROWNUM AS db_gui_rn FROM (SELECT * FROM {qualified}) db_gui_inner WHERE ROWNUM <= {end}) WHERE db_gui_rn > {offset} AND ROWNUM <= {limit}"
+            )
+        } else {
+            format!("SELECT * FROM {qualified} OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY")
+        };
+        let mut result = self.execute_sql(Some(schema), &sql).await?;
+        if self.uses_odpi() {
+            result.columns.pop();
+            for row in &mut result.rows {
+                row.pop();
+            }
+        }
+        Ok(result)
     }
 
     async fn table_row_count(&self, schema: &str, table: &str) -> AppResult<u64> {
@@ -530,15 +629,12 @@ impl DatabaseEngine for OracleEngine {
         validate_ident(&schema)?;
         validate_ident(&table)?;
         let sql = format!("SELECT COUNT(*) FROM {}", qualify_pg(&schema, &table));
-        self.with_conn(move |conn| async move {
-            let result = conn.query(&sql, &[]).await?;
-            Ok(result
-                .rows
-                .first()
-                .and_then(|row| cell_u64(row, 0))
-                .unwrap_or(0))
-        })
-        .await
+        let grid = self.session().await?.query(&sql, &[]).await?;
+        Ok(grid
+            .rows
+            .first()
+            .and_then(|row| grid_u64(row, 0))
+            .unwrap_or(0))
     }
 
     async fn execute_sql(&self, schema: Option<&str>, sql: &str) -> AppResult<QueryResult> {
@@ -546,79 +642,94 @@ impl DatabaseEngine for OracleEngine {
         if sql.is_empty() {
             return Err(AppError::msg("SQL is empty"));
         }
-        let limited = apply_default_query_limit(sql, SqlDialect::Oracle);
+        let legacy = self.uses_odpi();
+        let limited = apply_default_query_limit(
+            sql,
+            if legacy {
+                SqlDialect::Oracle11g
+            } else {
+                SqlDialect::Oracle
+            },
+        );
         let schema_sql = schema
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(oracle_set_schema_sql)
             .transpose()?;
         let statements = split_sql_batch(&limited.sql);
-        self.with_conn(move |conn| async move {
-            let mut messages = Vec::new();
-            if let Some(schema_sql) = &schema_sql {
-                run_statement(&conn, schema_sql).await?;
-                messages.push(QueryLogEntry::info(schema_sql.clone()));
-            }
-            if limited.applied {
-                messages.push(QueryLogEntry::info(format!(
-                    "No row limit specified; applying OFFSET/FETCH NEXT {DEFAULT_QUERY_ROW_LIMIT}"
-                )));
-            }
-            if statements.is_empty() {
-                return Err(AppError::msg("SQL is empty"));
-            }
-            let started = Instant::now();
-            let mut affected_rows = 0_u64;
-            let mut mutated = false;
-            let mut last = empty_result(statement_kind(&limited.sql));
-            for statement in &statements {
-                messages.push(QueryLogEntry::info(format!(
-                    "Executing {}…",
-                    statement_kind(statement)
-                )));
-                if is_explain_plan(statement) {
-                    run_statement(&conn, statement).await?;
-                    mutated = true;
-                    last = read_query(
-                        &conn,
-                        "SELECT PLAN_TABLE_OUTPUT FROM TABLE(DBMS_XPLAN.DISPLAY)",
-                        "query",
-                    )
-                    .await?;
-                    continue;
-                }
-                if is_row_query(statement) {
-                    last = read_query(&conn, statement, statement_kind(statement)).await?;
-                    affected_rows += last.affected_rows;
-                } else {
-                    let count = run_statement(&conn, statement).await?;
-                    affected_rows += count;
-                    mutated = true;
-                    last = empty_result(statement_kind(statement));
-                    last.affected_rows = count;
-                }
-            }
-            if mutated {
-                conn.commit().await?;
-            }
-            last.affected_rows = affected_rows;
-            last.duration_ms = started.elapsed().as_millis() as u64;
-            if limited.applied && last.rows.len() as u32 >= DEFAULT_QUERY_ROW_LIMIT {
-                last.truncated = true;
-            }
-            messages.push(QueryLogEntry::success(format!(
-                "Finished in {} ms",
-                last.duration_ms
+        let session = self.session().await?;
+        let mut messages = Vec::new();
+        if let Some(schema_sql) = &schema_sql {
+            session.execute(schema_sql).await?;
+            messages.push(QueryLogEntry::info(schema_sql.clone()));
+        }
+        if limited.applied {
+            let clause = if legacy {
+                format!("WHERE ROWNUM <= {DEFAULT_QUERY_ROW_LIMIT}")
+            } else {
+                format!("OFFSET/FETCH NEXT {DEFAULT_QUERY_ROW_LIMIT}")
+            };
+            messages.push(QueryLogEntry::info(format!(
+                "No row limit specified; applying {clause}"
             )));
-            last.messages = messages;
-            Ok(last)
-        })
-        .await
+        }
+        if statements.is_empty() {
+            return Err(AppError::msg("SQL is empty"));
+        }
+        let started = Instant::now();
+        let mut affected_rows = 0_u64;
+        let mut mutated = false;
+        let mut last = empty_result(statement_kind(&limited.sql));
+        for statement in &statements {
+            messages.push(QueryLogEntry::info(format!(
+                "Executing {}…",
+                statement_kind(statement)
+            )));
+            if is_explain_plan(statement) {
+                session.execute(statement).await?;
+                mutated = true;
+                last = session
+                    .query(
+                        "SELECT PLAN_TABLE_OUTPUT FROM TABLE(DBMS_XPLAN.DISPLAY)",
+                        &[],
+                    )
+                    .await?
+                    .into_result("query");
+                continue;
+            }
+            if is_row_query(statement) {
+                last = session
+                    .query(statement, &[])
+                    .await?
+                    .into_result(statement_kind(statement));
+                affected_rows += last.affected_rows;
+            } else {
+                let count = session.execute(statement).await?;
+                affected_rows += count;
+                mutated = true;
+                last = empty_result(statement_kind(statement));
+                last.affected_rows = count;
+            }
+        }
+        if mutated {
+            session.commit().await?;
+        }
+        last.affected_rows = affected_rows;
+        last.duration_ms = started.elapsed().as_millis() as u64;
+        if limited.applied && last.rows.len() as u32 >= DEFAULT_QUERY_ROW_LIMIT {
+            last.truncated = true;
+        }
+        messages.push(QueryLogEntry::success(format!(
+            "Finished in {} ms",
+            last.duration_ms
+        )));
+        last.messages = messages;
+        Ok(last)
     }
 
     async fn close(self) -> AppResult<()> {
-        if let Some(connection) = self.conn.lock().await.take() {
-            connection.close().await?;
+        if let Some(session) = self.conn.lock().await.take() {
+            session.close().await?;
         }
         Ok(())
     }
@@ -775,7 +886,7 @@ fn log_oracle_failure(stage: &str, config: &Config, error: &AppError) {
 /// `jdbc:oracle:thin:@//host:port/service` → `(SERVICE_NAME=…)`.
 ///
 /// 11.2 listeners often close a 12c CONNECT packet without a TNS error.
-/// Automatic protocol mode retries once with the 11g packet.
+/// Automatic protocol mode retries with the 11.2 packet, then 11.1.
 /// When the listener rejects SERVICE_NAME with ORA-12514 (or SID with
 /// ORA-12505), retry once with the other identification method — DBeaver
 /// SID URLs commonly land in the service-name field by default.
@@ -803,29 +914,60 @@ async fn connect_with_protocol_retry(config: Config, stage: &str) -> AppResult<C
             log::info!("oracle {stage} ok: {}", oracle_endpoint(&config));
             Ok(connection)
         }
-        Err(error) if config.protocol_desired == 0 && listener_closed_without_packet(&error) => {
-            log::warn!(
-                "oracle {stage} listener closed without a packet, retrying protocol 314: {} | {error:?}",
-                oracle_endpoint(&config)
-            );
-            let legacy = config.protocol_version(314);
-            match Connection::connect_with_config(legacy.clone()).await {
-                Ok(connection) => {
-                    log::info!("oracle {stage} ok: {}", oracle_endpoint(&legacy));
-                    Ok(connection)
-                }
-                Err(retry_error) => {
-                    let retry_error = AppError::from(retry_error);
-                    log_oracle_failure(&format!("{stage} protocol 314"), &legacy, &retry_error);
-                    Err(retry_error)
+        Err(error) if should_walk_legacy(&config, &error) => {
+            let mut last = AppError::from(error);
+            for protocol in legacy_protocols_to_try(config.protocol_desired) {
+                log::warn!(
+                    "oracle {stage} listener closed without a packet, retrying protocol {protocol}: {} | {last:?}",
+                    oracle_endpoint(&config)
+                );
+                let legacy = config.clone().protocol_version(*protocol);
+                match Connection::connect_with_config(legacy.clone()).await {
+                    Ok(connection) => {
+                        log::info!("oracle {stage} ok: {}", oracle_endpoint(&legacy));
+                        return Ok(connection);
+                    }
+                    Err(retry_error) if listener_closed_without_packet(&retry_error) => {
+                        last = AppError::from(retry_error);
+                        log_oracle_failure(
+                            &format!("{stage} protocol {protocol}"),
+                            &legacy,
+                            &last,
+                        );
+                    }
+                    Err(retry_error) => {
+                        let retry_error = AppError::from(retry_error);
+                        log_oracle_failure(
+                            &format!("{stage} protocol {protocol}"),
+                            &legacy,
+                            &retry_error,
+                        );
+                        return Err(retry_error);
+                    }
                 }
             }
+            Err(last)
         }
         Err(error) => {
             let error = AppError::from(error);
             log_oracle_failure(stage, &config, &error);
             Err(error)
         }
+    }
+}
+
+/// Automatic mode walks 11.2 then 11.1. An explicit 11.2 attempt may still
+/// fall through to 11.1 when that listener also closes the socket.
+fn should_walk_legacy(config: &Config, error: &oracle_rs::Error) -> bool {
+    listener_closed_without_packet(error)
+        && (config.protocol_desired == 0 || config.protocol_desired == 314)
+}
+
+fn legacy_protocols_to_try(protocol_desired: u16) -> &'static [u16] {
+    if protocol_desired == 314 {
+        &[313]
+    } else {
+        &[314, 313]
     }
 }
 
@@ -920,16 +1062,23 @@ fn format_oracle_type(
     }
 }
 
-fn cell_string(row: &Row, index: usize) -> Option<String> {
-    row.get(index).and_then(value_to_string)
+fn grid_text(row: &[Option<String>], index: usize) -> Option<String> {
+    row.get(index).and_then(Clone::clone)
 }
 
-fn cell_i64(row: &Row, index: usize) -> Option<i64> {
-    row.get(index).and_then(Value::as_i64)
+fn grid_i64(row: &[Option<String>], index: usize) -> Option<i64> {
+    let text = grid_text(row, index)?;
+    let text = text.trim();
+    text.parse::<i64>().ok().or_else(|| {
+        text.parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(|value| value as i64)
+    })
 }
 
-fn cell_u64(row: &Row, index: usize) -> Option<u64> {
-    cell_i64(row, index).map(|value| value.max(0) as u64)
+fn grid_u64(row: &[Option<String>], index: usize) -> Option<u64> {
+    grid_i64(row, index).map(|value| value.max(0) as u64)
 }
 
 fn value_to_string(value: &Value) -> Option<String> {
@@ -1009,42 +1158,70 @@ async fn run_statement(conn: &Connection, sql: &str) -> AppResult<u64> {
     Ok(result.rows_affected)
 }
 
-async fn read_query(conn: &Connection, sql: &str, kind: &str) -> AppResult<QueryResult> {
-    let mut result = conn.query(sql, &[]).await?;
-    let mut truncated = false;
-    while result.has_more_rows && result.rows.len() < MAX_RESULT_ROWS {
-        let more = conn
-            .fetch_more(result.cursor_id, &result.columns, 200)
-            .await?;
-        let has_more = more.has_more_rows;
-        result.rows.extend(more.rows);
-        result.has_more_rows = has_more;
-        if result.rows.len() >= MAX_RESULT_ROWS {
-            truncated = true;
-            result.rows.truncate(MAX_RESULT_ROWS);
-            break;
-        }
+struct ThinSession {
+    conn: Arc<Connection>,
+}
+
+#[async_trait]
+impl OracleSession for ThinSession {
+    async fn ping(&self) -> AppResult<()> {
+        self.conn.ping().await?;
+        Ok(())
     }
-    let columns = result.columns.iter().map(column_meta).collect::<Vec<_>>();
-    let rows = result
-        .rows
-        .iter()
-        .map(|row| {
-            (0..columns.len())
-                .map(|index| cell_string(row, index))
-                .collect()
+
+    async fn query(&self, sql: &str, params: &[String]) -> AppResult<Grid> {
+        let values: Vec<Value> = params.iter().cloned().map(Value::String).collect();
+        let mut result = self.conn.query(sql, &values).await?;
+        let mut truncated = false;
+        while result.has_more_rows && result.rows.len() < MAX_RESULT_ROWS {
+            let more = self
+                .conn
+                .fetch_more(result.cursor_id, &result.columns, 200)
+                .await?;
+            let has_more = more.has_more_rows;
+            result.rows.extend(more.rows);
+            result.has_more_rows = has_more;
+            if result.rows.len() >= MAX_RESULT_ROWS {
+                truncated = true;
+                result.rows.truncate(MAX_RESULT_ROWS);
+                break;
+            }
+        }
+        let columns = result.columns.iter().map(column_meta).collect::<Vec<_>>();
+        let width = columns.len();
+        let mut rows = Vec::with_capacity(result.rows.len());
+        for row in &result.rows {
+            let mut cells = Vec::with_capacity(width);
+            for index in 0..width {
+                let text = match row.get(index) {
+                    Some(value) => lob_or_string(&self.conn, value).await?,
+                    None => None,
+                };
+                cells.push(text);
+            }
+            rows.push(cells);
+        }
+        Ok(Grid {
+            columns,
+            rows,
+            affected_rows: result.rows_affected,
+            truncated,
         })
-        .collect();
-    Ok(QueryResult {
-        columns,
-        rows,
-        affected_rows: result.rows_affected,
-        last_insert_id: None,
-        duration_ms: 0,
-        truncated,
-        statement_kind: kind.to_string(),
-        messages: Vec::new(),
-    })
+    }
+
+    async fn execute(&self, sql: &str) -> AppResult<u64> {
+        run_statement(&self.conn, sql).await
+    }
+
+    async fn commit(&self) -> AppResult<()> {
+        self.conn.commit().await?;
+        Ok(())
+    }
+
+    async fn close(&self) -> AppResult<()> {
+        self.conn.close().await?;
+        Ok(())
+    }
 }
 
 fn column_meta(column: &OracleColumn) -> ColumnMeta {
@@ -1067,32 +1244,33 @@ fn empty_result(kind: &str) -> QueryResult {
     }
 }
 
-async fn synthesized_table_ddl(conn: &Connection, schema: &str, table: &str) -> AppResult<String> {
-    let result = conn
+async fn synthesized_table_ddl(
+    session: &dyn OracleSession,
+    schema: &str,
+    table: &str,
+) -> AppResult<String> {
+    let grid = session
         .query(
             "SELECT column_name, data_type, data_length, data_precision, data_scale, nullable
              FROM all_tab_columns
              WHERE owner = :1 AND table_name = :2
              ORDER BY column_id",
-            &[
-                Value::String(schema.to_string()),
-                Value::String(table.to_string()),
-            ],
+            &[schema.to_string(), table.to_string()],
         )
         .await?;
     let mut lines = Vec::new();
-    for row in &result.rows {
-        let Some(name) = cell_string(row, 0) else {
+    for row in &grid.rows {
+        let Some(name) = grid_text(row, 0) else {
             continue;
         };
-        let data_type = cell_string(row, 1).unwrap_or_else(|| "VARCHAR2".to_string());
+        let data_type = grid_text(row, 1).unwrap_or_else(|| "VARCHAR2".to_string());
         let column_type = format_oracle_type(
             &data_type,
-            cell_i64(row, 2),
-            cell_i64(row, 3),
-            cell_i64(row, 4),
+            grid_i64(row, 2),
+            grid_i64(row, 3),
+            grid_i64(row, 4),
         );
-        let null_sql = if cell_string(row, 5).is_some_and(|value| value.eq_ignore_ascii_case("Y")) {
+        let null_sql = if grid_text(row, 5).is_some_and(|value| value.eq_ignore_ascii_case("Y")) {
             ""
         } else {
             " NOT NULL"
@@ -1241,6 +1419,22 @@ mod tests {
     }
 
     #[test]
+    fn versions_before_12c_r1_use_the_oracle_client() {
+        assert!(uses_odpi_client(Some("11.2")));
+        assert!(uses_odpi_client(Some("11.1")));
+        assert!(uses_odpi_client(Some("11g")));
+        assert!(uses_odpi_client(Some("10.2")));
+        assert!(uses_odpi_client(Some("10.1")));
+        assert!(uses_odpi_client(Some("10g")));
+        assert!(!uses_odpi_client(None));
+        assert!(!uses_odpi_client(Some("auto")));
+        assert!(!uses_odpi_client(Some("12.1")));
+        assert!(!uses_odpi_client(Some("12.2")));
+        assert!(!uses_odpi_client(Some("19c")));
+        assert!(!uses_odpi_client(Some("23ai")));
+    }
+
+    #[test]
     fn selects_a_protocol_for_each_oracle_release() {
         assert_eq!(oracle_protocol(None), None);
         assert_eq!(oracle_protocol(Some("auto")), None);
@@ -1264,6 +1458,8 @@ mod tests {
         };
         assert!(listener_closed_without_packet(&silent));
         assert!(!listener_closed_without_packet(&refused));
+        assert_eq!(legacy_protocols_to_try(0), &[314, 313]);
+        assert_eq!(legacy_protocols_to_try(314), &[313]);
     }
 
     #[test]
@@ -1354,7 +1550,7 @@ mod tests {
         assert_eq!(jdbc_style.protocol_desired, 314);
         assert_eq!(
             jdbc_style.build_connect_string(),
-            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=172.19.3.11)(PORT=7026))(CONNECT_DATA=(SID=DB11G)))"
+            "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=172.19.3.11)(PORT=7026))(CONNECT_DATA=(SID=DB11G)(CID=(PROGRAM=db-gui)(HOST=__jdbc__)(USER=db-gui))))"
         );
 
         let prefixed = build_config(

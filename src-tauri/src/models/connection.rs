@@ -67,6 +67,10 @@ pub struct ConnectionProfile {
     /// `sid` connects by instance SID. Empty or `service` uses a service name.
     #[serde(default)]
     pub oracle_connect: Option<String>,
+    /// Unzipped Instant Client folder that contains `oci.dll` directly.
+    /// Used only below 12c R1. Empty searches PATH.
+    #[serde(default)]
+    pub oracle_instant_client: Option<String>,
     #[serde(default)]
     pub save_password: bool,
 }
@@ -125,6 +129,9 @@ pub struct TestConnectionRequest {
     pub oracle_version: Option<String>,
     #[serde(default)]
     pub oracle_connect: Option<String>,
+    /// Unzipped Instant Client folder that contains `oci.dll` directly.
+    #[serde(default)]
+    pub oracle_instant_client: Option<String>,
 }
 
 impl TestConnectionRequest {
@@ -171,5 +178,6 @@ mod tests {
         assert!(!profile.ssl_verify);
         assert!(profile.oracle_version.is_none());
         assert!(profile.oracle_connect.is_none());
+        assert!(profile.oracle_instant_client.is_none());
     }
 }

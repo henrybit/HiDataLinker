@@ -18,6 +18,9 @@ pub enum AppError {
     SqlServer(#[from] tiberius::error::Error),
     #[error(transparent)]
     Oracle(#[from] oracle_rs::Error),
+    /// Official ODPI-C binding (`oracle` crate), used below 12c R1.
+    #[error(transparent)]
+    Odpi(#[from] oracle::Error),
     #[error("{0}")]
     PgPool(String),
     #[error(transparent)]
@@ -39,6 +42,7 @@ impl AppError {
         match self {
             Self::Postgres(error) => format_postgres_error(error),
             Self::Oracle(error) => with_sources(error),
+            Self::Odpi(error) => with_sources(error),
             Self::Mysql(error) => with_sources(error),
             Self::SqlServer(error) => with_sources(error),
             Self::Io(error) => with_sources(error),

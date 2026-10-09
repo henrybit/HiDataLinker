@@ -6,6 +6,8 @@ pub enum SqlDialect {
     Postgres,
     Mssql,
     Oracle,
+    /// Releases before 12c R1 have no OFFSET/FETCH. Limit with ROWNUM.
+    Oracle11g,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,9 +133,14 @@ fn has_top_level_row_limit(sql: &str, dialect: SqlDialect) -> bool {
                 if keyword.eq_ignore_ascii_case("FETCH") && looks_like_fetch_clause(&mut cur) {
                     return true;
                 }
-                if matches!(dialect, SqlDialect::Mssql | SqlDialect::Oracle)
-                    && keyword.eq_ignore_ascii_case("OFFSET")
+                if matches!(
+                    dialect,
+                    SqlDialect::Mssql | SqlDialect::Oracle | SqlDialect::Oracle11g
+                ) && keyword.eq_ignore_ascii_case("OFFSET")
                 {
+                    return true;
+                }
+                if dialect == SqlDialect::Oracle11g && keyword.eq_ignore_ascii_case("ROWNUM") {
                     return true;
                 }
                 if dialect == SqlDialect::Mssql
@@ -192,6 +199,7 @@ fn limit_clause(sql: &str, dialect: SqlDialect, limit: u32) -> String {
         SqlDialect::Mssql | SqlDialect::Oracle => {
             format!("OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY")
         }
+        SqlDialect::Oracle11g => String::new(),
     }
 }
 
@@ -248,6 +256,11 @@ fn looks_like_fetch_clause(cur: &mut Cursor<'_>) -> bool {
 }
 
 fn insert_limit(sql: &str, limit: u32, dialect: SqlDialect) -> String {
+    if dialect == SqlDialect::Oracle11g {
+        let body = sql.trim().trim_end_matches(';').trim();
+        let semi = if sql.trim_end().ends_with(';') { ";" } else { "" };
+        return format!("SELECT * FROM ({body}) db_gui_q WHERE ROWNUM <= {limit}{semi}");
+    }
     let idx = insertion_index(sql, dialect).unwrap_or(sql.len());
     let prefix = sql[..idx].trim_end();
     let suffix = sql[idx..].trim_start();
@@ -748,6 +761,21 @@ mod tests {
         assert!(oracle.applied);
         assert!(oracle.sql.contains("FETCH NEXT 500 ROWS ONLY"));
         assert!(!oracle.sql.contains("ORDER BY"));
+    }
+
+    #[test]
+    fn pre_12c_selects_are_limited_with_rownum() {
+        let rewritten = apply_default_query_limit("SELECT * FROM t", SqlDialect::Oracle11g);
+        assert!(rewritten.applied);
+        assert_eq!(
+            rewritten.sql,
+            "SELECT * FROM (SELECT * FROM t) db_gui_q WHERE ROWNUM <= 500"
+        );
+        let already = apply_default_query_limit(
+            "SELECT * FROM t WHERE ROWNUM <= 10",
+            SqlDialect::Oracle11g,
+        );
+        assert!(!already.applied);
     }
 
     #[test]

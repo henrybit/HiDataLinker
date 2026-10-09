@@ -22,6 +22,8 @@ export interface ConnectionProfile {
 	oracleVersion?: string | null;
 	/** `sid` connects by instance SID. Empty or `service` uses a service name. */
 	oracleConnect?: string | null;
+	/** Unzipped Instant Client folder that contains `oci.dll` directly. */
+	oracleInstantClient?: string | null;
 	savePassword: boolean;
 }
 
@@ -40,6 +42,7 @@ export interface ConnectionListItem {
 	sslVerify?: boolean;
 	oracleVersion?: string | null;
 	oracleConnect?: string | null;
+	oracleInstantClient?: string | null;
 	savePassword: boolean;
 	connected: boolean;
 }
@@ -61,6 +64,7 @@ export interface TestConnectionRequest {
 	sslVerify?: boolean;
 	oracleVersion?: string | null;
 	oracleConnect?: string | null;
+	oracleInstantClient?: string | null;
 }
 
 export interface DatabaseInfo {

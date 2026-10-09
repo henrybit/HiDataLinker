@@ -108,7 +108,11 @@ export const en = {
 	'dialog.oracleVersion': 'Oracle version',
 	'dialog.oracleVersionAuto': 'Automatic',
 	'dialog.oracleVersionHint':
-		'Automatic accepts 10g R1 through 23ai. If an older server rejects the handshake, pick its release. 11g is 11g R2.',
+		'12c R1 and later use the built-in thin driver. Releases before 12c R1 (11g, 10g) use a local 64-bit Oracle Instant Client. Choose its unzipped folder below.',
+	'dialog.oracleInstantClient': 'Instant Client directory',
+	'dialog.oracleInstantClientPlaceholder': 'e.g. C:\\oracle\\instantclient_19_22',
+	'dialog.oracleInstantClientHint':
+		'Choose the unzipped Instant Client folder that contains oci.dll directly, for example C:\\oracle\\instantclient_19_22. Do not choose the sdk or network\\admin folder inside it. Leave empty to search PATH.',
 	'dialog.cancel': 'Cancel',
 	'dialog.save': 'Save',
 	'dialog.delete': 'Delete',
@@ -458,6 +462,7 @@ export const en = {
 	'analysis.progress.comments': 'Inferring comments for objects without descriptions…',
 	'analysis.progress.relations': 'Inferring relationships…',
 	'analysis.log.title': 'Analysis log',
+	'analysis.log.resize': 'Resize analysis log',
 	'analysis.log.show': 'Show log',
 	'analysis.log.hide': 'Hide log',
 	'analysis.log.empty': 'No log entries yet.',
@@ -497,6 +502,7 @@ export const en = {
 	'analysis.log.endpoint.official': 'official endpoint',
 	'analysis.log.endpoint.custom': 'custom endpoint',
 	'analysis.summary': '{objects} objects · {edges} relationships',
+	'analysis.elapsed': 'Total time {duration}',
 	'analysis.reason': 'Reason',
 	'analysis.reason.foreignKey': 'Declared foreign key',
 	'analysis.reason.view': 'Referenced by the view definition',

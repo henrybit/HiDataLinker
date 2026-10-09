@@ -19,6 +19,7 @@ export interface SchemaScope {
 	connectionName: string;
 	engine: string;
 	schema: string;
+	oracleVersion?: string | null;
 }
 
 export interface CatalogColumn {

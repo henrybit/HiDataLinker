@@ -71,17 +71,24 @@ impl ConnectMessage {
         let connect_data = config.build_connect_string();
 
         let desired = desired_protocol(config);
-        // 11g and 10g listeners reset the socket when they see the 12c CONNECT
-        // layout (offset 74, DISABLE_NA). They expect the 34-byte packet.
+        // 11g listeners reset the socket on the 12c layout (offset 74, DISABLE_NA)
+        // and also on the 34-byte 10g packet. They accept the 70-byte form:
+        // service options 0x0C01, NSI 0x01, connect data at offset 70.
         let legacy = desired < version::MIN_LARGE_SDU;
-        let mut service_opts = service_options::DONT_CARE;
-        let mut connect_flags_2 = 0u32;
-        let nsi_flags = if legacy {
-            0x01
+        let (service_opts, connect_flags_2, nsi_flags) = if legacy {
+            (
+                service_options::DONT_CARE
+                    | service_options::CAN_RECV_ATTENTION
+                    | service_options::CAN_SEND_ATTENTION,
+                0u32,
+                0x01u8,
+            )
         } else {
-            service_opts |= service_options::CAN_RECV_ATTENTION;
-            connect_flags_2 |= connection::CHECK_OOB;
-            nsi_flags::SUPPORT_SECURITY_RENEG | nsi_flags::DISABLE_NA
+            (
+                service_options::DONT_CARE | service_options::CAN_RECV_ATTENTION,
+                connection::CHECK_OOB,
+                nsi_flags::SUPPORT_SECURITY_RENEG | nsi_flags::DISABLE_NA,
+            )
         };
 
         Self {
@@ -130,9 +137,13 @@ impl ConnectMessage {
         }
     }
 
-    /// 10g/11g CONNECT packet. Connect data starts at byte 34.
+    /// 10g/11g CONNECT packet. Connect data starts at byte 70.
+    ///
+    /// A 34-byte packet (data immediately after the NSI flags) makes 11.1 and
+    /// 11.2 listeners close the socket. The 70-byte header keeps the 32-bit
+    /// SDU/TDU fields and leaves Native Network Encryption enabled.
     fn build_legacy(&self, include_data: bool) -> Result<Bytes> {
-        const DATA_OFFSET: u16 = 34;
+        const DATA_OFFSET: u16 = 70;
         let connect_data_bytes = self.connect_data.as_bytes();
         let mut buf = WriteBuffer::with_capacity(256);
         buf.write_zeros(PACKET_HEADER_SIZE)?;
@@ -140,7 +151,7 @@ impl ConnectMessage {
         buf.write_u16_be(self.version_minimum)?;
         buf.write_u16_be(self.service_options)?;
         buf.write_u16_be(self.sdu.min(65535) as u16)?;
-        buf.write_u16_be(self.tdu.min(32767) as u16)?;
+        buf.write_u16_be(self.tdu.min(65535) as u16)?;
         buf.write_u16_be(self.protocol_characteristics)?;
         buf.write_u16_be(0)?;
         buf.write_u16_be(1)?;
@@ -149,6 +160,10 @@ impl ConnectMessage {
         buf.write_u32_be(0)?;
         buf.write_u8(self.nsi_flags)?;
         buf.write_u8(self.nsi_flags)?;
+        buf.write_zeros(24)?;
+        buf.write_u32_be(self.sdu)?;
+        buf.write_u32_be(self.tdu)?;
+        buf.write_u32_be(0)?;
         if include_data {
             buf.write_bytes(connect_data_bytes)?;
         }
@@ -328,6 +343,7 @@ mod tests {
         assert_eq!(msg.version_desired, 314);
         assert_eq!(msg.version_minimum, version::MINIMUM);
         assert_eq!(msg.nsi_flags, 0x01);
+        assert_eq!(msg.service_options, 0x0C01);
 
         let packet = msg.build().unwrap();
         assert_eq!(packet[4], PacketType::Connect as u8);
@@ -336,10 +352,12 @@ mod tests {
             u16::from_be_bytes([packet[10], packet[11]]),
             version::MINIMUM
         );
-        assert_eq!(u16::from_be_bytes([packet[26], packet[27]]), 34);
+        assert_eq!(u16::from_be_bytes([packet[12], packet[13]]), 0x0C01);
+        assert_eq!(u16::from_be_bytes([packet[26], packet[27]]), 70);
         assert_eq!(packet[32], 0x01);
         assert_ne!(packet[32] & 0x04, 0x04);
-        let descriptor = std::str::from_utf8(&packet[34..]).unwrap();
+        assert_eq!(u32::from_be_bytes(packet[58..62].try_into().unwrap()), 8192);
+        let descriptor = std::str::from_utf8(&packet[70..]).unwrap();
         assert!(descriptor.contains("(SID=DB11G)"));
         assert!(descriptor.contains("(PORT=7026)"));
         assert!(!descriptor.contains("SERVICE_NAME"));

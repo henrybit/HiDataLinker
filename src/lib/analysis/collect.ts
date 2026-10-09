@@ -23,7 +23,7 @@ export async function loadSchemaCatalog(
 	for (const scope of scopes) {
 		const name = `${scope.connectionName}.${scope.schema}`;
 		onLog?.({ type: 'catalog-scope', name });
-		const sql = catalogSql(scope.engine, scope.schema);
+		const sql = catalogSql(scope.engine, scope.schema, scope.oracleVersion);
 		const timed = (query: CatalogQueryName, statement: string) =>
 			runCatalogQuery(scope, query, statement, runQuery, onLog);
 		loaded.push({

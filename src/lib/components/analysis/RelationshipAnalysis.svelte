@@ -1,5 +1,11 @@
+<script module lang="ts">
+	const MIN_LOG_HEIGHT = 96;
+	const MIN_ANALYSIS_BODY = 160;
+	let savedLogHeight = 168;
+</script>
+
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { ChevronDown, ScrollText, X } from '@lucide/svelte';
 	import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
 	import { downloadTextFile } from '$lib/download';
@@ -37,7 +43,7 @@
 	} from '$lib/analysis/types';
 	import RelationshipGraphView from '$lib/components/analysis/RelationshipGraph.svelte';
 	import { engineLabel } from '$lib/engine';
-	import { formatDuration } from '$lib/format';
+	import { formatDuration, formatElapsed } from '$lib/format';
 	import { getLocale, t } from '$lib/i18n/i18n.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
@@ -52,6 +58,11 @@
 	let logs = $state<Array<{ level: AnalysisLogLevel; text: string }>>([]);
 	let logOpen = $state(false);
 	let logList = $state<HTMLOListElement | null>(null);
+	let panelEl = $state<HTMLDivElement | null>(null);
+	let logHeight = $state(savedLogHeight);
+	let logDragging = $state(false);
+	let startedAt = $state<number | null>(null);
+	let elapsedMs = $state<number | null>(null);
 	let stage = $state<AnalysisStage>('start');
 	let maximized = $state(false);
 	let history = $state<AnalysisHistorySummary[]>([]);
@@ -64,6 +75,7 @@
 	let pickerHighlight = $state(0);
 	let pickerRoot = $state<HTMLDivElement | null>(null);
 
+	const elapsedLabel = $derived(elapsedMs == null ? '' : formatElapsed(elapsedMs));
 	const visibleEdges = $derived(graph?.edges.filter((edge) => edgeVisible(edge, filters)) ?? []);
 	const selectedNode = $derived(graph?.nodes.find((node) => node.id === selectedId) ?? null);
 	const providers = $derived(llmCatalog.providers);
@@ -95,6 +107,28 @@
 		if (!logOpen) return;
 		void logs.length;
 		logList?.scrollTo({ top: logList.scrollHeight });
+	});
+
+	$effect(() => {
+		if (!running || startedAt == null) return;
+		const origin = startedAt;
+		const timer = setInterval(() => {
+			elapsedMs = performance.now() - origin;
+		}, 200);
+		return () => clearInterval(timer);
+	});
+
+	$effect(() => {
+		if (!logOpen || !panelEl) return;
+		const node = panelEl;
+		const clamp = () => {
+			const max = maxLogHeight(node);
+			if (untrack(() => logHeight) > max) logHeight = Math.round(max);
+		};
+		clamp();
+		const observer = new ResizeObserver(clamp);
+		observer.observe(node);
+		return () => observer.disconnect();
 	});
 
 	onMount(() => {
@@ -202,7 +236,8 @@
 					connectionId: connection.id,
 					connectionName: connection.name,
 					engine: connection.engine,
-					schema
+					schema,
+					oracleVersion: connection.oracleVersion
 				});
 			}
 		}
@@ -229,6 +264,50 @@
 		progress = text.split('\n')[0] ?? text;
 		if (level === 'error') console.error(`[analysis] ${text}`);
 		else console.info(`[analysis] ${text}`);
+	}
+
+	function note(level: AnalysisLogLevel, text: string) {
+		logs = [...logs, { level, text }];
+	}
+
+	function maxLogHeight(node: HTMLElement): number {
+		const panel = node.getBoundingClientRect();
+		const header = node.querySelector(':scope > header')?.getBoundingClientRect().height ?? 0;
+		const footer = node.querySelector(':scope > footer')?.getBoundingClientRect().height ?? 0;
+		const handle = node.querySelector('.analysis-log-resize')?.getBoundingClientRect().height ?? 8;
+		return Math.max(MIN_LOG_HEIGHT, panel.height - header - footer - handle - MIN_ANALYSIS_BODY);
+	}
+
+	function setLogHeight(next: number, persist: boolean) {
+		const height = Math.round(
+			Math.min(panelEl ? maxLogHeight(panelEl) : next, Math.max(MIN_LOG_HEIGHT, next))
+		);
+		logHeight = height;
+		if (persist) savedLogHeight = height;
+	}
+
+	function startLogResize(event: PointerEvent) {
+		event.preventDefault();
+		logDragging = true;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+
+	function moveLogResize(event: PointerEvent) {
+		if (!logDragging || !panelEl) return;
+		const footer = panelEl.querySelector(':scope > footer')?.getBoundingClientRect();
+		const handle = (event.currentTarget as HTMLElement).offsetHeight;
+		const logBottom = footer?.top ?? panelEl.getBoundingClientRect().bottom;
+		setLogHeight(logBottom - event.clientY - handle, true);
+	}
+
+	function endLogResize() {
+		logDragging = false;
+	}
+
+	function onLogResizeKey(event: KeyboardEvent) {
+		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+		event.preventDefault();
+		setLogHeight(logHeight + (event.key === 'ArrowUp' ? 32 : -32), true);
 	}
 
 	function record(event: AnalysisLogEvent) {
@@ -354,6 +433,8 @@
 		logOpen = true;
 		stage = 'start';
 		progress = '';
+		startedAt = null;
+		elapsedMs = null;
 		const scopes = selectedScopes();
 		if (scopes.length === 0) {
 			error = t('analysis.needScope');
@@ -383,6 +464,8 @@
 			append('error', error, 'start');
 			return;
 		}
+		startedAt = performance.now();
+		elapsedMs = 0;
 		running = true;
 		append(
 			'info',
@@ -417,6 +500,10 @@
 			append('error', t('analysis.log.failed', { stage: stageLabel(stage), message }), stage);
 			console.error('[analysis]', caught);
 		} finally {
+			if (startedAt != null) {
+				elapsedMs = performance.now() - startedAt;
+				note('info', t('analysis.elapsed', { duration: formatElapsed(elapsedMs) }));
+			}
 			running = false;
 		}
 	}
@@ -519,6 +606,8 @@
 			selectedId = next.nodes.find((node) => !node.external)?.id ?? next.nodes[0]?.id ?? null;
 			error = null;
 			logs = [];
+			startedAt = null;
+			elapsedMs = null;
 			progress = t('analysis.historyViewing', { time: historyTime(record.createdAt) });
 		} catch (caught) {
 			error = errorMessage(caught);
@@ -578,7 +667,14 @@
 </script>
 
 <div class="modal-backdrop">
-	<div class="modal analysis-panel" class:maximized role="dialog" aria-labelledby="analysis-title">
+	<div
+		class="modal analysis-panel"
+		class:maximized
+		class:log-resizing={logDragging}
+		role="dialog"
+		aria-labelledby="analysis-title"
+		bind:this={panelEl}
+	>
 		<header>
 			<span id="analysis-title">{t('analysis.title')}</span>
 			<div class="analysis-header-actions">
@@ -932,7 +1028,25 @@
 		</div>
 		{#if logOpen}
 			<div
+				class="split-handle horizontal analysis-log-resize"
+				class:active={logDragging}
+				role="separator"
+				aria-orientation="horizontal"
+				aria-label={t('analysis.log.resize')}
+				title={t('analysis.log.resize')}
+				aria-valuemin={MIN_LOG_HEIGHT}
+				aria-valuenow={Math.round(logHeight)}
+				tabindex="0"
+				onpointerdown={startLogResize}
+				onpointermove={moveLogResize}
+				onpointerup={endLogResize}
+				onpointercancel={endLogResize}
+				onlostpointercapture={endLogResize}
+				onkeydown={onLogResizeKey}
+			></div>
+			<div
 				class="query-exec-log analysis-log"
+				style:height="{logHeight}px"
 				aria-live="polite"
 				aria-label={t('analysis.log.title')}
 			>
@@ -952,7 +1066,12 @@
 			</div>
 		{/if}
 		<footer>
-			<span class="hint">{progress}</span>
+			<span class="hint">
+				<span class="analysis-progress truncate">{progress}</span>
+				{#if elapsedLabel}
+					<span class="analysis-elapsed">{t('analysis.elapsed', { duration: elapsedLabel })}</span>
+				{/if}
+			</span>
 			{#if error}<span class="analysis-error">{error}</span>{/if}
 			<button class="btn" type="button" disabled={!graph || running} onclick={exportMarkdown}>
 				{t('analysis.export')}

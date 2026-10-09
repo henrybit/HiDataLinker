@@ -9,6 +9,7 @@ export function oracleConnectLogDetail(target: {
 	database?: string | null;
 	oracleVersion?: string | null;
 	oracleConnect?: string | null;
+	oracleInstantClient?: string | null;
 	sslVerify?: boolean;
 }): string {
 	const connect = target.oracleConnect === 'sid' ? 'sid' : 'service';
@@ -19,7 +20,8 @@ export function oracleConnectLogDetail(target: {
 		`database=${target.database ?? ''}`,
 		`version=${target.oracleVersion || 'auto'}`,
 		`connect=${connect}`,
-		`tlsVerify=${target.sslVerify === true}`
+		`tlsVerify=${target.sslVerify === true}`,
+		`client=${target.oracleInstantClient?.trim() || 'PATH'}`
 	].join(' ');
 }
 
@@ -38,6 +40,7 @@ export function testRequestFromConnection(item: ConnectionListItem): TestConnect
 		sslKey: item.sslKey,
 		sslVerify: (engine === 'mssql' || engine === 'oracle') && item.sslVerify === true,
 		oracleVersion: engine === 'oracle' ? item.oracleVersion || 'auto' : null,
-		oracleConnect: engine === 'oracle' && item.oracleConnect === 'sid' ? 'sid' : null
+		oracleConnect: engine === 'oracle' && item.oracleConnect === 'sid' ? 'sid' : null,
+		oracleInstantClient: engine === 'oracle' ? item.oracleInstantClient?.trim() || null : null
 	};
 }

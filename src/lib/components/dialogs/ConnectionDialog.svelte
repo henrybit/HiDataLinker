@@ -13,7 +13,7 @@
 		looksLikeConnectionUrl,
 		parseConnectionUrl
 	} from '$lib/connection-url';
-	import { ORACLE_VERSIONS } from '$lib/oracle-version';
+	import { needsOracleInstantClient, ORACLE_VERSIONS } from '$lib/oracle-version';
 	import type { ConnectionProfile } from '$lib/api/types';
 	import { t } from '$lib/i18n/i18n.svelte';
 
@@ -33,6 +33,7 @@
 			sslVerify: false,
 			oracleVersion: 'auto',
 			oracleConnect: 'service',
+			oracleInstantClient: '',
 			savePassword: true
 		}
 	);
@@ -158,7 +159,9 @@
 				sslKey: profile.sslKey,
 				sslVerify: certificateChoice && profile.sslVerify === true,
 				oracleVersion: engine === 'oracle' ? profile.oracleVersion || 'auto' : null,
-				oracleConnect: engine === 'oracle' && profile.oracleConnect === 'sid' ? 'sid' : null
+				oracleConnect: engine === 'oracle' && profile.oracleConnect === 'sid' ? 'sid' : null,
+				oracleInstantClient:
+					engine === 'oracle' ? optionalPath(profile.oracleInstantClient) : null
 			});
 			testOk = true;
 			testMessage = t('dialog.connectionSucceeded');
@@ -189,8 +192,20 @@
 				engine === 'oracle' && profile.oracleVersion && profile.oracleVersion !== 'auto'
 					? profile.oracleVersion
 					: null,
-			oracleConnect: engine === 'oracle' && profile.oracleConnect === 'sid' ? 'sid' : null
+			oracleConnect: engine === 'oracle' && profile.oracleConnect === 'sid' ? 'sid' : null,
+			oracleInstantClient: engine === 'oracle' ? optionalPath(profile.oracleInstantClient) : null
 		});
+	}
+
+	async function pickInstantClient() {
+		if (!isTauriRuntime()) return;
+		const { open } = await import('@tauri-apps/plugin-dialog');
+		const selected = await open({
+			title: t('dialog.oracleInstantClient'),
+			multiple: false,
+			directory: true
+		});
+		if (typeof selected === 'string') profile.oracleInstantClient = selected;
 	}
 
 	async function pickSslFile(
@@ -302,6 +317,22 @@
 					</select>
 				</label>
 				<p class="hint">{t('dialog.oracleVersionHint')}</p>
+				{#if needsOracleInstantClient(profile.oracleVersion)}
+					<label class="field">
+						<span>{t('dialog.oracleInstantClient')}</span>
+						<div class="field-control">
+							<input
+								bind:value={profile.oracleInstantClient}
+								placeholder={t('dialog.oracleInstantClientPlaceholder')}
+								spellcheck="false"
+							/>
+							<button class="btn" type="button" onclick={() => void pickInstantClient()}
+								>{t('dialog.browse')}</button
+							>
+						</div>
+					</label>
+					<p class="hint">{t('dialog.oracleInstantClientHint')}</p>
+				{/if}
 			{/if}
 			{#if certificateChoice}
 				<label class="field">

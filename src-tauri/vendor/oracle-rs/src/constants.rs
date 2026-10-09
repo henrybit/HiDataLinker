@@ -310,6 +310,8 @@ pub mod connection {
 pub mod service_options {
     pub const DONT_CARE: u16 = 0x0001;
     pub const CAN_RECV_ATTENTION: u16 = 0x0400;
+    /// Urgent / attention the peer may send. 11g listeners expect this bit.
+    pub const CAN_SEND_ATTENTION: u16 = 0x0800;
 }
 
 // =============================================================================

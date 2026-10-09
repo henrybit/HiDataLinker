@@ -24,6 +24,18 @@ export function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(2)} s`;
 }
 
+/** Short durations stay with `formatDuration`. Longer runs use hours and minutes. */
+export function formatElapsed(ms: number): string {
+	const rounded = Math.max(0, Math.round(ms));
+	if (rounded < 60_000) return formatDuration(rounded);
+	const totalSeconds = Math.floor(rounded / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	const clock = `${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+	return hours > 0 ? `${hours}h ${clock}` : `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+}
+
 let counter = 0;
 export function uid(prefix = 'id'): string {
 	counter += 1;

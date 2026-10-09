@@ -125,6 +125,7 @@ class WorkspaceStore {
 			sslVerify: false,
 			oracleVersion: 'auto',
 			oracleConnect: 'service',
+			oracleInstantClient: '',
 			savePassword: true
 		};
 		this.dialogOpen = true;
@@ -147,6 +148,7 @@ class WorkspaceStore {
 			sslKey: item.sslKey ?? '',
 			sslVerify: item.sslVerify === true,
 			oracleVersion: item.oracleVersion || 'auto',
+			oracleInstantClient: item.oracleInstantClient ?? '',
 			oracleConnect:
 				item.oracleConnect === 'sid' || (item.database ?? '').toLowerCase().startsWith('sid:')
 					? 'sid'

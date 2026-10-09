@@ -106,7 +106,11 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.oracleVersion': 'Oracle 版本',
 	'dialog.oracleVersionAuto': '自动协商',
 	'dialog.oracleVersionHint':
-		'自动协商可连接 10g R1 到 23ai。若旧版本握手失败，请选择对应版本；11g 选 11g R2。',
+		'12c R1 及以上使用内置 thin 驱动。低于 12c R1（11g、10g）改用本机 64 位 Oracle Instant Client，请在下方选择它的解压目录。',
+	'dialog.oracleInstantClient': 'Instant Client 目录',
+	'dialog.oracleInstantClientPlaceholder': '例如 C:\\oracle\\instantclient_19_22',
+	'dialog.oracleInstantClientHint':
+		'选择 Instant Client 解压后的根目录，也就是里面直接有 oci.dll 的那一层，例如 C:\\oracle\\instantclient_19_22。不要选里面的 sdk 或 network\\admin。留空则从 PATH 查找。',
 	'dialog.cancel': '取消',
 	'dialog.save': '保存',
 	'dialog.delete': '删除',
@@ -446,6 +450,7 @@ export const zh: Record<MessageKey, string> = {
 	'analysis.progress.comments': '正在为没有注释的对象推断含义…',
 	'analysis.progress.relations': '正在推断关联关系…',
 	'analysis.log.title': '分析日志',
+	'analysis.log.resize': '调整分析日志高度',
 	'analysis.log.show': '显示日志',
 	'analysis.log.hide': '隐藏日志',
 	'analysis.log.empty': '还没有日志',
@@ -483,6 +488,7 @@ export const zh: Record<MessageKey, string> = {
 	'analysis.log.endpoint.official': '官方地址',
 	'analysis.log.endpoint.custom': '自定义地址',
 	'analysis.summary': '{objects} 个对象 · {edges} 条关系',
+	'analysis.elapsed': '总耗时 {duration}',
 	'analysis.reason': '依据',
 	'analysis.reason.foreignKey': '已声明的外键',
 	'analysis.reason.view': '视图定义引用了该表',

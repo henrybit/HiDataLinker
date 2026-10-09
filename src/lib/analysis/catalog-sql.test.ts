@@ -28,6 +28,16 @@ describe('catalogSql', () => {
 		const sql = catalogSql('oracle', 'HR');
 		expect(sql.foreignKeys).toContain("c.constraint_type = 'R'");
 		expect(sql.foreignKeys).toContain("'HR'");
-		expect(sql.views).toContain('all_views');
+		expect(sql.views).toContain('text_vc');
+		expect(sql.objects).toContain('AS "comment"');
+		expect(sql.columns).toContain('AS "comment"');
+		expect(sql.objects).not.toMatch(/\bAS comment\b/);
+	});
+
+	it('keeps Oracle 11g view text out of the LONG subquery wrapper', () => {
+		const sql = catalogSql('oracle', 'HR', '11.2');
+		expect(sql.views).toContain('text AS definition');
+		expect(sql.views).toContain('ROWNUM > 0');
+		expect(sql.views).not.toContain('text_vc');
 	});
 });
