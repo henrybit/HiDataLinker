@@ -60,7 +60,10 @@ pub struct NewMigrationHistory {
     pub logs: Vec<MigrateProgressEvent>,
 }
 
-pub fn save_history(dir: &Path, request: NewMigrationHistory) -> AppResult<MigrationHistorySummary> {
+pub fn save_history(
+    dir: &Path,
+    request: NewMigrationHistory,
+) -> AppResult<MigrationHistorySummary> {
     let status = normalize_status(&request.status)?;
     std::fs::create_dir_all(dir)?;
     let summary = MigrationHistorySummary {
@@ -144,7 +147,9 @@ pub fn delete_history(dir: &Path, id: &str) -> AppResult<()> {
 fn normalize_status(status: &str) -> AppResult<String> {
     match status.trim() {
         "success" | "failed" => Ok(status.trim().to_string()),
-        _ => Err(AppError::msg("migration history status must be success or failed")),
+        _ => Err(AppError::msg(
+            "migration history status must be success or failed",
+        )),
     }
 }
 

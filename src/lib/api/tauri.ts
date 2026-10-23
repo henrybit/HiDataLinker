@@ -14,6 +14,8 @@ import type {
 import type {
 	CharsetCatalog,
 	ColumnInfo,
+	AgentAuditEntry,
+	AgentStatus,
 	ConnectResult,
 	ConnectionListItem,
 	ConnectionProfile,
@@ -41,6 +43,12 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 }
 
 export const api = {
+	agentStatus: () => call<AgentStatus>('agent_status'),
+
+	setAgentEnabled: (enabled: boolean) => call<AgentStatus>('set_agent_enabled', { enabled }),
+
+	listAgentAudit: () => call<AgentAuditEntry[]>('list_agent_audit'),
+
 	listConnections: () => call<ConnectionListItem[]>('list_connections'),
 
 	upsertConnection: (profile: ConnectionProfile) =>

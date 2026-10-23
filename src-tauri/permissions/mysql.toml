@@ -2,6 +2,9 @@
 identifier = "mysql"
 description = "Allows the frontend to manage database connections, inspect schema objects, run SQL, and call the analysis model"
 commands.allow = [
+  "agent_status",
+  "set_agent_enabled",
+  "list_agent_audit",
   "complete_llm",
   "start_llm",
   "poll_llm",

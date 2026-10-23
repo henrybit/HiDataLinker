@@ -109,6 +109,15 @@ class WorkspaceStore {
 		}
 	}
 
+	async reloadConnections() {
+		if (!isTauriRuntime()) return;
+		try {
+			this.connections = await api.listConnections();
+		} catch (error) {
+			this.error = errorMessage(error);
+		}
+	}
+
 	openNewConnection() {
 		this.editingConnection = {
 			id: '',

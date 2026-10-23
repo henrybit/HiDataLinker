@@ -51,7 +51,7 @@ button {
 
 .app-shell {
 	display: grid;
-	grid-template-rows: 42px 1fr 26px;
+	grid-template-rows: 42px 1fr auto;
 	height: 100vh;
 	background: var(--bg-app);
 }
@@ -278,6 +278,79 @@ button {
 
 .main-pane:not(:has(.tabbar)) .main-body {
 	height: 100%;
+}
+
+.shell-bottom {
+	display: flex;
+	flex-direction: column;
+	min-height: 26px;
+}
+
+.agent-bar {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 4px 10px;
+	border-top: 1px solid var(--border);
+	background: var(--bg-muted);
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.agent-bar-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 22px;
+}
+
+.agent-bar label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text);
+	cursor: pointer;
+}
+
+.agent-bar details {
+	min-width: 0;
+}
+
+.agent-bar summary {
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.agent-log {
+	max-height: 132px;
+	margin: 4px 0 0;
+	padding: 0;
+	overflow: auto;
+	list-style: none;
+	font-family: var(--mono);
+	font-size: 11px;
+	user-select: text;
+}
+
+.agent-log li {
+	display: flex;
+	gap: 8px;
+	padding: 2px 0;
+	white-space: nowrap;
+}
+
+.agent-log .ok {
+	color: var(--success);
+}
+
+.agent-log .fail {
+	color: var(--danger);
+}
+
+.agent-log .summary {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .status-bar {
@@ -1220,6 +1293,42 @@ button {
 
 .settings-dialog {
 	width: min(720px, calc(100vw - 32px));
+}
+
+.mcp-settings {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 16px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-muted);
+}
+
+.mcp-settings-copy {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.mcp-settings-copy strong {
+	color: var(--text);
+}
+
+.mcp-settings-copy .hint {
+	margin: 0;
+}
+
+.mcp-settings-switch {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: 6px;
+	color: var(--text);
+	cursor: pointer;
+	white-space: nowrap;
 }
 
 .settings-dialog footer .hint {

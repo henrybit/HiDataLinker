@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { DEFAULT_MODELS } from '$lib/analysis/llm';
+	import {
+		agentGateway,
+		refreshAgentGateway,
+		setAgentGatewayEnabled
+	} from '$lib/agent/gateway.svelte';
+	import { isTauriRuntime } from '$lib/api/tauri';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { llmCatalog, llmSettingsDialog, replaceLlmCatalog } from '$lib/llm/catalog.svelte';
 	import {
@@ -94,7 +100,18 @@
 		return kind === 'anthropic' ? t('analysis.provider.anthropic') : t('analysis.provider.openai');
 	}
 
+	async function toggleMcp(event: Event) {
+		const enabled = (event.currentTarget as HTMLInputElement).checked;
+		try {
+			await setAgentGatewayEnabled(enabled);
+		} catch (error) {
+			console.error('[agent]', error);
+			await refreshAgentGateway();
+		}
+	}
+
 	onMount(() => {
+		void refreshAgentGateway();
 		const onKey = (event: KeyboardEvent) => {
 			if (event.key !== 'Escape') return;
 			event.preventDefault();
@@ -123,6 +140,32 @@
 				<button class="btn" type="button" onclick={close}>{t('settings.close')}</button>
 			</header>
 			<div class="body">
+				<section class="mcp-settings">
+					<div class="mcp-settings-copy">
+						<strong>{t('settings.mcp.title')}</strong>
+						<p class="hint">{t('settings.mcp.hint')}</p>
+						{#if isTauriRuntime()}
+							<p class="hint">
+								{#if agentGateway.status?.running}
+									{t('agent.port', { port: agentGateway.status.port })}
+								{:else}
+									{t('agent.starting')}
+								{/if}
+							</p>
+						{:else}
+							<p class="hint">{t('settings.mcp.desktopOnly')}</p>
+						{/if}
+					</div>
+					<label class="mcp-settings-switch">
+						<input
+							type="checkbox"
+							checked={agentGateway.status?.enabled ?? false}
+							disabled={!isTauriRuntime() || agentGateway.toggling || !agentGateway.status}
+							onchange={toggleMcp}
+						/>
+						{agentGateway.status?.enabled ? t('settings.mcp.on') : t('settings.mcp.off')}
+					</label>
+				</section>
 				<p class="hint">{t('settings.hint')}</p>
 				<div class="settings-layout">
 					<div class="settings-list">

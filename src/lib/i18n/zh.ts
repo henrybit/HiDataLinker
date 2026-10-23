@@ -521,5 +521,19 @@ export const zh: Record<MessageKey, string> = {
 	'settings.delete': '删除',
 	'settings.close': '关闭',
 	'settings.nameRequired': '请填写 provider 名称。',
-	'settings.empty': '还没有 provider。'
+	'settings.empty': '还没有 provider。',
+	'settings.mcp.title': 'MCP 服务',
+	'settings.mcp.hint':
+		'开启后，其他智能体可以通过本机 MCP 端点操作这个客户端。密码仍留在本机。关闭后这些调用会被拒绝，端口保持打开，方便再次开启。',
+	'settings.mcp.on': '已开启',
+	'settings.mcp.off': '已关闭',
+	'settings.mcp.desktopOnly': '请在桌面版里开关 MCP 服务。',
+
+	'agent.enable': 'MCP 服务',
+	'agent.port': '127.0.0.1:{port}',
+	'agent.starting': '网关启动中',
+	'agent.recent': '最近的智能体调用',
+	'agent.empty': '还没有智能体调用',
+	'agent.ok': '成功',
+	'agent.failed': '失败'
 };

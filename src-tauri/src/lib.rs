@@ -1,3 +1,4 @@
+mod agent;
 mod analysis_history;
 mod commands;
 mod db;
@@ -9,6 +10,7 @@ mod paths;
 mod runtime;
 mod state;
 
+use agent::{agent_status, list_agent_audit, set_agent_enabled};
 use commands::{
     complete_llm, connect_session, create_database, delete_analysis_history, delete_connection,
     delete_migration_history, delete_query_cache, disconnect_session, drop_database, dump_database,
@@ -37,10 +39,14 @@ pub fn run() {
             let paths = crate::paths::AppPaths::from_home(&crate::paths::home_dir()?);
             let legacy = app.path().app_data_dir().ok();
             crate::runtime::handle();
-            app.manage(AppState::load(paths, legacy)?);
+            app.manage(AppState::load(paths.clone(), legacy)?);
+            crate::agent::start(app.handle().clone(), &paths)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            agent_status,
+            set_agent_enabled,
+            list_agent_audit,
             complete_llm,
             start_llm,
             poll_llm,
@@ -86,4 +92,8 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+pub fn run_agent_mcp() {
+    agent::run_mcp();
 }

@@ -426,7 +426,8 @@ impl DatabaseEngine for OracleEngine {
             indexes.push(IndexInfo {
                 name,
                 table_name,
-                unique: grid_text(&row, 2).is_some_and(|value| value.eq_ignore_ascii_case("UNIQUE")),
+                unique: grid_text(&row, 2)
+                    .is_some_and(|value| value.eq_ignore_ascii_case("UNIQUE")),
                 primary: grid_u64(&row, 5) == Some(1),
                 index_type: grid_text(&row, 3).unwrap_or_else(|| "INDEX".to_string()),
                 columns: vec![column],
@@ -929,11 +930,7 @@ async fn connect_with_protocol_retry(config: Config, stage: &str) -> AppResult<C
                     }
                     Err(retry_error) if listener_closed_without_packet(&retry_error) => {
                         last = AppError::from(retry_error);
-                        log_oracle_failure(
-                            &format!("{stage} protocol {protocol}"),
-                            &legacy,
-                            &last,
-                        );
+                        log_oracle_failure(&format!("{stage} protocol {protocol}"), &legacy, &last);
                     }
                     Err(retry_error) => {
                         let retry_error = AppError::from(retry_error);

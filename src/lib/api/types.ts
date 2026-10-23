@@ -256,6 +256,24 @@ export interface MigrateResult {
 	renamed: boolean;
 }
 
+export interface AgentStatus {
+	enabled: boolean;
+	host: string;
+	port: number;
+	running: boolean;
+}
+
+export interface AgentAuditEntry {
+	id: number;
+	at: string;
+	tool: string;
+	connectionId?: string | null;
+	summary: string;
+	ok: boolean;
+	durationMs: number;
+	error?: string | null;
+}
+
 export interface ContextMenuState {
 	x: number;
 	y: number;

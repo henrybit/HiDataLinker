@@ -537,7 +537,21 @@ export const en = {
 	'settings.delete': 'Delete',
 	'settings.close': 'Close',
 	'settings.nameRequired': 'Enter a name for this provider.',
-	'settings.empty': 'No providers yet.'
+	'settings.empty': 'No providers yet.',
+	'settings.mcp.title': 'MCP service',
+	'settings.mcp.hint':
+		'Turn this on to let other agents operate this app through the local MCP endpoint. Passwords stay on this machine. Turning it off rejects those calls; the port stays up so you can turn it back on.',
+	'settings.mcp.on': 'On',
+	'settings.mcp.off': 'Off',
+	'settings.mcp.desktopOnly': 'Open the desktop app to turn the MCP service on or off.',
+
+	'agent.enable': 'MCP service',
+	'agent.port': '127.0.0.1:{port}',
+	'agent.starting': 'Gateway starting',
+	'agent.recent': 'Recent agent calls',
+	'agent.empty': 'No agent calls yet',
+	'agent.ok': 'ok',
+	'agent.failed': 'failed'
 } as const;
 
 export type MessageKey = keyof typeof en;

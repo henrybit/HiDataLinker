@@ -20,6 +20,7 @@
 	import { hydrateLlmCatalogFromDisk, llmSettingsDialog } from '$lib/llm/catalog.svelte';
 	import { migrationPanel } from '$lib/migration/panel.svelte';
 	import { isTauriRuntime } from '$lib/api/tauri';
+	import AgentActivity from '$lib/components/layout/AgentActivity.svelte';
 	import ContextMenu from '$lib/components/layout/ContextMenu.svelte';
 
 	let { children } = $props();
@@ -69,7 +70,10 @@
 			</div>
 		{/snippet}
 	</SplitPane>
-	<StatusBar />
+	<div class="shell-bottom">
+		<AgentActivity />
+		<StatusBar />
+	</div>
 </div>
 
 {#if analysisPanel.open}

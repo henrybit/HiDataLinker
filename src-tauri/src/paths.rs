@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 ///   migrations/
 ///   llm/providers.json
 ///   settings/locale
+///   settings/agent.json
+///   agent/endpoint.json
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppPaths {
@@ -21,6 +23,8 @@ pub struct AppPaths {
     pub migrations: PathBuf,
     pub llm: PathBuf,
     pub locale: PathBuf,
+    pub agent_settings: PathBuf,
+    pub agent_endpoint: PathBuf,
 }
 
 impl AppPaths {
@@ -36,6 +40,8 @@ impl AppPaths {
             migrations: root.join("migrations"),
             llm: root.join("llm").join("providers.json"),
             locale: root.join("settings").join("locale"),
+            agent_settings: root.join("settings").join("agent.json"),
+            agent_endpoint: root.join("agent").join("endpoint.json"),
             root,
         }
     }
@@ -48,6 +54,7 @@ impl AppPaths {
             Some(self.migrations.as_path()),
             self.llm.parent(),
             self.locale.parent(),
+            self.agent_endpoint.parent(),
         ] {
             if let Some(dir) = dir {
                 std::fs::create_dir_all(dir)?;
@@ -136,6 +143,14 @@ mod tests {
         assert_eq!(
             paths.locale,
             PathBuf::from("/Users/ada/.hidatalinker/settings/locale")
+        );
+        assert_eq!(
+            paths.agent_settings,
+            PathBuf::from("/Users/ada/.hidatalinker/settings/agent.json")
+        );
+        assert_eq!(
+            paths.agent_endpoint,
+            PathBuf::from("/Users/ada/.hidatalinker/agent/endpoint.json")
         );
     }
 

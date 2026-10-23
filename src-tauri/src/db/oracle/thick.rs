@@ -244,7 +244,9 @@ fn prepare_client(dir: Option<&str>) -> AppResult<()> {
     if let Some(path) = &requested {
         validate_client_dir(path)?;
     }
-    let mut loaded = LOADED_CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    let mut loaded = LOADED_CLIENT
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     if let Some(current) = loaded.as_ref() {
         if current == &requested || requested.is_none() {
             return Ok(());
@@ -385,7 +387,8 @@ mod tests {
 
     #[test]
     fn client_dir_must_contain_the_library() {
-        let missing = std::env::temp_dir().join(format!("db-gui-missing-oci-{}", std::process::id()));
+        let missing =
+            std::env::temp_dir().join(format!("db-gui-missing-oci-{}", std::process::id()));
         let error = validate_client_dir(&missing.to_string_lossy()).unwrap_err();
         let text = error.to_string();
         assert!(text.contains(client_library_name()));
