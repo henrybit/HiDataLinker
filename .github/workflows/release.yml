@@ -65,7 +65,7 @@ jobs:
             安装包正在上传。全部平台完成后会补上下载地址。
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: false
+          uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
   notes:
