@@ -10,14 +10,14 @@
 	} from '$lib/agent/gateway.svelte';
 	import { isTauriRuntime } from '$lib/api/tauri';
 	import type { AgentAuditEntry, AgentStatus } from '$lib/api/types';
+	import Switch from '$lib/components/layout/Switch.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
 	const status = $derived(agentGateway.status);
 	const entries = $derived(agentGateway.entries);
 
-	async function toggle(event: Event) {
-		const enabled = (event.currentTarget as HTMLInputElement).checked;
+	async function toggle(enabled: boolean) {
 		try {
 			await setAgentGatewayEnabled(enabled);
 		} catch (error) {
@@ -63,15 +63,15 @@
 {#if isTauriRuntime()}
 	<section class="agent-bar">
 		<div class="agent-bar-row">
-			<label>
-				<input
-					type="checkbox"
-					checked={status?.enabled ?? false}
-					disabled={agentGateway.toggling || !status}
-					onchange={toggle}
-				/>
-				{t('agent.enable')}
-			</label>
+			<span class="agent-mcp-name">{t('agent.enable')}</span>
+			<Switch
+				name={t('agent.enable')}
+				checked={status?.enabled ?? false}
+				disabled={agentGateway.toggling || !status}
+				onText={t('settings.mcp.on')}
+				offText={t('settings.mcp.off')}
+				onToggle={toggle}
+			/>
 			<span>
 				{#if status?.running}
 					{t('agent.port', { port: status.port })}

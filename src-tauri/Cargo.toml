@@ -1,11 +1,12 @@
 [package]
 name = "app"
-version = "1.0.0"
+version = "1.1.0"
 description = "A modular desktop database manager"
 authors = ["you"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.90"
+default-run = "app"
 
 [lib]
 name = "app_lib"

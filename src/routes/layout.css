@@ -304,12 +304,15 @@ button {
 	min-height: 22px;
 }
 
-.agent-bar label {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
+.agent-mcp-name {
 	color: var(--text);
-	cursor: pointer;
+	font-weight: 600;
+}
+
+.agent-bar:has(input:checked) {
+	border-top-color: #b7e7c5;
+	background: #f3fbf5;
+	color: var(--text);
 }
 
 .agent-bar details {
@@ -1297,7 +1300,7 @@ button {
 
 .mcp-settings {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
 	margin-bottom: 16px;
@@ -1321,14 +1324,13 @@ button {
 	margin: 0;
 }
 
-.mcp-settings-switch {
-	display: inline-flex;
-	flex: none;
-	align-items: center;
-	gap: 6px;
-	color: var(--text);
-	cursor: pointer;
-	white-space: nowrap;
+.mcp-settings:has(input:checked) {
+	border-color: #b7e7c5;
+	background: #f3fbf5;
+}
+
+.mcp-settings:has(input:checked) .mcp-settings-copy strong {
+	color: #1f8a3b;
 }
 
 .settings-dialog footer .hint {

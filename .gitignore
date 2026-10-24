@@ -23,6 +23,10 @@ Desktop.ini
 
 # Rust build output, including the vendored oracle-rs crate
 target/
+
+# A global ignore of `bin` would hide the MCP entrypoint under src-tauri/src/bin.
+!src-tauri/src/bin/
+!src-tauri/src/bin/**
 **/*.rs.bk
 *.pdb
 

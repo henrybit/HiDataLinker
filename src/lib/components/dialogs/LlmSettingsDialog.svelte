@@ -7,6 +7,7 @@
 		setAgentGatewayEnabled
 	} from '$lib/agent/gateway.svelte';
 	import { isTauriRuntime } from '$lib/api/tauri';
+	import Switch from '$lib/components/layout/Switch.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { llmCatalog, llmSettingsDialog, replaceLlmCatalog } from '$lib/llm/catalog.svelte';
 	import {
@@ -100,8 +101,7 @@
 		return kind === 'anthropic' ? t('analysis.provider.anthropic') : t('analysis.provider.openai');
 	}
 
-	async function toggleMcp(event: Event) {
-		const enabled = (event.currentTarget as HTMLInputElement).checked;
+	async function toggleMcp(enabled: boolean) {
 		try {
 			await setAgentGatewayEnabled(enabled);
 		} catch (error) {
@@ -156,15 +156,14 @@
 							<p class="hint">{t('settings.mcp.desktopOnly')}</p>
 						{/if}
 					</div>
-					<label class="mcp-settings-switch">
-						<input
-							type="checkbox"
-							checked={agentGateway.status?.enabled ?? false}
-							disabled={!isTauriRuntime() || agentGateway.toggling || !agentGateway.status}
-							onchange={toggleMcp}
-						/>
-						{agentGateway.status?.enabled ? t('settings.mcp.on') : t('settings.mcp.off')}
-					</label>
+					<Switch
+						name={t('settings.mcp.title')}
+						checked={agentGateway.status?.enabled ?? false}
+						disabled={!isTauriRuntime() || agentGateway.toggling || !agentGateway.status}
+						onText={t('settings.mcp.on')}
+						offText={t('settings.mcp.off')}
+						onToggle={toggleMcp}
+					/>
 				</section>
 				<p class="hint">{t('settings.hint')}</p>
 				<div class="settings-layout">
