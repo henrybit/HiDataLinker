@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            rust_targets: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg
+          - platform: macos-latest
+            rust_targets: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg
+          - platform: windows-latest
+            rust_targets: ''
+            args: --bundles msi
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@1.90
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: HiDataLinker v__VERSION__
+          releaseBody: |
+            安装包正在上传。全部平台完成后会补上下载地址。
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}
+
+  notes:
+    needs: publish
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write release notes with download links
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}"
+          notes=$(mktemp)
+
+          {
+            echo "# HiDataLinker ${version}"
+            echo
+            echo "本机 MCP / Skill，把正在运行的数据库工作台开放给外部智能体。"
+            echo
+            echo "## 下载"
+            echo
+            names=$(gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name' || true)
+            if [ -z "$names" ]; then
+              echo "安装包尚未上传成功，请查看 Actions 日志。"
+            else
+              echo "$names" | while IFS= read -r name; do
+                url="https://github.com/${REPO}/releases/download/${tag}/${name}"
+                label="$name"
+                case "$name" in
+                  *aarch64*.dmg) label="macOS Apple Silicon（.dmg）" ;;
+                  *x64*.dmg|*x86_64*.dmg) label="macOS Intel（.dmg）" ;;
+                  *.dmg) label="macOS（.dmg）" ;;
+                  *.msi) label="Windows（.msi）" ;;
+                esac
+                echo "- [${label}](${url})"
+              done
+            fi
+            echo
+            echo "安装包未做代码签名。macOS 若提示无法打开，到「系统设置 → 隐私与安全性」允许这次打开。Windows 若被 SmartScreen 拦截，选择仍要运行。"
+            echo
+            if [ -f "Features/Feature-${version}.md" ]; then
+              echo "## 本版更新"
+              echo
+              cat "Features/Feature-${version}.md"
+            fi
+          } > "$notes"
+
+          gh release edit "$tag" --repo "$REPO" --title "HiDataLinker v${version}" --notes-file "$notes"
+          echo "Updated https://github.com/${REPO}/releases/tag/${tag}"

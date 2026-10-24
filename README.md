@@ -6,6 +6,15 @@
 
 **Windows · macOS** ｜ **MySQL · PostgreSQL · SQL Server · Oracle** ｜ 中 / 英界面
 
+## 下载
+
+正式安装包在 [GitHub Releases](https://github.com/henrybit/db-gui/releases)：
+
+- macOS：`.dmg`（Apple Silicon / Intel）
+- Windows：`.msi`
+
+各版本能力见 [FEATURES.md](./FEATURES.md)。
+
 ---
 
 ## 愿景
