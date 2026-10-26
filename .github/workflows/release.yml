@@ -5,6 +5,16 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 要打包的平台
+        type: choice
+        options:
+          - all
+          - linux
+          - macos
+          - windows
+        default: all
 
 permissions:
   contents: write
@@ -32,6 +42,12 @@ jobs:
             rust_targets: ''
             args: --bundles deb,appimage
 
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.platform == 'all' ||
+      (inputs.platform == 'linux' && matrix.platform == 'ubuntu-22.04') ||
+      (inputs.platform == 'macos' && matrix.platform == 'macos-latest') ||
+      (inputs.platform == 'windows' && matrix.platform == 'windows-latest')
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 90
 
