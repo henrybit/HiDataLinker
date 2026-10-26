@@ -24,30 +24,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.set.outputs.include }}
+    steps:
+      - id: set
+        env:
+          PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
+        run: |
+          set -eu
+          case "$PLATFORM" in
+            linux)
+              include='[{"platform":"ubuntu-22.04","rust_targets":"","args":"--bundles deb,appimage"}]'
+              ;;
+            macos)
+              include='[{"platform":"macos-latest","rust_targets":"aarch64-apple-darwin","args":"--target aarch64-apple-darwin --bundles dmg"},{"platform":"macos-latest","rust_targets":"x86_64-apple-darwin","args":"--target x86_64-apple-darwin --bundles dmg"}]'
+              ;;
+            windows)
+              include='[{"platform":"windows-latest","rust_targets":"","args":"--bundles msi"}]'
+              ;;
+            *)
+              include='[{"platform":"macos-latest","rust_targets":"aarch64-apple-darwin","args":"--target aarch64-apple-darwin --bundles dmg"},{"platform":"macos-latest","rust_targets":"x86_64-apple-darwin","args":"--target x86_64-apple-darwin --bundles dmg"},{"platform":"windows-latest","rust_targets":"","args":"--bundles msi"},{"platform":"ubuntu-22.04","rust_targets":"","args":"--bundles deb,appimage"}]'
+              ;;
+          esac
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: select
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: macos-latest
-            rust_targets: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin --bundles dmg
-          - platform: macos-latest
-            rust_targets: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin --bundles dmg
-          - platform: windows-latest
-            rust_targets: ''
-            args: --bundles msi
-          - platform: ubuntu-22.04
-            rust_targets: ''
-            args: --bundles deb,appimage
-
-    if: >-
-      github.event_name != 'workflow_dispatch' ||
-      inputs.platform == 'all' ||
-      (inputs.platform == 'linux' && matrix.platform == 'ubuntu-22.04') ||
-      (inputs.platform == 'macos' && matrix.platform == 'macos-latest') ||
-      (inputs.platform == 'windows' && matrix.platform == 'windows-latest')
+        include: ${{ fromJson(needs.select.outputs.include) }}
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 90
 
