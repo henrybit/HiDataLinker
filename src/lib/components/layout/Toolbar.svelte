@@ -70,14 +70,34 @@
 </script>
 
 <header class="toolbar" class:agent-mode={appMode.mode === 'agent'}>
-	{#if appMode.mode === 'agent'}
-		<div class="toolbar-brand">{t('app.title')}</div>
-	{:else}
+	<div class="toolbar-brand">{t('app.title')}</div>
+
+	<div class="mode-switch" role="group" aria-label={t('agentMode.modeSwitch')}>
+		<button
+			type="button"
+			class="mode-switch-btn"
+			class:active={appMode.mode === 'database'}
+			onclick={() => appMode.setMode('database')}
+		>
+			{t('agentMode.mode.database')}
+		</button>
+		<button
+			type="button"
+			class="mode-switch-btn agent"
+			class:active={appMode.mode === 'agent'}
+			onclick={() => appMode.setMode('agent')}
+		>
+			<Sparkles size={13} />
+			{t('agentMode.mode.agent')}
+		</button>
+	</div>
+
+	{#if appMode.mode === 'database'}
+		<div class="toolbar-sep"></div>
 		<button class="toolbar-btn primary" onclick={() => workspace.openNewConnection()}>
 			<Plus size={14} />
 			{t('toolbar.newConnection')}
 		</button>
-		<div class="toolbar-sep"></div>
 		<button
 			class="toolbar-btn"
 			disabled={!active || active.connected || workspace.isPending(`connect:${active.id}`)}
@@ -181,29 +201,7 @@
 				{t('toolbar.noConnection')}
 			{/if}
 		</span>
-	{/if}
-
-	<div class="mode-switch" role="group" aria-label={t('agentMode.modeSwitch')}>
-		<button
-			type="button"
-			class="mode-switch-btn"
-			class:active={appMode.mode === 'database'}
-			onclick={() => appMode.setMode('database')}
-		>
-			{t('agentMode.mode.database')}
-		</button>
-		<button
-			type="button"
-			class="mode-switch-btn agent"
-			class:active={appMode.mode === 'agent'}
-			onclick={() => appMode.setMode('agent')}
-		>
-			<Sparkles size={13} />
-			{t('agentMode.mode.agent')}
-		</button>
-	</div>
-
-	{#if appMode.mode === 'agent'}
+	{:else}
 		<div class="toolbar-spacer"></div>
 	{/if}
 

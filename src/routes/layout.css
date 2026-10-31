@@ -103,7 +103,6 @@ button {
 .toolbar-status {
 	flex: 1;
 	min-width: 0;
-	padding-right: 220px;
 }
 
 .locale-switch {
@@ -2064,17 +2063,10 @@ button {
 	flex: 1;
 }
 
-.toolbar {
-	position: relative;
-}
-
 .mode-switch {
 	display: inline-flex;
 	align-items: center;
-	position: absolute;
-	left: 50%;
-	transform: translateX(-50%);
-	z-index: 2;
+	flex: none;
 	padding: 2px;
 	border: 1px solid var(--border);
 	border-radius: 999px;
