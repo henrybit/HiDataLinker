@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
+	import { appMode } from '$lib/stores/app-mode.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import StatusBar from './StatusBar.svelte';
 	import SplitPane from './SplitPane.svelte';
@@ -15,6 +16,7 @@
 	import RelationshipAnalysis from '$lib/components/analysis/RelationshipAnalysis.svelte';
 	import MigrationCenter from '$lib/components/migration/MigrationCenter.svelte';
 	import LlmSettingsDialog from '$lib/components/dialogs/LlmSettingsDialog.svelte';
+	import AgentShell from '$lib/components/agent/AgentShell.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { hydrateLocale } from '$lib/i18n/i18n.svelte';
 	import { hydrateLlmCatalogFromDisk, llmSettingsDialog } from '$lib/llm/catalog.svelte';
@@ -55,25 +57,29 @@
 	});
 </script>
 
-<div class="app-shell">
+<div class="app-shell" class:agent-layout={appMode.mode === 'agent'}>
 	<Toolbar />
-	<SplitPane>
-		{#snippet left()}
-			<ObjectTree />
-		{/snippet}
-		{#snippet right()}
-			<div class="main-pane">
-				<TabBar />
-				<div class="main-body">
-					{@render children()}
+	{#if appMode.mode === 'agent'}
+		<AgentShell />
+	{:else}
+		<SplitPane>
+			{#snippet left()}
+				<ObjectTree />
+			{/snippet}
+			{#snippet right()}
+				<div class="main-pane">
+					<TabBar />
+					<div class="main-body">
+						{@render children()}
+					</div>
 				</div>
-			</div>
-		{/snippet}
-	</SplitPane>
-	<div class="shell-bottom">
-		<AgentActivity />
-		<StatusBar />
-	</div>
+			{/snippet}
+		</SplitPane>
+		<div class="shell-bottom">
+			<AgentActivity />
+			<StatusBar />
+		</div>
+	{/if}
 </div>
 
 {#if analysisPanel.open}
