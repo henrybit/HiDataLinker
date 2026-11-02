@@ -10,6 +10,8 @@ export type RunStartPayload = {
 	sessionId: string;
 	query: string;
 	systemMd: string;
+	/** App UI locale: drives LLM output language. */
+	locale?: 'zh' | 'en';
 	llm: {
 		provider: 'openai' | 'anthropic';
 		model: string;

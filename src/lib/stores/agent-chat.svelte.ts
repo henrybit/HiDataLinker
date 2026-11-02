@@ -3,7 +3,7 @@ import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
 import type { AgentSessionMeta, TranscriptEntry } from '$lib/api/types';
 import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 import { toLlmSettings } from '$lib/llm/providers';
-import { t } from '$lib/i18n/i18n.svelte';
+import { getLocale, t } from '$lib/i18n/i18n.svelte';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export const DATA_ANALYST_ID = 'data-analyst';
@@ -192,6 +192,7 @@ class AgentChatStore {
 				sessionId: this.session.id,
 				query,
 				systemMd,
+				locale: getLocale(),
 				llm: {
 					provider: llm.provider,
 					apiKey: llm.apiKey,

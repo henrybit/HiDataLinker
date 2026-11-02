@@ -38,7 +38,14 @@ pub struct AgentStartRunRequest {
     pub session_id: String,
     pub query: String,
     pub system_md: String,
+    /// App UI locale (`zh` | `en`); forwarded to the Node runtime for LLM output language.
+    #[serde(default = "default_locale")]
+    pub locale: String,
     pub llm: AgentLlmConfig,
+}
+
+fn default_locale() -> String {
+    "en".into()
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -562,6 +569,12 @@ impl AgentRunner {
         };
         self.runs.write().await.insert(run_id.clone(), ctx);
 
+        let locale = if request.locale.trim() == "zh" {
+            "zh"
+        } else {
+            "en"
+        };
+
         // Never send apiKey to Node.
         let payload = json!({
             "runId": run_id,
@@ -569,6 +582,7 @@ impl AgentRunner {
             "sessionId": request.session_id,
             "query": request.query,
             "systemMd": request.system_md,
+            "locale": locale,
             "llm": {
                 "provider": request.llm.provider,
                 "model": request.llm.model,

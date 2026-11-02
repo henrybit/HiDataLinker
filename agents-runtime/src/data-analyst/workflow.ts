@@ -6,12 +6,16 @@ import {
 	actResponseSchema,
 	actSystemPrompt,
 	actUserPrompt,
+	fallbackStepNote,
+	normalizeLocale,
 	planResponseSchema,
 	planSystemPrompt,
 	planUserPrompt,
+	statusMessage,
 	synthesizeResponseSchema,
 	synthesizeSystemPrompt,
-	synthesizeUserPrompt
+	synthesizeUserPrompt,
+	type AgentLocale
 } from './prompts.js';
 
 const MAX_STEPS = 8;
@@ -77,9 +81,10 @@ async function callSkillTool(runId: string, name: string, args: Record<string, u
 
 async function buildSchemaDigest(
 	runId: string,
+	locale: AgentLocale,
 	onEvent?: (event: AnalystEvent) => void
 ): Promise<string> {
-	onEvent?.({ type: 'status', message: 'Gathering connections and schema…' });
+	onEvent?.({ type: 'status', message: statusMessage(locale, 'gathering') });
 	const listed = await callSkillTool(runId, 'list_connections');
 	if (!listed.ok) {
 		return `list_connections failed: ${listed.error ?? 'unknown'}`;
@@ -134,29 +139,31 @@ export async function runDataAnalyst(input: {
 	runId: string;
 	userQuery: string;
 	systemMd: string;
+	locale?: AgentLocale | string;
 	llm: RunLlmConfig;
 	signal?: AbortSignal;
 	onEvent?: (event: AnalystEvent) => void;
 }): Promise<{ markdown: string; error?: string }> {
+	const locale = normalizeLocale(input.locale);
 	const throwIfAborted = () => {
 		if (input.signal?.aborted) throw new Error('cancelled');
 	};
 
 	const gather = async (_state: AnalystState) => {
 		throwIfAborted();
-		const schemaDigest = await buildSchemaDigest(input.runId, input.onEvent);
+		const schemaDigest = await buildSchemaDigest(input.runId, locale, input.onEvent);
 		return { schemaDigest };
 	};
 
 	const makePlan = async (state: AnalystState) => {
 		throwIfAborted();
-		input.onEvent?.({ type: 'status', message: 'Designing analysis plan…' });
+		input.onEvent?.({ type: 'status', message: statusMessage(locale, 'planning') });
 		const response = await hostComplete(
 			input.runId,
 			input.llm,
 			planResponseSchema,
-			planSystemPrompt(state.systemMd),
-			planUserPrompt(state.userQuery, state.schemaDigest)
+			planSystemPrompt(state.systemMd, locale),
+			planUserPrompt(state.userQuery, state.schemaDigest, locale)
 		);
 		const steps = response.steps.slice(0, MAX_STEPS).map((step) => ({
 			title: step.title.trim() || 'Step',
@@ -184,14 +191,15 @@ export async function runDataAnalyst(input: {
 			input.runId,
 			input.llm,
 			actResponseSchema,
-			actSystemPrompt(state.systemMd),
+			actSystemPrompt(state.systemMd, locale),
 			actUserPrompt({
 				query: state.userQuery,
 				schemaDigest: state.schemaDigest,
 				step,
 				stepIndex: state.stepIndex,
 				total: state.plan.length,
-				observations: state.observations
+				observations: state.observations,
+				locale
 			})
 		);
 
@@ -221,7 +229,7 @@ export async function runDataAnalyst(input: {
 			});
 		}
 
-		const note = decision.note.trim() || (decision.done ? 'Step complete' : 'Continuing');
+		const note = decision.note.trim() || fallbackStepNote(locale, decision.done);
 		input.onEvent?.({ type: 'step-done', index: state.stepIndex, note });
 
 		return {
@@ -232,16 +240,17 @@ export async function runDataAnalyst(input: {
 
 	const synthesize = async (state: AnalystState) => {
 		throwIfAborted();
-		input.onEvent?.({ type: 'status', message: 'Writing analysis…' });
+		input.onEvent?.({ type: 'status', message: statusMessage(locale, 'writing') });
 		const response = await hostComplete(
 			input.runId,
 			input.llm,
 			synthesizeResponseSchema,
-			synthesizeSystemPrompt(state.systemMd),
+			synthesizeSystemPrompt(state.systemMd, locale),
 			synthesizeUserPrompt({
 				query: state.userQuery,
 				plan: state.plan,
-				observations: state.observations
+				observations: state.observations,
+				locale
 			})
 		);
 		const markdown = response.markdown.trim();

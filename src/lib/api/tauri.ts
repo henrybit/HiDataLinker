@@ -262,6 +262,7 @@ export const api = {
 		sessionId: string;
 		query: string;
 		systemMd: string;
+		locale: 'zh' | 'en';
 		llm: {
 			provider: string;
 			apiKey: string;
