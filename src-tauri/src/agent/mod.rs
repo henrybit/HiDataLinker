@@ -1,4 +1,4 @@
-mod catalog;
+pub(crate) mod catalog;
 mod http;
 mod hub;
 mod mcp;

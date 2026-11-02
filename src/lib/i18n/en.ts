@@ -722,7 +722,22 @@ export const en = {
 	'agentMode.history.weekly': 'Weekly ops report draft',
 	'agentMode.history.justNow': 'Just now',
 	'agentMode.history.today': 'Today',
-	'agentMode.history.yesterday': 'Yesterday'
+	'agentMode.history.yesterday': 'Yesterday',
+
+	'agentMode.live.homeDesc':
+		'Built-in LangGraph data analyst. It inspects schemas across your connections, plans multi-step queries, and answers in Markdown.',
+	'agentMode.live.needDesktop': 'Open the desktop app to run the built-in agent.',
+	'agentMode.live.needLlm':
+		'Configure a default LLM provider in Settings (API key or compatible base URL) before asking the agent.',
+	'agentMode.live.starting': 'Starting analysis…',
+	'agentMode.live.runningHint': 'Agent is working… you can cancel from the session header.',
+	'agentMode.live.cancel': 'Cancel',
+	'agentMode.live.planTitle': 'Analysis plan',
+	'agentMode.live.stepProgress': 'Step {current}/{total}: {title}',
+	'agentMode.live.toolOk': 'ok',
+	'agentMode.live.toolFail': 'failed',
+	'agentMode.live.toolResult': 'Result',
+	'agentMode.live.noHistory': 'No saved agent sessions yet.'
 } as const;
 
 export type MessageKey = keyof typeof en;

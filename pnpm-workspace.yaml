@@ -1,4 +1,9 @@
+packages:
+  - '.'
+  - 'agents-runtime'
+
 allowBuilds:
   esbuild: true
+
 minimumReleaseAgeExclude:
   - '@tauri-apps/api@2.12.2'

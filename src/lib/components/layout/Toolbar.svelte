@@ -11,7 +11,6 @@
 		Sparkles,
 		Square
 	} from '@lucide/svelte';
-	import { agentGateway, refreshAgentGateway } from '$lib/agent/gateway.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
 	import { engineLabel } from '$lib/engine';
@@ -19,14 +18,12 @@
 	import { migrationPanel } from '$lib/migration/panel.svelte';
 	import { appMode } from '$lib/stores/app-mode.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
-	import { isTauriRuntime } from '$lib/api/tauri';
 
 	const selected = $derived(workspace.selection);
 	const active = $derived(
 		selected ? workspace.connections.find((item) => item.id === selected.connectionId) : null
 	);
 	const locale = $derived(getLocale());
-	const mcp = $derived(agentGateway.status);
 	let moreOpen = $state(false);
 	let moreRoot = $state<HTMLDivElement | null>(null);
 
@@ -50,7 +47,6 @@
 	}
 
 	onMount(() => {
-		if (isTauriRuntime()) void refreshAgentGateway();
 		const onPointerDown = (event: PointerEvent) => {
 			if (
 				moreOpen &&
@@ -180,18 +176,6 @@
 		</span>
 	{:else}
 		<div class="toolbar-spacer"></div>
-	{/if}
-
-	{#if mcp?.running}
-		<span class="mcp-pill" class:on={mcp.enabled}>
-			<span class="mcp-dot"></span>
-			MCP · {t('agent.port', { port: mcp.port })}
-		</span>
-	{:else if isTauriRuntime()}
-		<span class="mcp-pill">
-			<span class="mcp-dot dim"></span>
-			{t('agent.starting')}
-		</span>
 	{/if}
 
 	<button class="toolbar-btn" type="button" onclick={() => (llmSettingsDialog.open = true)}>

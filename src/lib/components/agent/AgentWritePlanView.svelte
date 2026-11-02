@@ -3,6 +3,7 @@
 	import { WRITE_PREVIEW_ROWS } from '$lib/agent/demo';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { appMode } from '$lib/stores/app-mode.svelte';
+	import { agentChat } from '$lib/stores/agent-chat.svelte';
 	import AgentComposer from './AgentComposer.svelte';
 
 	const userText = $derived(
@@ -137,5 +138,13 @@ WHERE order_month = date_trunc('month', now()) - interval '1 month'
 			{t('agentMode.write.followChannel')}
 		</button>
 	</div>
-	<AgentComposer hint={t('agentMode.composer.hintWrite')} />
+	<AgentComposer
+		bind:value={appMode.composerDraft}
+		hint={t('agentMode.composer.hintWrite')}
+		onSubmit={() => {
+			const text = appMode.composerDraft.trim();
+			appMode.openHome();
+			void agentChat.newChat().then(() => agentChat.submit(text));
+		}}
+	/>
 </div>

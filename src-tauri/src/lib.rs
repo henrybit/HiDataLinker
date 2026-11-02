@@ -1,5 +1,6 @@
 mod agent;
 mod analysis_history;
+mod builtin_agents;
 mod commands;
 mod db;
 mod error;
@@ -12,7 +13,10 @@ mod state;
 
 use agent::{agent_status, list_agent_audit, set_agent_enabled};
 use commands::{
-    complete_llm, connect_session, create_database, delete_analysis_history, delete_connection,
+    agent_append_transcript, agent_cancel_run, agent_create_session, agent_list_sessions,
+    agent_load_session, agent_read_system, agent_runner_status, agent_save_checkpoint,
+    agent_start_run, agent_tool_call, agents_list, complete_llm,
+    connect_session, create_database, delete_analysis_history, delete_connection,
     delete_migration_history, delete_query_cache, disconnect_session, drop_database, dump_database,
     dump_table, execute_sql, get_columns, get_ddl, list_analysis_history, list_charset_catalog,
     list_connections, list_databases, list_indexes, list_migration_history, list_routines,
@@ -40,6 +44,8 @@ pub fn run() {
             let legacy = app.path().app_data_dir().ok();
             crate::runtime::handle();
             app.manage(AppState::load(paths.clone(), legacy)?);
+            let runner = crate::builtin_agents::AgentRunner::new(app.handle().clone());
+            app.manage(runner);
             crate::agent::start(app.handle().clone(), &paths)?;
             Ok(())
         })
@@ -47,6 +53,17 @@ pub fn run() {
             agent_status,
             set_agent_enabled,
             list_agent_audit,
+            agents_list,
+            agent_read_system,
+            agent_list_sessions,
+            agent_create_session,
+            agent_load_session,
+            agent_append_transcript,
+            agent_save_checkpoint,
+            agent_tool_call,
+            agent_start_run,
+            agent_cancel_run,
+            agent_runner_status,
             complete_llm,
             start_llm,
             poll_llm,

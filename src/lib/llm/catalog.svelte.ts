@@ -33,6 +33,8 @@ export function selectLlmProvider(id: string) {
 	saveLlmCatalog(llmCatalog);
 }
 
+/** Selected provider, or the first catalog entry as the app default. */
 export function selectedLlmProvider(): LlmProviderProfile | null {
-	return llmCatalog.providers.find((item) => item.id === llmCatalog.selectedId) ?? null;
+	const selected = llmCatalog.providers.find((item) => item.id === llmCatalog.selectedId);
+	return selected ?? llmCatalog.providers[0] ?? null;
 }

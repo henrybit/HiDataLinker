@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod analysis;
 pub mod cache;
 pub mod connection;
@@ -7,6 +8,7 @@ pub mod query;
 pub mod schema;
 pub mod storage;
 
+pub use agents::*;
 pub use analysis::*;
 pub use cache::*;
 pub use connection::*;

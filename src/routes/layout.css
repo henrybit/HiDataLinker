@@ -2103,38 +2103,6 @@ button {
 	color: #1d4ed8;
 }
 
-.mcp-pill {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	height: 26px;
-	padding: 0 10px;
-	margin-left: 8px;
-	border: 1px solid var(--border);
-	border-radius: 999px;
-	background: white;
-	color: var(--text-muted);
-	font-size: 11px;
-	white-space: nowrap;
-}
-
-.mcp-pill.on {
-	border-color: #86efac;
-	background: #f0fdf4;
-	color: #166534;
-}
-
-.mcp-dot {
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background: #22c55e;
-}
-
-.mcp-dot.dim {
-	background: #94a3b8;
-}
-
 .agent-shell {
 	display: grid;
 	grid-template-columns: 240px 1fr;
@@ -3384,4 +3352,165 @@ button {
 	.agent-diag-row {
 		grid-template-columns: 1fr 1fr;
 	}
+}
+
+.agent-live-chat {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.agent-progress-card {
+	margin-bottom: 10px;
+	padding: 10px 12px;
+	border: 1px solid #e2e8f0;
+	border-radius: 12px;
+	background: white;
+	font-size: 12px;
+	color: var(--text-muted);
+	white-space: pre-wrap;
+}
+
+.agent-progress-card header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.agent-progress-card.tool header {
+	justify-content: space-between;
+	margin-bottom: 8px;
+	color: var(--text);
+}
+
+.agent-progress-card.tool.fail {
+	border-color: #fecaca;
+	background: #fff7f7;
+}
+
+.agent-progress-card pre {
+	margin: 0;
+	padding: 10px;
+	overflow: auto;
+	max-height: 220px;
+	border-radius: 8px;
+	background: #0f172a;
+	color: #e2e8f0;
+	font-family: var(--mono);
+	font-size: 11px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+}
+
+.agent-progress-card details {
+	margin-top: 8px;
+}
+
+.agent-progress-card summary {
+	cursor: pointer;
+	color: var(--accent);
+}
+
+.agent-spin {
+	display: inline-flex;
+	animation: agent-spin 1s linear infinite;
+}
+
+@keyframes agent-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.agent-error-banner {
+	margin: 8px 0 12px;
+	padding: 10px 12px;
+	border-radius: 10px;
+	background: #fef2f2;
+	color: #b91c1c;
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.agent-error-banner.inline {
+	margin: 0 24px 8px;
+}
+
+.agent-md {
+	padding: 4px 2px 12px;
+	color: var(--text);
+	font-size: 13px;
+	line-height: 1.55;
+	user-select: text;
+}
+
+.agent-md :is(h1, h2, h3, h4) {
+	margin: 1em 0 0.4em;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+
+.agent-md h1 {
+	font-size: 18px;
+}
+
+.agent-md h2 {
+	font-size: 16px;
+}
+
+.agent-md h3 {
+	font-size: 14px;
+}
+
+.agent-md p,
+.agent-md ul,
+.agent-md ol {
+	margin: 0.45em 0;
+}
+
+.agent-md ul,
+.agent-md ol {
+	padding-left: 1.3em;
+}
+
+.agent-md code {
+	padding: 1px 5px;
+	border-radius: 4px;
+	background: #f1f5f9;
+	font-family: var(--mono);
+	font-size: 12px;
+}
+
+.agent-md pre {
+	margin: 0.6em 0;
+	padding: 12px;
+	overflow: auto;
+	border-radius: 10px;
+	background: #0f172a;
+	color: #e2e8f0;
+}
+
+.agent-md pre code {
+	padding: 0;
+	background: transparent;
+	color: inherit;
+}
+
+.agent-md table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0.6em 0;
+	font-size: 12px;
+}
+
+.agent-md th,
+.agent-md td {
+	padding: 6px 8px;
+	border: 1px solid #e2e8f0;
+	text-align: left;
+}
+
+.agent-md th {
+	background: #f8fafc;
 }

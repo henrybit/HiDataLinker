@@ -32,8 +32,8 @@
 
 	function selectNav(id: AgentNav) {
 		appMode.setAgentNav(id);
-		if (id === 'chat' && appMode.sessionId !== 'home') {
-			/* keep session */
+		if (id === 'chat') {
+			appMode.sessionId = 'home';
 		}
 	}
 </script>

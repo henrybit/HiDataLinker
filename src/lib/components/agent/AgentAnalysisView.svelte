@@ -3,6 +3,7 @@
 	import { ANALYSIS_CHANNELS } from '$lib/agent/demo';
 	import { t, type MessageKey } from '$lib/i18n/i18n.svelte';
 	import { appMode } from '$lib/stores/app-mode.svelte';
+	import { agentChat } from '$lib/stores/agent-chat.svelte';
 	import AgentComposer from './AgentComposer.svelte';
 
 	const userText = $derived(
@@ -91,5 +92,13 @@ WHERE dt BETWEEN DATE_SUB(CURDATE(), INTERVAL 60 DAY) AND CURDATE();</pre>
 		</div>
 	</div>
 
-	<AgentComposer hint={t('agentMode.composer.hintFollow')} />
+	<AgentComposer
+		bind:value={appMode.composerDraft}
+		hint={t('agentMode.composer.hintFollow')}
+		onSubmit={() => {
+			const text = appMode.composerDraft.trim();
+			appMode.openHome();
+			void agentChat.newChat().then(() => agentChat.submit(text));
+		}}
+	/>
 </div>

@@ -23,6 +23,7 @@ pub struct AppState {
     migration_history_dir: PathBuf,
     llm_catalog_path: PathBuf,
     locale_path: PathBuf,
+    agents_dir: PathBuf,
     profiles: RwLock<Vec<ConnectionProfile>>,
     sessions: DashMap<String, LiveEngine>,
     session_order: Mutex<Vec<String>>,
@@ -43,6 +44,7 @@ impl AppState {
         let migration_history_dir = paths.migrations;
         let llm_catalog_path = paths.llm;
         let locale_path = paths.locale;
+        let agents_dir = paths.agents;
         let profiles = if data_file.exists() {
             let raw = std::fs::read_to_string(&data_file)?;
             serde_json::from_str::<StoredProfiles>(&raw)?.connections
@@ -57,6 +59,7 @@ impl AppState {
             migration_history_dir,
             llm_catalog_path,
             locale_path,
+            agents_dir,
             profiles: RwLock::new(profiles),
             sessions: DashMap::new(),
             session_order: Mutex::new(Vec::new()),
@@ -214,6 +217,10 @@ impl AppState {
 
     pub fn migration_history_dir(&self) -> &PathBuf {
         &self.migration_history_dir
+    }
+
+    pub fn agents_dir(&self) -> &PathBuf {
+        &self.agents_dir
     }
 
     pub fn llm_catalog_path(&self) -> &PathBuf {

@@ -1,20 +1,25 @@
 <script lang="ts">
 	import { ArrowUp, Paperclip } from '@lucide/svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
-	import { appMode } from '$lib/stores/app-mode.svelte';
 
 	let {
+		value = $bindable(''),
 		placeholder,
-		hint
+		hint,
+		disabled = false,
+		onSubmit
 	}: {
+		value?: string;
 		placeholder?: string;
 		hint?: string;
+		disabled?: boolean;
+		onSubmit?: () => void;
 	} = $props();
 
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
-			appMode.submitComposer();
+			if (!disabled && value.trim()) onSubmit?.();
 		}
 	}
 </script>
@@ -28,15 +33,16 @@
 			class="agent-composer-input"
 			type="text"
 			placeholder={placeholder ?? t('agentMode.composer.placeholder')}
-			bind:value={appMode.composerDraft}
+			bind:value
+			{disabled}
 			onkeydown={onKeydown}
 		/>
 		<span class="agent-composer-badge">{t('agentMode.composer.badge')}</span>
 		<button
 			type="button"
 			class="agent-composer-send"
-			disabled={!appMode.composerDraft.trim()}
-			onclick={() => appMode.submitComposer()}
+			disabled={disabled || !value.trim()}
+			onclick={() => onSubmit?.()}
 			aria-label={t('agentMode.composer.send')}
 		>
 			<ArrowUp size={16} />

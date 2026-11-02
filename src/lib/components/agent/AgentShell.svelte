@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { appMode } from '$lib/stores/app-mode.svelte';
 	import AgentSidebar from './AgentSidebar.svelte';
-	import AgentChatHome from './AgentChatHome.svelte';
+	import AgentLiveChat from './AgentLiveChat.svelte';
 	import AgentAnalysisView from './AgentAnalysisView.svelte';
 	import AgentWritePlanView from './AgentWritePlanView.svelte';
 	import AgentContextPanel from './AgentContextPanel.svelte';
@@ -9,13 +9,13 @@
 	import AgentInsightsView from './AgentInsightsView.svelte';
 	import AgentHistoryView from './AgentHistoryView.svelte';
 
-	const showContext = $derived(
+	const showDemoContext = $derived(
 		appMode.agentNav === 'chat' &&
 			(appMode.sessionId === 'analysis-revenue' || appMode.sessionId === 'write-orders')
 	);
 </script>
 
-<div class="agent-shell" class:with-context={showContext}>
+<div class="agent-shell" class:with-context={showDemoContext}>
 	<AgentSidebar />
 	<div class="agent-main">
 		{#if appMode.agentNav === 'sources'}
@@ -29,10 +29,10 @@
 		{:else if appMode.sessionId === 'write-orders'}
 			<AgentWritePlanView />
 		{:else}
-			<AgentChatHome />
+			<AgentLiveChat />
 		{/if}
 	</div>
-	{#if showContext}
+	{#if showDemoContext}
 		<AgentContextPanel />
 	{/if}
 </div>

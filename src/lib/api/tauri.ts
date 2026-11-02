@@ -220,7 +220,65 @@ export const api = {
 		call<{ status: 'pending' | 'done' | 'failed'; result?: unknown; error?: string | null }>(
 			'poll_llm',
 			{ id }
-		)
+		),
+
+	agentsList: () => call<import('./types').BuiltinAgentInfo[]>('agents_list'),
+
+	agentReadSystem: (agentId: string) => call<string>('agent_read_system', { agentId }),
+
+	agentListSessions: (agentId: string) =>
+		call<import('./types').AgentSessionMeta[]>('agent_list_sessions', { agentId }),
+
+	agentCreateSession: (agentId: string, request: { title: string }) =>
+		call<import('./types').AgentSessionMeta>('agent_create_session', { agentId, request }),
+
+	agentLoadSession: (agentId: string, sessionId: string) =>
+		call<import('./types').AgentSessionDetail>('agent_load_session', { agentId, sessionId }),
+
+	agentAppendTranscript: (
+		agentId: string,
+		sessionId: string,
+		entry: import('./types').TranscriptEntry
+	) => call<import('./types').TranscriptEntry>('agent_append_transcript', { agentId, sessionId, entry }),
+
+	agentSaveCheckpoint: (
+		agentId: string,
+		sessionId: string,
+		checkpoint: unknown,
+		status?: string | null
+	) =>
+		call<void>('agent_save_checkpoint', {
+			agentId,
+			sessionId,
+			checkpoint,
+			status: status ?? null
+		}),
+
+	agentToolCall: (name: string, args: Record<string, unknown> = {}) =>
+		call<import('./types').AgentToolResult>('agent_tool_call', { name, args }),
+
+	agentStartRun: (request: {
+		agentId: string;
+		sessionId: string;
+		query: string;
+		systemMd: string;
+		llm: {
+			provider: string;
+			apiKey: string;
+			model: string;
+			baseUrl: string;
+		};
+	}) => call<{ runId: string }>('agent_start_run', { request }),
+
+	agentCancelRun: (runId: string) => call<void>('agent_cancel_run', { runId }),
+
+	agentRunnerStatus: () =>
+		call<{
+			ready: boolean;
+			activeRuns: number;
+			scriptPath?: string | null;
+			nodeBin?: string | null;
+		}>('agent_runner_status')
 };
 
 export function errorMessage(error: unknown): string {

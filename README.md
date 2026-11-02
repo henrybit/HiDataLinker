@@ -90,4 +90,17 @@
 
 ---
 
+## 开发说明（智能体 sidecar）
+
+内置数据分析 Agent 的 LangGraph 编排跑在 Node 子进程 `agents-runtime`（由 Rust 经 stdio NDJSON 托管），工具与 LLM 密钥仍只在 Rust 侧。
+
+```bash
+pnpm agents-runtime:build   # 产出 agents-runtime/dist/main.mjs
+pnpm tauri:dev              # beforeDevCommand 会先构建 runtime
+```
+
+开发机与当前发行包需要本机可用的 `node`（可用 `HIDATALINKER_NODE` 指定）。后续计划用 Tauri `externalBin` 嵌入平台 Node。
+
+---
+
 欢迎 Star、提 Issue 与建议。一起把「能用的免费客户端」做成「能读懂你的库」的智能工作台。

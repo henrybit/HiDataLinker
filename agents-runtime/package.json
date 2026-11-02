@@ -1,0 +1,21 @@
+{
+	"name": "@hidatalinker/agents-runtime",
+	"private": true,
+	"version": "1.0.0",
+	"type": "module",
+	"scripts": {
+		"build": "esbuild src/main.ts --bundle --platform=node --format=esm --outfile=dist/main.mjs --packages=bundle",
+		"start": "node dist/main.mjs",
+		"dev": "esbuild src/main.ts --bundle --platform=node --format=esm --outfile=dist/main.mjs --packages=bundle --watch"
+	},
+	"dependencies": {
+		"@langchain/core": "^1.2.12",
+		"@langchain/langgraph": "^1.4.17",
+		"zod": "^4.3.6"
+	},
+	"devDependencies": {
+		"@types/node": "^24",
+		"esbuild": "^0.25.0",
+		"typescript": "^6.0.3"
+	}
+}

@@ -274,6 +274,44 @@ export interface AgentAuditEntry {
 	error?: string | null;
 }
 
+export interface BuiltinAgentInfo {
+	id: string;
+	name: string;
+	version: string;
+	kind: string;
+	description: string;
+}
+
+export interface AgentSessionMeta {
+	id: string;
+	agentId: string;
+	title: string;
+	createdAt: string;
+	updatedAt: string;
+	status: string;
+}
+
+export interface TranscriptEntry {
+	id: string;
+	at: string;
+	role: string;
+	kind: string;
+	content: string;
+	meta?: Record<string, unknown> | null;
+}
+
+export interface AgentSessionDetail {
+	meta: AgentSessionMeta;
+	transcript: TranscriptEntry[];
+	checkpoint?: unknown;
+}
+
+export interface AgentToolResult {
+	ok: boolean;
+	result?: unknown;
+	error?: string | null;
+}
+
 export interface ContextMenuState {
 	x: number;
 	y: number;

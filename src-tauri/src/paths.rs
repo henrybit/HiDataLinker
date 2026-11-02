@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 ///   settings/locale
 ///   settings/agent.json
 ///   agent/endpoint.json
+///   agents/<agentId>/…
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppPaths {
@@ -25,6 +26,7 @@ pub struct AppPaths {
     pub locale: PathBuf,
     pub agent_settings: PathBuf,
     pub agent_endpoint: PathBuf,
+    pub agents: PathBuf,
 }
 
 impl AppPaths {
@@ -42,6 +44,7 @@ impl AppPaths {
             locale: root.join("settings").join("locale"),
             agent_settings: root.join("settings").join("agent.json"),
             agent_endpoint: root.join("agent").join("endpoint.json"),
+            agents: root.join("agents"),
             root,
         }
     }
@@ -55,11 +58,13 @@ impl AppPaths {
             self.llm.parent(),
             self.locale.parent(),
             self.agent_endpoint.parent(),
+            Some(self.agents.as_path()),
         ] {
             if let Some(dir) = dir {
                 std::fs::create_dir_all(dir)?;
             }
         }
+        crate::builtin_agents::ensure_builtins(&self.agents)?;
         Ok(())
     }
 }
@@ -151,6 +156,10 @@ mod tests {
         assert_eq!(
             paths.agent_endpoint,
             PathBuf::from("/Users/ada/.hidatalinker/agent/endpoint.json")
+        );
+        assert_eq!(
+            paths.agents,
+            PathBuf::from("/Users/ada/.hidatalinker/agents")
         );
     }
 

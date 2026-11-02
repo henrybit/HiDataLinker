@@ -702,5 +702,20 @@ export const zh: Record<MessageKey, string> = {
 	'agentMode.history.weekly': '经营周报草稿',
 	'agentMode.history.justNow': '刚刚',
 	'agentMode.history.today': '今天',
-	'agentMode.history.yesterday': '昨天'
+	'agentMode.history.yesterday': '昨天',
+
+	'agentMode.live.homeDesc':
+		'内置 LangGraph 数据分析智能体：跨连接探查 schema，多步规划查询，并以 Markdown 回复。',
+	'agentMode.live.needDesktop': '请在桌面版中运行内置智能体。',
+	'agentMode.live.needLlm':
+		'请先在设置中配置默认大模型（填写 API Key，或兼容代理的 Base URL）再提问。',
+	'agentMode.live.starting': '正在开始分析…',
+	'agentMode.live.runningHint': '智能体运行中…可在会话标题旁取消。',
+	'agentMode.live.cancel': '取消',
+	'agentMode.live.planTitle': '分析计划',
+	'agentMode.live.stepProgress': '步骤 {current}/{total}：{title}',
+	'agentMode.live.toolOk': '成功',
+	'agentMode.live.toolFail': '失败',
+	'agentMode.live.toolResult': '结果',
+	'agentMode.live.noHistory': '还没有保存的智能体会话。'
 };
