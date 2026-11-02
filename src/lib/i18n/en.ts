@@ -523,6 +523,8 @@ export const en = {
 	'analysis.origin.inferred': 'Inferred',
 
 	'settings.title': 'Settings',
+	'settings.tab.basic': 'General',
+	'settings.tab.llm': 'Models',
 	'settings.hint': 'Add model providers here. Analysis and other features can choose one of them.',
 	'settings.add': 'Add provider',
 	'settings.name': 'Name',
@@ -545,6 +547,13 @@ export const en = {
 	'settings.mcp.on': 'On',
 	'settings.mcp.off': 'Off',
 	'settings.mcp.desktopOnly': 'Open the desktop app to turn the MCP service on or off.',
+	'settings.runtimeLog.title': 'Runtime logs',
+	'settings.runtimeLog.hint':
+		'Write daily log files under ~/.hidatalinker/runtime/. Startup keeps at most the last 7 days.',
+	'settings.runtimeLog.on': 'On',
+	'settings.runtimeLog.off': 'Off',
+	'settings.runtimeLog.desktopOnly': 'Open the desktop app to change runtime logging.',
+	'settings.runtimeLog.saveFailed': 'Could not save runtime log settings.',
 
 	'agent.enable': 'MCP service',
 	'agent.port': '127.0.0.1:{port}',

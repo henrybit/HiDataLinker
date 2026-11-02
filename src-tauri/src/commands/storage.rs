@@ -1,5 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::runtime::run_blocking;
+use crate::runtime_log::{RuntimeLogController, RuntimeLogSettings};
 use crate::state::AppState;
 use tauri::State;
 
@@ -33,6 +34,22 @@ pub async fn write_locale(state: State<'_, AppState>, locale: String) -> AppResu
     }
     let path = state.locale_path().clone();
     run_blocking(move || write_new(&path, &locale)).await
+}
+
+#[tauri::command]
+pub async fn read_runtime_settings(
+    runtime_log: State<'_, RuntimeLogController>,
+) -> AppResult<RuntimeLogSettings> {
+    Ok(runtime_log.settings())
+}
+
+#[tauri::command]
+pub async fn write_runtime_settings(
+    runtime_log: State<'_, RuntimeLogController>,
+    settings: RuntimeLogSettings,
+) -> AppResult<RuntimeLogSettings> {
+    runtime_log.set_enabled(settings.file_logging_enabled)?;
+    Ok(runtime_log.settings())
 }
 
 fn read_optional(path: &std::path::Path) -> AppResult<String> {

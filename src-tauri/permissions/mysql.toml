@@ -27,6 +27,8 @@ commands.allow = [
   "write_llm_catalog",
   "read_locale",
   "write_locale",
+  "read_runtime_settings",
+  "write_runtime_settings",
   "save_analysis_history",
   "delete_analysis_history",
   "save_migration_history",

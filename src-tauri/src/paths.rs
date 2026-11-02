@@ -14,6 +14,10 @@ use std::path::{Path, PathBuf};
 ///   settings/agent.json
 ///   agent/endpoint.json
 ///   agents/<agentId>/…
+///   db/index.json
+///   db/schemas/<connectionId>/…
+///   runtime/YYYY-MM-DD.log
+///   settings/runtime.json
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppPaths {
@@ -27,6 +31,11 @@ pub struct AppPaths {
     pub agent_settings: PathBuf,
     pub agent_endpoint: PathBuf,
     pub agents: PathBuf,
+    pub db: PathBuf,
+    pub db_index: PathBuf,
+    pub db_schemas: PathBuf,
+    pub runtime: PathBuf,
+    pub runtime_settings: PathBuf,
 }
 
 impl AppPaths {
@@ -35,6 +44,7 @@ impl AppPaths {
     }
 
     pub fn from_root(root: PathBuf) -> Self {
+        let db = root.join("db");
         Self {
             connections: root.join("connections").join("connections.json"),
             queries: root.join("queries"),
@@ -45,6 +55,11 @@ impl AppPaths {
             agent_settings: root.join("settings").join("agent.json"),
             agent_endpoint: root.join("agent").join("endpoint.json"),
             agents: root.join("agents"),
+            db_index: db.join("index.json"),
+            db_schemas: db.join("schemas"),
+            db,
+            runtime: root.join("runtime"),
+            runtime_settings: root.join("settings").join("runtime.json"),
             root,
         }
     }
@@ -59,6 +74,10 @@ impl AppPaths {
             self.locale.parent(),
             self.agent_endpoint.parent(),
             Some(self.agents.as_path()),
+            Some(self.db.as_path()),
+            Some(self.db_schemas.as_path()),
+            Some(self.runtime.as_path()),
+            self.runtime_settings.parent(),
         ] {
             if let Some(dir) = dir {
                 std::fs::create_dir_all(dir)?;
@@ -160,6 +179,23 @@ mod tests {
         assert_eq!(
             paths.agents,
             PathBuf::from("/Users/ada/.hidatalinker/agents")
+        );
+        assert_eq!(paths.db, PathBuf::from("/Users/ada/.hidatalinker/db"));
+        assert_eq!(
+            paths.db_index,
+            PathBuf::from("/Users/ada/.hidatalinker/db/index.json")
+        );
+        assert_eq!(
+            paths.db_schemas,
+            PathBuf::from("/Users/ada/.hidatalinker/db/schemas")
+        );
+        assert_eq!(
+            paths.runtime,
+            PathBuf::from("/Users/ada/.hidatalinker/runtime")
+        );
+        assert_eq!(
+            paths.runtime_settings,
+            PathBuf::from("/Users/ada/.hidatalinker/settings/runtime.json")
         );
     }
 

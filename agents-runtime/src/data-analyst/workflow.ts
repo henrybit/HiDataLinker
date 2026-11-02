@@ -79,7 +79,7 @@ async function callSkillTool(runId: string, name: string, args: Record<string, u
 	return invokeTool(runId, name, args);
 }
 
-async function buildSchemaDigest(
+async function buildSchemaDigestLive(
 	runId: string,
 	locale: AgentLocale,
 	onEvent?: (event: AnalystEvent) => void
@@ -135,11 +135,26 @@ async function buildSchemaDigest(
 	return lines.join('\n') || '(no connections)';
 }
 
+async function buildSchemaDigest(
+	runId: string,
+	locale: AgentLocale,
+	cachedDigest: string | undefined,
+	onEvent?: (event: AnalystEvent) => void
+): Promise<string> {
+	const cached = cachedDigest?.trim();
+	if (cached) {
+		onEvent?.({ type: 'status', message: statusMessage(locale, 'gathering') });
+		return cached;
+	}
+	return buildSchemaDigestLive(runId, locale, onEvent);
+}
+
 export async function runDataAnalyst(input: {
 	runId: string;
 	userQuery: string;
 	systemMd: string;
 	locale?: AgentLocale | string;
+	schemaDigest?: string;
 	llm: RunLlmConfig;
 	signal?: AbortSignal;
 	onEvent?: (event: AnalystEvent) => void;
@@ -151,7 +166,12 @@ export async function runDataAnalyst(input: {
 
 	const gather = async (_state: AnalystState) => {
 		throwIfAborted();
-		const schemaDigest = await buildSchemaDigest(input.runId, locale, input.onEvent);
+		const schemaDigest = await buildSchemaDigest(
+			input.runId,
+			locale,
+			input.schemaDigest,
+			input.onEvent
+		);
 		return { schemaDigest };
 	};
 

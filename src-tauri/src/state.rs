@@ -24,10 +24,13 @@ pub struct AppState {
     llm_catalog_path: PathBuf,
     locale_path: PathBuf,
     agents_dir: PathBuf,
+    schema_index_path: PathBuf,
+    schema_cache_dir: PathBuf,
     profiles: RwLock<Vec<ConnectionProfile>>,
     sessions: DashMap<String, LiveEngine>,
     session_order: Mutex<Vec<String>>,
     connect_lock: tokio::sync::Mutex<()>,
+    schema_refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -45,6 +48,8 @@ impl AppState {
         let llm_catalog_path = paths.llm;
         let locale_path = paths.locale;
         let agents_dir = paths.agents;
+        let schema_index_path = paths.db_index;
+        let schema_cache_dir = paths.db_schemas;
         let profiles = if data_file.exists() {
             let raw = std::fs::read_to_string(&data_file)?;
             serde_json::from_str::<StoredProfiles>(&raw)?.connections
@@ -60,10 +65,13 @@ impl AppState {
             llm_catalog_path,
             locale_path,
             agents_dir,
+            schema_index_path,
+            schema_cache_dir,
             profiles: RwLock::new(profiles),
             sessions: DashMap::new(),
             session_order: Mutex::new(Vec::new()),
             connect_lock: tokio::sync::Mutex::new(()),
+            schema_refresh_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -118,7 +126,9 @@ impl AppState {
                 return Err(AppError::ProfileNotFound(id.to_string()));
             }
         }
-        self.persist().await
+        self.persist().await?;
+        let _ = crate::schema_cache::remove_connection(self, id).await;
+        Ok(())
     }
 
     pub async fn get_profile(&self, id: &str) -> AppResult<ConnectionProfile> {
@@ -221,6 +231,18 @@ impl AppState {
 
     pub fn agents_dir(&self) -> &PathBuf {
         &self.agents_dir
+    }
+
+    pub fn schema_index_path(&self) -> &PathBuf {
+        &self.schema_index_path
+    }
+
+    pub fn schema_cache_dir(&self) -> &PathBuf {
+        &self.schema_cache_dir
+    }
+
+    pub fn schema_refresh_lock(&self) -> &tokio::sync::Mutex<()> {
+        &self.schema_refresh_lock
     }
 
     pub fn llm_catalog_path(&self) -> &PathBuf {

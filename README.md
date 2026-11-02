@@ -101,6 +101,10 @@ pnpm tauri:dev              # beforeDevCommand 会先构建 runtime
 
 开发机与当前发行包需要本机可用的 `node`（可用 `HIDATALINKER_NODE` 指定）。后续计划用 Tauri `externalBin` 嵌入平台 Node。
 
+连接 schema 元数据缓存在 `~/.hidatalinker/db/`（`index.json` + `schemas/<connectionId>/`）。软件启动与智能体对话时检查：超过 24 小时才重新拉取；连接失败会标记状态，连续失败超过 7 天会清除该连接缓存。
+
+运行日志默认写入 `~/.hidatalinker/runtime/YYYY-MM-DD.log`（设置 → 基础设置可开关）；启动时清理，最多保留 7 天。
+
 ---
 
 欢迎 Star、提 Issue 与建议。一起把「能用的免费客户端」做成「能读懂你的库」的智能工作台。

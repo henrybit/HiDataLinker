@@ -6,7 +6,7 @@
 		refreshAgentGateway,
 		setAgentGatewayEnabled
 	} from '$lib/agent/gateway.svelte';
-	import { isTauriRuntime } from '$lib/api/tauri';
+	import { api, isTauriRuntime } from '$lib/api/tauri';
 	import Switch from '$lib/components/layout/Switch.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { llmCatalog, llmSettingsDialog, replaceLlmCatalog } from '$lib/llm/catalog.svelte';
@@ -18,6 +18,8 @@
 		type LlmProviderKind,
 		type LlmProviderProfile
 	} from '$lib/llm/providers';
+
+	type SettingsTab = 'basic' | 'llm';
 
 	function blankProvider(): LlmProviderProfile {
 		return {
@@ -42,9 +44,13 @@
 		llmCatalog.providers[0] ??
 		null;
 
+	let tab = $state<SettingsTab>('basic');
 	let editingId = $state<string | null>(initial?.id ?? null);
 	let draft = $state<LlmProviderProfile>(initial ? { ...initial } : blankProvider());
 	let error = $state<string | null>(null);
+	let fileLoggingEnabled = $state(true);
+	let runtimeLogBusy = $state(false);
+	let runtimeLogError = $state<string | null>(null);
 
 	function close() {
 		llmSettingsDialog.open = false;
@@ -104,14 +110,44 @@
 	async function toggleMcp(enabled: boolean) {
 		try {
 			await setAgentGatewayEnabled(enabled);
-		} catch (error) {
-			console.error('[agent]', error);
+		} catch (caught) {
+			console.error('[agent]', caught);
 			await refreshAgentGateway();
+		}
+	}
+
+	async function loadRuntimeSettings() {
+		if (!isTauriRuntime()) return;
+		try {
+			const settings = await api.readRuntimeSettings();
+			fileLoggingEnabled = settings.fileLoggingEnabled;
+			runtimeLogError = null;
+		} catch (caught) {
+			console.error('[runtime-log]', caught);
+		}
+	}
+
+	async function toggleRuntimeLog(enabled: boolean) {
+		if (!isTauriRuntime()) return;
+		runtimeLogBusy = true;
+		runtimeLogError = null;
+		const previous = fileLoggingEnabled;
+		fileLoggingEnabled = enabled;
+		try {
+			const settings = await api.writeRuntimeSettings({ fileLoggingEnabled: enabled });
+			fileLoggingEnabled = settings.fileLoggingEnabled;
+		} catch (caught) {
+			console.error('[runtime-log]', caught);
+			fileLoggingEnabled = previous;
+			runtimeLogError = t('settings.runtimeLog.saveFailed');
+		} finally {
+			runtimeLogBusy = false;
 		}
 	}
 
 	onMount(() => {
 		void refreshAgentGateway();
+		void loadRuntimeSettings();
 		const onKey = (event: KeyboardEvent) => {
 			if (event.key !== 'Escape') return;
 			event.preventDefault();
@@ -132,112 +168,162 @@
 		<form
 			onsubmit={(event) => {
 				event.preventDefault();
-				save();
+				if (tab === 'llm') save();
 			}}
 		>
 			<header>
 				<span id="settings-title">{t('settings.title')}</span>
 				<button class="btn" type="button" onclick={close}>{t('settings.close')}</button>
 			</header>
+			<div class="settings-tabs" role="tablist" aria-label={t('settings.title')}>
+				<button
+					class="settings-tab"
+					class:active={tab === 'basic'}
+					type="button"
+					role="tab"
+					aria-selected={tab === 'basic'}
+					onclick={() => (tab = 'basic')}
+				>
+					{t('settings.tab.basic')}
+				</button>
+				<button
+					class="settings-tab"
+					class:active={tab === 'llm'}
+					type="button"
+					role="tab"
+					aria-selected={tab === 'llm'}
+					onclick={() => (tab = 'llm')}
+				>
+					{t('settings.tab.llm')}
+				</button>
+			</div>
 			<div class="body">
-				<section class="mcp-settings">
-					<div class="mcp-settings-copy">
-						<strong>{t('settings.mcp.title')}</strong>
-						<p class="hint">{t('settings.mcp.hint')}</p>
-						{#if isTauriRuntime()}
-							<p class="hint">
-								{#if agentGateway.status?.running}
-									{t('agent.port', { port: agentGateway.status.port })}
-								{:else}
-									{t('agent.starting')}
-								{/if}
-							</p>
-						{:else}
-							<p class="hint">{t('settings.mcp.desktopOnly')}</p>
-						{/if}
-					</div>
-					<Switch
-						name={t('settings.mcp.title')}
-						checked={agentGateway.status?.enabled ?? false}
-						disabled={!isTauriRuntime() || agentGateway.toggling || !agentGateway.status}
-						onText={t('settings.mcp.on')}
-						offText={t('settings.mcp.off')}
-						onToggle={toggleMcp}
-					/>
-				</section>
-				<p class="hint">{t('settings.hint')}</p>
-				<div class="settings-layout">
-					<div class="settings-list">
-						<button class="btn" type="button" onclick={startCreate}>{t('settings.add')}</button>
-						<div class="settings-list-items">
-							{#each llmCatalog.providers as provider (provider.id)}
-								<button
-									class="settings-provider"
-									class:active={editingId === provider.id}
-									type="button"
-									onclick={() => startEdit(provider)}
-								>
-									<strong>{provider.name}</strong>
-									<small>{kindLabel(provider.kind)} · {provider.model}</small>
-								</button>
+				{#if tab === 'basic'}
+					<section class="mcp-settings">
+						<div class="mcp-settings-copy">
+							<strong>{t('settings.mcp.title')}</strong>
+							<p class="hint">{t('settings.mcp.hint')}</p>
+							{#if isTauriRuntime()}
+								<p class="hint">
+									{#if agentGateway.status?.running}
+										{t('agent.port', { port: agentGateway.status.port })}
+									{:else}
+										{t('agent.starting')}
+									{/if}
+								</p>
 							{:else}
-								<p class="hint">{t('settings.empty')}</p>
-							{/each}
+								<p class="hint">{t('settings.mcp.desktopOnly')}</p>
+							{/if}
+						</div>
+						<Switch
+							name={t('settings.mcp.title')}
+							checked={agentGateway.status?.enabled ?? false}
+							disabled={!isTauriRuntime() || agentGateway.toggling || !agentGateway.status}
+							onText={t('settings.mcp.on')}
+							offText={t('settings.mcp.off')}
+							onToggle={toggleMcp}
+						/>
+					</section>
+					<section class="mcp-settings">
+						<div class="mcp-settings-copy">
+							<strong>{t('settings.runtimeLog.title')}</strong>
+							<p class="hint">{t('settings.runtimeLog.hint')}</p>
+							{#if !isTauriRuntime()}
+								<p class="hint">{t('settings.runtimeLog.desktopOnly')}</p>
+							{/if}
+							{#if runtimeLogError}
+								<p class="settings-error">{runtimeLogError}</p>
+							{/if}
+						</div>
+						<Switch
+							name={t('settings.runtimeLog.title')}
+							checked={fileLoggingEnabled}
+							disabled={!isTauriRuntime() || runtimeLogBusy}
+							onText={t('settings.runtimeLog.on')}
+							offText={t('settings.runtimeLog.off')}
+							onToggle={toggleRuntimeLog}
+						/>
+					</section>
+				{:else}
+					<p class="hint">{t('settings.hint')}</p>
+					<div class="settings-layout">
+						<div class="settings-list">
+							<button class="btn" type="button" onclick={startCreate}>{t('settings.add')}</button>
+							<div class="settings-list-items">
+								{#each llmCatalog.providers as provider (provider.id)}
+									<button
+										class="settings-provider"
+										class:active={editingId === provider.id}
+										type="button"
+										onclick={() => startEdit(provider)}
+									>
+										<strong>{provider.name}</strong>
+										<small>{kindLabel(provider.kind)} · {provider.model}</small>
+									</button>
+								{:else}
+									<p class="hint">{t('settings.empty')}</p>
+								{/each}
+							</div>
+						</div>
+						<div class="settings-form">
+							<label class="field">
+								<span>{t('settings.name')}</span>
+								<input
+									bind:value={draft.name}
+									autocomplete="off"
+									oninput={(event) => {
+										if ((event.currentTarget as HTMLInputElement).value.trim()) error = null;
+									}}
+								/>
+							</label>
+							<label class="field">
+								<span>{t('settings.kind')}</span>
+								<select
+									value={draft.kind}
+									onchange={(event) =>
+										setKind((event.currentTarget as HTMLSelectElement).value as LlmProviderKind)}
+								>
+									<option value="openai">{t('analysis.provider.openai')}</option>
+									<option value="anthropic">{t('analysis.provider.anthropic')}</option>
+								</select>
+							</label>
+							<label class="field">
+								<span>{t('settings.apiKey')}</span>
+								<input type="password" bind:value={draft.apiKey} autocomplete="off" />
+							</label>
+							<label class="field">
+								<span>{t('settings.model')}</span>
+								<input bind:value={draft.model} autocomplete="off" spellcheck="false" />
+							</label>
+							<label class="field">
+								<span>{t('settings.baseUrl')}</span>
+								<input
+									bind:value={draft.baseUrl}
+									autocomplete="off"
+									spellcheck="false"
+									placeholder={draft.kind === 'anthropic'
+										? 'https://api.anthropic.com'
+										: 'https://api.openai.com/v1'}
+								/>
+							</label>
+							<p class="hint">{t('settings.baseUrlHint')}</p>
+							{#if error}<p class="settings-error">{error}</p>{/if}
 						</div>
 					</div>
-					<div class="settings-form">
-						<label class="field">
-							<span>{t('settings.name')}</span>
-							<input
-								bind:value={draft.name}
-								autocomplete="off"
-								oninput={(event) => {
-									if ((event.currentTarget as HTMLInputElement).value.trim()) error = null;
-								}}
-							/>
-						</label>
-						<label class="field">
-							<span>{t('settings.kind')}</span>
-							<select
-								value={draft.kind}
-								onchange={(event) =>
-									setKind((event.currentTarget as HTMLSelectElement).value as LlmProviderKind)}
-							>
-								<option value="openai">{t('analysis.provider.openai')}</option>
-								<option value="anthropic">{t('analysis.provider.anthropic')}</option>
-							</select>
-						</label>
-						<label class="field">
-							<span>{t('settings.apiKey')}</span>
-							<input type="password" bind:value={draft.apiKey} autocomplete="off" />
-						</label>
-						<label class="field">
-							<span>{t('settings.model')}</span>
-							<input bind:value={draft.model} autocomplete="off" spellcheck="false" />
-						</label>
-						<label class="field">
-							<span>{t('settings.baseUrl')}</span>
-							<input
-								bind:value={draft.baseUrl}
-								autocomplete="off"
-								spellcheck="false"
-								placeholder={draft.kind === 'anthropic'
-									? 'https://api.anthropic.com'
-									: 'https://api.openai.com/v1'}
-							/>
-						</label>
-						<p class="hint">{t('settings.baseUrlHint')}</p>
-						{#if error}<p class="settings-error">{error}</p>{/if}
-					</div>
-				</div>
+				{/if}
 			</div>
 			<footer>
-				<span class="hint">{t('settings.keyLocal')}</span>
-				{#if editingId}
-					<button class="btn danger" type="button" onclick={remove}>{t('settings.delete')}</button>
+				{#if tab === 'llm'}
+					<span class="hint">{t('settings.keyLocal')}</span>
+					{#if editingId}
+						<button class="btn danger" type="button" onclick={remove}>{t('settings.delete')}</button>
+					{/if}
+					<button class="btn" type="button" onclick={close}>{t('settings.close')}</button>
+					<button class="btn primary" type="submit">{t('settings.save')}</button>
+				{:else}
+					<span class="hint"></span>
+					<button class="btn" type="button" onclick={close}>{t('settings.close')}</button>
 				{/if}
-				<button class="btn" type="button" onclick={close}>{t('settings.close')}</button>
-				<button class="btn primary" type="submit">{t('settings.save')}</button>
 			</footer>
 		</form>
 	</div>

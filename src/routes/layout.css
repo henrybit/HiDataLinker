@@ -1298,6 +1298,33 @@ button {
 	width: min(720px, calc(100vw - 32px));
 }
 
+.settings-tabs {
+	display: flex;
+	gap: 4px;
+	padding: 0 16px;
+	border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+	padding: 10px 14px;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	cursor: pointer;
+}
+
+.settings-tab:hover {
+	color: var(--text);
+}
+
+.settings-tab.active {
+	color: var(--text);
+	border-bottom-color: #2563eb;
+	font-weight: 600;
+}
+
 .mcp-settings {
 	display: flex;
 	align-items: center;

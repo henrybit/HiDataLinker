@@ -35,6 +35,7 @@ async function startRun(payload: RunStartPayload) {
 				userQuery: payload.query,
 				systemMd: payload.systemMd,
 				locale: payload.locale,
+				schemaDigest: payload.schemaDigest,
 				llm: payload.llm,
 				signal: controller.signal,
 				onEvent: (event) => emitRunEvent(runId, event)

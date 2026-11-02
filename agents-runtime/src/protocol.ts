@@ -12,6 +12,8 @@ export type RunStartPayload = {
 	systemMd: string;
 	/** App UI locale: drives LLM output language. */
 	locale?: 'zh' | 'en';
+	/** Prebuilt schema digest from local ~/.hidatalinker/db cache. */
+	schemaDigest?: string;
 	llm: {
 		provider: 'openai' | 'anthropic';
 		model: string;

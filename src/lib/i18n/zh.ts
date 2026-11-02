@@ -509,6 +509,8 @@ export const zh: Record<MessageKey, string> = {
 	'analysis.origin.inferred': '推测',
 
 	'settings.title': '设置',
+	'settings.tab.basic': '基础设置',
+	'settings.tab.llm': '大模型',
 	'settings.hint': '在这里添加大模型 provider。分析和其他功能可以从中选择。',
 	'settings.add': '添加 provider',
 	'settings.name': '名称',
@@ -529,6 +531,13 @@ export const zh: Record<MessageKey, string> = {
 	'settings.mcp.on': '已开启',
 	'settings.mcp.off': '已关闭',
 	'settings.mcp.desktopOnly': '请在桌面版里开关 MCP 服务。',
+	'settings.runtimeLog.title': '运行日志',
+	'settings.runtimeLog.hint':
+		'将日志按天写入 ~/.hidatalinker/runtime/。启动时自动清理，最多保留近 7 天。',
+	'settings.runtimeLog.on': '已开启',
+	'settings.runtimeLog.off': '已关闭',
+	'settings.runtimeLog.desktopOnly': '请在桌面版里开关运行日志。',
+	'settings.runtimeLog.saveFailed': '无法保存运行日志设置。',
 
 	'agent.enable': 'MCP 服务',
 	'agent.port': '127.0.0.1:{port}',

@@ -9,6 +9,8 @@ mod migration_history;
 mod models;
 mod paths;
 mod runtime;
+mod runtime_log;
+mod schema_cache;
 mod state;
 
 use agent::{agent_status, list_agent_audit, set_agent_enabled};
@@ -22,8 +24,9 @@ use commands::{
     list_connections, list_databases, list_indexes, list_migration_history, list_routines,
     list_tables, list_triggers, list_views, migrate_database, poll_llm, preview_table,
     read_analysis_history, read_llm_catalog, read_locale, read_migration_history, read_query_cache,
-    save_analysis_history, save_migration_history, start_llm, table_row_count, test_connection,
-    upsert_connection, write_llm_catalog, write_locale, write_query_cache, write_text_file,
+    read_runtime_settings, save_analysis_history, save_migration_history, start_llm,
+    table_row_count, test_connection, upsert_connection, write_llm_catalog, write_locale,
+    write_query_cache, write_runtime_settings, write_text_file,
 };
 use state::AppState;
 use tauri::Manager;
@@ -33,20 +36,24 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
             let paths = crate::paths::AppPaths::from_home(&crate::paths::home_dir()?);
             let legacy = app.path().app_data_dir().ok();
+            // File logger under ~/.hidatalinker/runtime (daily files, 7-day retention).
+            let runtime_log = crate::runtime_log::init(&paths)?;
+            app.manage(runtime_log);
             crate::runtime::handle();
             app.manage(AppState::load(paths.clone(), legacy)?);
             let runner = crate::builtin_agents::AgentRunner::new(app.handle().clone());
             app.manage(runner);
             crate::agent::start(app.handle().clone(), &paths)?;
+            // Warm schema metadata cache in the background (24h TTL).
+            let refresh_handle = app.handle().clone();
+            crate::runtime::handle().spawn(async move {
+                let state = refresh_handle.state::<AppState>();
+                if let Err(error) = crate::schema_cache::refresh_stale(&state).await {
+                    log::warn!("schema cache startup refresh: {}", error.user_message());
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -75,6 +82,8 @@ pub fn run() {
             write_llm_catalog,
             read_locale,
             write_locale,
+            read_runtime_settings,
+            write_runtime_settings,
             save_analysis_history,
             delete_analysis_history,
             save_migration_history,

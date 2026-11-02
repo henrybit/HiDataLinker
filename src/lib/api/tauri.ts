@@ -279,7 +279,13 @@ export const api = {
 			activeRuns: number;
 			scriptPath?: string | null;
 			nodeBin?: string | null;
-		}>('agent_runner_status')
+		}>('agent_runner_status'),
+
+	readRuntimeSettings: () =>
+		call<{ fileLoggingEnabled: boolean }>('read_runtime_settings'),
+
+	writeRuntimeSettings: (settings: { fileLoggingEnabled: boolean }) =>
+		call<{ fileLoggingEnabled: boolean }>('write_runtime_settings', { settings })
 };
 
 export function errorMessage(error: unknown): string {

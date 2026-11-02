@@ -575,6 +575,18 @@ impl AgentRunner {
             "en"
         };
 
+        // Refresh stale local schema metadata (24h TTL) and build digest for the graph.
+        let schema_digest = match crate::schema_cache::ensure_and_digest(&self.app_state()).await {
+            Ok(digest) => digest,
+            Err(error) => {
+                log::warn!(
+                    "schema cache ensure failed before run: {}",
+                    error.user_message()
+                );
+                String::new()
+            }
+        };
+
         // Never send apiKey to Node.
         let payload = json!({
             "runId": run_id,
@@ -583,6 +595,7 @@ impl AgentRunner {
             "query": request.query,
             "systemMd": request.system_md,
             "locale": locale,
+            "schemaDigest": schema_digest,
             "llm": {
                 "provider": request.llm.provider,
                 "model": request.llm.model,
