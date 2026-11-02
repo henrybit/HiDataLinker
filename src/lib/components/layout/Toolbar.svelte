@@ -27,41 +27,37 @@
 	);
 	const locale = $derived(getLocale());
 	const mcp = $derived(agentGateway.status);
-	let menuOpen = $state(false);
-	let menuRoot = $state<HTMLDivElement | null>(null);
-	let migrationMenuOpen = $state(false);
-	let migrationMenuRoot = $state<HTMLDivElement | null>(null);
+	let moreOpen = $state(false);
+	let moreRoot = $state<HTMLDivElement | null>(null);
 
 	function switchLocale(next: Locale) {
 		setLocale(next);
 	}
 
 	function openAnalysis() {
-		menuOpen = false;
+		moreOpen = false;
 		analysisPanel.open = true;
 	}
 
 	function openMigration() {
-		migrationMenuOpen = false;
+		moreOpen = false;
 		migrationPanel.open = true;
+	}
+
+	function createDatabase() {
+		moreOpen = false;
+		if (active) workspace.askCreateDatabase(active.id);
 	}
 
 	onMount(() => {
 		if (isTauriRuntime()) void refreshAgentGateway();
 		const onPointerDown = (event: PointerEvent) => {
 			if (
-				menuOpen &&
-				menuRoot &&
-				!(event.target instanceof Node && menuRoot.contains(event.target))
+				moreOpen &&
+				moreRoot &&
+				!(event.target instanceof Node && moreRoot.contains(event.target))
 			) {
-				menuOpen = false;
-			}
-			if (
-				migrationMenuOpen &&
-				migrationMenuRoot &&
-				!(event.target instanceof Node && migrationMenuRoot.contains(event.target))
-			) {
-				migrationMenuOpen = false;
+				moreOpen = false;
 			}
 		};
 		window.addEventListener('pointerdown', onPointerDown);
@@ -98,32 +94,25 @@
 			<Plus size={14} />
 			{t('toolbar.newConnection')}
 		</button>
-		<button
-			class="toolbar-btn"
-			disabled={!active || active.connected || workspace.isPending(`connect:${active.id}`)}
-			onclick={() => active && workspace.connect(active.id)}
-		>
-			<Cable size={14} />
-			{t('toolbar.connect')}
-		</button>
-		<button
-			class="toolbar-btn"
-			disabled={!active?.connected || workspace.isPending(`disconnect:${active.id}`)}
-			onclick={() => active && workspace.disconnect(active.id)}
-		>
-			<Square size={14} />
-			{t('toolbar.disconnect')}
-		</button>
-		<button
-			class="toolbar-btn"
-			disabled={!active?.connected}
-			onclick={() => active && workspace.askCreateDatabase(active.id)}
-		>
-			<Database size={14} />
-			{t('toolbar.createNoun', {
-				noun: active ? schemaNounLabel(active.engine) : t('noun.database')
-			})}
-		</button>
+		{#if active?.connected}
+			<button
+				class="toolbar-btn"
+				disabled={workspace.isPending(`disconnect:${active.id}`)}
+				onclick={() => workspace.disconnect(active.id)}
+			>
+				<Square size={14} />
+				{t('toolbar.disconnect')}
+			</button>
+		{:else}
+			<button
+				class="toolbar-btn"
+				disabled={!active || workspace.isPending(`connect:${active.id}`)}
+				onclick={() => active && workspace.connect(active.id)}
+			>
+				<Cable size={14} />
+				{t('toolbar.connect')}
+			</button>
+		{/if}
 		<button
 			class="toolbar-btn"
 			disabled={!active?.connected}
@@ -147,44 +136,32 @@
 			<RefreshCw size={14} />
 			{t('toolbar.refresh')}
 		</button>
-		<div class="analysis-menu" bind:this={menuRoot}>
+		<div class="analysis-menu" bind:this={moreRoot}>
 			<button
 				class="toolbar-btn"
 				type="button"
 				aria-haspopup="menu"
-				aria-expanded={menuOpen}
-				onclick={() => {
-					menuOpen = !menuOpen;
-					migrationMenuOpen = false;
-				}}
+				aria-expanded={moreOpen}
+				onclick={() => (moreOpen = !moreOpen)}
 			>
-				{t('toolbar.analyze')}
+				{t('toolbar.more')}
 				<ChevronDown size={14} />
 			</button>
-			{#if menuOpen}
+			{#if moreOpen}
 				<div class="analysis-menu-pop" role="menu">
+					<button
+						type="button"
+						role="menuitem"
+						disabled={!active?.connected}
+						onclick={createDatabase}
+					>
+						{t('toolbar.createNoun', {
+							noun: active ? schemaNounLabel(active.engine) : t('noun.database')
+						})}
+					</button>
 					<button type="button" role="menuitem" onclick={openAnalysis}
 						>{t('analysis.relationship')}</button
 					>
-				</div>
-			{/if}
-		</div>
-		<div class="analysis-menu" bind:this={migrationMenuRoot}>
-			<button
-				class="toolbar-btn"
-				type="button"
-				aria-haspopup="menu"
-				aria-expanded={migrationMenuOpen}
-				onclick={() => {
-					migrationMenuOpen = !migrationMenuOpen;
-					menuOpen = false;
-				}}
-			>
-				{t('toolbar.migrate')}
-				<ChevronDown size={14} />
-			</button>
-			{#if migrationMenuOpen}
-				<div class="analysis-menu-pop" role="menu">
 					<button type="button" role="menuitem" onclick={openMigration}
 						>{t('migration.center')}</button
 					>

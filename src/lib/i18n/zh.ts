@@ -327,6 +327,7 @@ export const zh: Record<MessageKey, string> = {
 
 	'toolbar.analyze': '分析',
 	'toolbar.migrate': '数据迁移',
+	'toolbar.more': '更多',
 	'migration.center': '数据迁移中心',
 	'migration.title': '数据迁移',
 	'migration.hint':

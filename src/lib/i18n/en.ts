@@ -334,6 +334,7 @@ export const en = {
 
 	'toolbar.analyze': 'Analyze',
 	'toolbar.migrate': 'Migrate',
+	'toolbar.more': 'More',
 	'migration.center': 'Data migration',
 	'migration.title': 'Data migration',
 	'migration.hint':

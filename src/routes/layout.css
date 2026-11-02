@@ -1425,8 +1425,13 @@ button {
 	text-align: left;
 }
 
-.analysis-menu-pop button:hover {
+.analysis-menu-pop button:hover:not(:disabled) {
 	background: var(--bg-hover);
+}
+
+.analysis-menu-pop button:disabled {
+	opacity: 0.45;
+	cursor: default;
 }
 
 .analysis-panel {
