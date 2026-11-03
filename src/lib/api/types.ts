@@ -306,6 +306,19 @@ export interface AgentSessionDetail {
 	checkpoint?: unknown;
 }
 
+export interface SessionContextFile {
+	summary: string;
+	summarizedThroughId?: string | null;
+	updatedAt: string;
+	messageCountSummarized: number;
+}
+
+export interface ForceCompressResult {
+	context: SessionContextFile;
+	compressed: boolean;
+	messagesCompressed: number;
+}
+
 export interface AgentToolResult {
 	ok: boolean;
 	result?: unknown;

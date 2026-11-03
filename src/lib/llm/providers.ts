@@ -1,5 +1,6 @@
 import { DEFAULT_MODELS, type LlmProvider, type LlmSettings } from '$lib/analysis/llm';
 import { api, isTauriRuntime } from '$lib/api/tauri';
+import { DEFAULT_CONTEXT_WINDOW, normalizeContextWindow } from './context-window';
 
 export type LlmProviderKind = LlmProvider;
 
@@ -10,7 +11,11 @@ export interface LlmProviderProfile {
 	apiKey: string;
 	model: string;
 	baseUrl: string;
+	/** Max context window in tokens (default 128_000). */
+	contextWindow: number;
 }
+
+export { DEFAULT_CONTEXT_WINDOW };
 
 export interface LlmCatalog {
 	providers: LlmProviderProfile[];
@@ -169,7 +174,8 @@ function parseLegacy(raw: string, createId: () => string): LlmCatalog | null {
 					kind,
 					apiKey,
 					model: model || DEFAULT_MODELS[kind],
-					baseUrl
+					baseUrl,
+					contextWindow: DEFAULT_CONTEXT_WINDOW
 				}
 			],
 			selectedId: id
@@ -195,6 +201,9 @@ function normalizeProfile(value: unknown): LlmProviderProfile | null {
 		kind,
 		apiKey: typeof item.apiKey === 'string' ? item.apiKey : '',
 		model: model || DEFAULT_MODELS[kind],
-		baseUrl: typeof item.baseUrl === 'string' ? item.baseUrl : ''
+		baseUrl: typeof item.baseUrl === 'string' ? item.baseUrl : '',
+		contextWindow: normalizeContextWindow(
+			item.contextWindow ?? item.context_window ?? item.maxContext
+		)
 	};
 }

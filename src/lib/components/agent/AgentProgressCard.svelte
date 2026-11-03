@@ -7,9 +7,6 @@
 
 	const tool = $derived(typeof message.meta?.tool === 'string' ? message.meta.tool : null);
 	const ok = $derived(message.meta?.ok === true);
-	const durationMs = $derived(
-		typeof message.meta?.durationMs === 'number' ? message.meta.durationMs : null
-	);
 </script>
 
 {#if message.kind === 'tool'}
@@ -18,7 +15,6 @@
 			<strong>{tool ?? 'tool'}</strong>
 			<span>
 				{#if ok}{t('agentMode.live.toolOk')}{:else}{t('agentMode.live.toolFail')}{/if}
-				{#if durationMs != null} · {durationMs}ms{/if}
 			</span>
 		</header>
 		{#if message.content}

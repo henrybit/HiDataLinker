@@ -432,10 +432,59 @@ pub fn build_digest_from_snapshots(
     }
 }
 
+fn filter_profiles(
+    profiles: Vec<ConnectionProfile>,
+    connection_ids: Option<&[String]>,
+) -> Vec<ConnectionProfile> {
+    let Some(ids) = connection_ids else {
+        return profiles;
+    };
+    if ids.is_empty() {
+        return profiles;
+    }
+    let set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    profiles
+        .into_iter()
+        .filter(|profile| set.contains(profile.id.as_str()))
+        .collect()
+}
+
+/// Connect saved-password profiles that are not yet open (best-effort, capped by session limit).
+pub async fn warm_connections(
+    state: &AppState,
+    connection_ids: Option<&[String]>,
+) -> AppResult<()> {
+    let profiles = filter_profiles(state.list_profiles().await, connection_ids);
+    for profile in profiles {
+        if state.is_connected(&profile.id) {
+            continue;
+        }
+        if profile.password.as_deref().unwrap_or("").is_empty() {
+            continue;
+        }
+        match state.connect(&profile.id, None).await {
+            Ok(_) => log::info!("warmed agent connection {}", profile.id),
+            Err(error) => log::warn!(
+                "warm connection {} failed: {}",
+                profile.id,
+                error.user_message()
+            ),
+        }
+    }
+    Ok(())
+}
+
 /// Ensure stale caches are refreshed, then return a digest string for the analyst agent.
-pub async fn ensure_and_digest(state: &AppState) -> AppResult<String> {
+/// When `connection_ids` is non-empty, only those connections are warmed into the digest.
+pub async fn ensure_and_digest(
+    state: &AppState,
+    connection_ids: Option<&[String]>,
+) -> AppResult<String> {
+    // Open live sessions first so tools during the run do not hit NotConnected,
+    // and so a stale cache refresh can succeed.
+    let _ = warm_connections(state, connection_ids).await;
     refresh_stale(state).await?;
-    let profiles = state.list_profiles().await;
+    let profiles = filter_profiles(state.list_profiles().await, connection_ids);
     let index_path = state.schema_index_path().clone();
     let schemas_root = state.schema_cache_dir().clone();
     run_blocking(move || {

@@ -17,8 +17,11 @@ import {
 	synthesizeUserPrompt,
 	type AgentLocale
 } from './prompts.js';
+import { resolveSkillTools, skillLabels } from './skills.js';
 
 const MAX_STEPS = 8;
+/** Max LLM/tool rounds inside a single plan step (ReAct inner loop). */
+const MAX_ACTS_PER_STEP = 5;
 const MAX_SCHEMAS_PER_CONN = 4;
 const MAX_TABLES_PER_SCHEMA = 40;
 
@@ -31,6 +34,8 @@ const AnalystAnnotation = Annotation.Root({
 		default: () => []
 	}),
 	stepIndex: Annotation<number>,
+	/** Tool/LLM iterations already spent on the current plan step. */
+	actIters: Annotation<number>,
 	observations: Annotation<AnalystObservation[]>({
 		reducer: (left, right) => left.concat(right),
 		default: () => []
@@ -82,14 +87,20 @@ async function callSkillTool(runId: string, name: string, args: Record<string, u
 async function buildSchemaDigestLive(
 	runId: string,
 	locale: AgentLocale,
-	onEvent?: (event: AnalystEvent) => void
+	onEvent?: (event: AnalystEvent) => void,
+	connectionIds?: string[]
 ): Promise<string> {
 	onEvent?.({ type: 'status', message: statusMessage(locale, 'gathering') });
 	const listed = await callSkillTool(runId, 'list_connections');
 	if (!listed.ok) {
 		return `list_connections failed: ${listed.error ?? 'unknown'}`;
 	}
-	const connections = Array.isArray(listed.result) ? listed.result : [];
+	const allow = new Set((connectionIds ?? []).map((id) => id.trim()).filter(Boolean));
+	const connections = (Array.isArray(listed.result) ? listed.result : []).filter((raw) => {
+		if (allow.size === 0) return true;
+		const conn = raw as { id?: string };
+		return !!conn.id && allow.has(conn.id);
+	});
 	const lines: string[] = [];
 	for (const raw of connections.slice(0, 12)) {
 		const conn = raw as {
@@ -139,14 +150,15 @@ async function buildSchemaDigest(
 	runId: string,
 	locale: AgentLocale,
 	cachedDigest: string | undefined,
-	onEvent?: (event: AnalystEvent) => void
+	onEvent?: (event: AnalystEvent) => void,
+	connectionIds?: string[]
 ): Promise<string> {
 	const cached = cachedDigest?.trim();
 	if (cached) {
 		onEvent?.({ type: 'status', message: statusMessage(locale, 'gathering') });
 		return cached;
 	}
-	return buildSchemaDigestLive(runId, locale, onEvent);
+	return buildSchemaDigestLive(runId, locale, onEvent, connectionIds);
 }
 
 export async function runDataAnalyst(input: {
@@ -155,11 +167,19 @@ export async function runDataAnalyst(input: {
 	systemMd: string;
 	locale?: AgentLocale | string;
 	schemaDigest?: string;
+	connectionIds?: string[];
+	skillIds?: string[];
+	conversationContext?: string;
 	llm: RunLlmConfig;
 	signal?: AbortSignal;
 	onEvent?: (event: AnalystEvent) => void;
 }): Promise<{ markdown: string; error?: string }> {
 	const locale = normalizeLocale(input.locale);
+	const scopedIds = (input.connectionIds ?? []).map((id) => id.trim()).filter(Boolean);
+	const skillIds = (input.skillIds ?? []).map((id) => id.trim()).filter(Boolean);
+	const allowedTools = resolveSkillTools(skillIds);
+	const skillLabelList = skillLabels(skillIds);
+	const conversationContext = input.conversationContext?.trim() || undefined;
 	const throwIfAborted = () => {
 		if (input.signal?.aborted) throw new Error('cancelled');
 	};
@@ -170,7 +190,8 @@ export async function runDataAnalyst(input: {
 			input.runId,
 			locale,
 			input.schemaDigest,
-			input.onEvent
+			input.onEvent,
+			scopedIds
 		);
 		return { schemaDigest };
 	};
@@ -183,7 +204,15 @@ export async function runDataAnalyst(input: {
 			input.llm,
 			planResponseSchema,
 			planSystemPrompt(state.systemMd, locale),
-			planUserPrompt(state.userQuery, state.schemaDigest, locale)
+			planUserPrompt(
+				state.userQuery,
+				state.schemaDigest,
+				locale,
+				scopedIds,
+				conversationContext,
+				skillLabelList,
+				allowedTools.length > 0 ? allowedTools : undefined
+			)
 		);
 		const steps = response.steps.slice(0, MAX_STEPS).map((step) => ({
 			title: step.title.trim() || 'Step',
@@ -194,19 +223,24 @@ export async function runDataAnalyst(input: {
 			sqlIntent: step.sqlIntent
 		}));
 		input.onEvent?.({ type: 'plan', steps });
-		return { plan: steps, stepIndex: 0 };
+		return { plan: steps, stepIndex: 0, actIters: 0 };
 	};
 
 	const actStep = async (state: AnalystState) => {
 		throwIfAborted();
 		const step = state.plan[state.stepIndex];
-		if (!step) return { stepIndex: state.stepIndex + 1 };
-		input.onEvent?.({
-			type: 'step-start',
-			index: state.stepIndex,
-			total: state.plan.length,
-			title: step.title
-		});
+		if (!step) return { stepIndex: state.stepIndex + 1, actIters: 0 };
+
+		const actIters = state.actIters ?? 0;
+		if (actIters === 0) {
+			input.onEvent?.({
+				type: 'step-start',
+				index: state.stepIndex,
+				total: state.plan.length,
+				title: step.title
+			});
+		}
+
 		const decision = await hostComplete(
 			input.runId,
 			input.llm,
@@ -219,20 +253,34 @@ export async function runDataAnalyst(input: {
 				stepIndex: state.stepIndex,
 				total: state.plan.length,
 				observations: state.observations,
-				locale
+				locale,
+				actIter: actIters,
+				maxActIters: MAX_ACTS_PER_STEP,
+				connectionIds: scopedIds,
+				conversationContext,
+				skillLabels: skillLabelList,
+				allowedTools: allowedTools.length > 0 ? allowedTools : undefined
 			})
 		);
 
 		const observations: AnalystObservation[] = [];
-		if (decision.tool && decision.tool !== 'none') {
+		const toolName = decision.tool && decision.tool !== 'none' ? decision.tool : null;
+		if (toolName) {
 			const args = (decision.args ?? {}) as Record<string, unknown>;
 			const started = performance.now();
-			const result = await callSkillTool(input.runId, decision.tool, args);
+			const blocked =
+				allowedTools.length > 0 && !allowedTools.includes(toolName)
+					? {
+							ok: false as const,
+							error: `tool "${toolName}" is not allowed by selected skills (${skillLabelList.join(' ')})`
+						}
+					: null;
+			const result = blocked ?? (await callSkillTool(input.runId, toolName, args));
 			const durationMs = Math.round(performance.now() - started);
-			const summary = summarizeToolResult(decision.tool, result);
+			const summary = summarizeToolResult(toolName, result);
 			const observation: AnalystObservation = {
 				stepIndex: state.stepIndex,
-				tool: decision.tool,
+				tool: toolName,
 				args,
 				ok: result.ok,
 				summary
@@ -241,7 +289,7 @@ export async function runDataAnalyst(input: {
 			input.onEvent?.({
 				type: 'tool',
 				index: state.stepIndex,
-				tool: decision.tool,
+				tool: toolName,
 				args,
 				ok: result.ok,
 				summary,
@@ -250,11 +298,26 @@ export async function runDataAnalyst(input: {
 		}
 
 		const note = decision.note.trim() || fallbackStepNote(locale, decision.done);
-		input.onEvent?.({ type: 'step-done', index: state.stepIndex, note });
+		const nextActIters = actIters + 1;
+		// Honor done=false: keep the same plan step so the model can call more tools.
+		// Also re-enter when the model wrote a "next:" note without a tool (common stall).
+		const wantsMore = !decision.done;
+		const continueStep = wantsMore && nextActIters < MAX_ACTS_PER_STEP;
 
+		if (continueStep) {
+			input.onEvent?.({ type: 'status', message: note });
+			return {
+				observations,
+				stepIndex: state.stepIndex,
+				actIters: nextActIters
+			};
+		}
+
+		input.onEvent?.({ type: 'step-done', index: state.stepIndex, note });
 		return {
 			observations,
-			stepIndex: state.stepIndex + 1
+			stepIndex: state.stepIndex + 1,
+			actIters: 0
 		};
 	};
 
@@ -270,7 +333,8 @@ export async function runDataAnalyst(input: {
 				query: state.userQuery,
 				plan: state.plan,
 				observations: state.observations,
-				locale
+				locale,
+				conversationContext
 			})
 		);
 		const markdown = response.markdown.trim();
@@ -306,11 +370,13 @@ export async function runDataAnalyst(input: {
 				schemaDigest: '',
 				plan: [],
 				stepIndex: 0,
+				actIters: 0,
 				observations: [],
 				finalMarkdown: '',
 				error: ''
 			},
-			{ recursionLimit: 40 }
+			// gather + plan + synthesize + (MAX_STEPS * MAX_ACTS_PER_STEP) act rounds
+			{ recursionLimit: 12 + MAX_STEPS * MAX_ACTS_PER_STEP }
 		);
 		return {
 			markdown: result.finalMarkdown || 'No analysis produced.',

@@ -12,7 +12,7 @@
 	async function open(id: string) {
 		appMode.setAgentNav('chat');
 		appMode.sessionId = 'home';
-		await agentChat.openSession(id);
+		await agentChat.switchSession(id);
 	}
 </script>
 

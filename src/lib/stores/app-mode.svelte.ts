@@ -1,4 +1,6 @@
+import { isChartEngine, type ChartEngine } from '$lib/agent/chart-spec';
 import type { MessageKey } from '$lib/i18n/en';
+import { workspace } from '$lib/stores/workspace.svelte';
 
 export type AppMode = 'database' | 'agent';
 export type AgentNav = 'chat' | 'sources' | 'insights' | 'history';
@@ -13,6 +15,10 @@ export type AgentBehaviorPrefs = {
 	crossDbJoins: boolean;
 	maskSensitive: boolean;
 	writeConfirm: boolean;
+	/** Chat chart renderer: ECharts or Ant Design Charts (AntV G2). */
+	chartEngine: ChartEngine;
+	/** Conversation session rail expanded (true) or collapsed (false). */
+	sessionRailExpanded: boolean;
 	sourceAutoConnect: Record<string, boolean>;
 };
 
@@ -23,6 +29,8 @@ function defaultPrefs(): AgentBehaviorPrefs {
 		crossDbJoins: true,
 		maskSensitive: true,
 		writeConfirm: true,
+		chartEngine: 'echarts',
+		sessionRailExpanded: true,
 		sourceAutoConnect: {}
 	};
 }
@@ -32,7 +40,9 @@ function readPrefs(): AgentBehaviorPrefs {
 	try {
 		const raw = localStorage.getItem(PREFS_KEY);
 		if (!raw) return defaultPrefs();
-		return { ...defaultPrefs(), ...JSON.parse(raw) };
+		const parsed = { ...defaultPrefs(), ...JSON.parse(raw) } as AgentBehaviorPrefs;
+		if (!isChartEngine(parsed.chartEngine)) parsed.chartEngine = 'echarts';
+		return parsed;
 	} catch {
 		return defaultPrefs();
 	}
@@ -61,8 +71,14 @@ class AppModeStore {
 
 	setMode(mode: AppMode) {
 		this.mode = mode;
-		if (mode === 'agent' && this.agentNav === 'chat' && this.sessionId === 'home') {
-			this.statusMessage = null;
+		if (mode === 'agent') {
+			if (this.agentNav === 'chat' && this.sessionId === 'home') {
+				this.statusMessage = null;
+			}
+			void workspace.warmAgentConnections({
+				autoConnect: this.prefs.autoConnect,
+				sourceAutoConnect: this.prefs.sourceAutoConnect
+			});
 		}
 	}
 
@@ -91,10 +107,10 @@ class AppModeStore {
 		this.statusMessage = null;
 	}
 
-	submitComposer() {
-		const text = this.composerDraft.trim();
-		if (!text) return;
-		const lower = text.toLowerCase();
+	submitComposer(text?: string) {
+		const query = (text ?? this.composerDraft).trim();
+		if (!query) return;
+		const lower = query.toLowerCase();
 		if (
 			lower.includes('标记') ||
 			lower.includes('mark') ||
@@ -103,10 +119,10 @@ class AppModeStore {
 			lower.includes('写入') ||
 			lower.includes('update')
 		) {
-			this.openSession('write-orders', text);
+			this.openSession('write-orders', query);
 			return;
 		}
-		this.openSession('analysis-revenue', text);
+		this.openSession('analysis-revenue', query);
 	}
 
 	applySuggestion(session: Exclude<AgentSessionId, 'home'>, label: string) {

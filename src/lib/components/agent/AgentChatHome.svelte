@@ -37,5 +37,10 @@
 			{/each}
 		</div>
 	</div>
-	<AgentComposer />
+	<AgentComposer
+		enableSourceMention={false}
+		enableSkillSlash={false}
+		enableContextMeter={false}
+		onSubmit={(text) => appMode.submitComposer(text)}
+	/>
 </div>

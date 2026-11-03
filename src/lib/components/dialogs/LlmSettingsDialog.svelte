@@ -11,6 +11,12 @@
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { llmCatalog, llmSettingsDialog, replaceLlmCatalog } from '$lib/llm/catalog.svelte';
 	import {
+		DEFAULT_CONTEXT_WINDOW,
+		formatTokenCount,
+		normalizeContextWindow
+	} from '$lib/llm/context-window';
+	import { detectModelModality, modalityI18nKey } from '$lib/llm/modality';
+	import {
 		createProviderId,
 		removeProvider,
 		upsertProvider,
@@ -28,7 +34,8 @@
 			kind: 'openai',
 			apiKey: '',
 			model: DEFAULT_MODELS.openai,
-			baseUrl: ''
+			baseUrl: '',
+			contextWindow: DEFAULT_CONTEXT_WINDOW
 		};
 	}
 
@@ -46,7 +53,11 @@
 
 	let tab = $state<SettingsTab>('basic');
 	let editingId = $state<string | null>(initial?.id ?? null);
-	let draft = $state<LlmProviderProfile>(initial ? { ...initial } : blankProvider());
+	let draft = $state<LlmProviderProfile>(
+		initial
+			? { ...initial, contextWindow: normalizeContextWindow(initial.contextWindow) }
+			: blankProvider()
+	);
 	let error = $state<string | null>(null);
 	let fileLoggingEnabled = $state(true);
 	let runtimeLogBusy = $state(false);
@@ -65,7 +76,10 @@
 	function startEdit(profile: LlmProviderProfile) {
 		editingId = profile.id;
 		error = null;
-		draft = { ...profile };
+		draft = {
+			...profile,
+			contextWindow: normalizeContextWindow(profile.contextWindow)
+		};
 	}
 
 	function setKind(kind: LlmProviderKind) {
@@ -86,7 +100,8 @@
 			name,
 			apiKey: draft.apiKey.trim(),
 			model: draft.model.trim() || DEFAULT_MODELS[draft.kind],
-			baseUrl: draft.baseUrl.trim()
+			baseUrl: draft.baseUrl.trim(),
+			contextWindow: normalizeContextWindow(draft.contextWindow)
 		};
 		replaceLlmCatalog(upsertProvider(snapshot(), profile));
 		editingId = profile.id;
@@ -106,6 +121,12 @@
 	function kindLabel(kind: LlmProviderKind): string {
 		return kind === 'anthropic' ? t('analysis.provider.anthropic') : t('analysis.provider.openai');
 	}
+
+	function modalityLabel(model: string): string {
+		return t(modalityI18nKey(detectModelModality(model)));
+	}
+
+	const draftModality = $derived(detectModelModality(draft.model));
 
 	async function toggleMcp(enabled: boolean) {
 		try {
@@ -258,7 +279,11 @@
 										onclick={() => startEdit(provider)}
 									>
 										<strong>{provider.name}</strong>
-										<small>{kindLabel(provider.kind)} · {provider.model}</small>
+										<small
+											>{kindLabel(provider.kind)} · {provider.model} · {modalityLabel(
+												provider.model
+											)}</small
+										>
 									</button>
 								{:else}
 									<p class="hint">{t('settings.empty')}</p>
@@ -295,6 +320,33 @@
 								<span>{t('settings.model')}</span>
 								<input bind:value={draft.model} autocomplete="off" spellcheck="false" />
 							</label>
+							<p class="hint settings-modality-hint" title={t('agentMode.composer.modalityHint')}>
+								{t('settings.modality')}:
+								<span
+									class="agent-composer-modality"
+									class:text={draftModality === 'text'}
+									class:multimodal={draftModality === 'multimodal'}
+									class:unknown={draftModality === 'unknown'}
+								>
+									{t(modalityI18nKey(draftModality))}
+								</span>
+							</p>
+							<label class="field">
+								<span>{t('settings.contextWindow')}</span>
+								<input
+									type="number"
+									min="1024"
+									max="2000000"
+									step="1024"
+									bind:value={draft.contextWindow}
+									autocomplete="off"
+								/>
+							</label>
+							<p class="hint">
+								{t('settings.contextWindowHint', {
+									default: formatTokenCount(DEFAULT_CONTEXT_WINDOW)
+								})}
+							</p>
 							<label class="field">
 								<span>{t('settings.baseUrl')}</span>
 								<input

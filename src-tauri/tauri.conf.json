@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm agents-runtime:build && pnpm dev",
-    "beforeBuildCommand": "pnpm agents-runtime:build && pnpm build"
+    "beforeDevCommand": "pnpm fetch:bundled-node && pnpm agents-runtime:build && pnpm dev",
+    "beforeBuildCommand": "pnpm fetch:bundled-node && pnpm agents-runtime:build && pnpm build"
   },
   "app": {
     "windows": [
@@ -38,6 +38,9 @@
     ],
     "resources": {
       "../agents-runtime/dist/main.mjs": "agents-runtime/main.mjs"
-    }
+    },
+    "externalBin": [
+      "binaries/node"
+    ]
   }
 }

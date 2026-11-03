@@ -48,6 +48,9 @@ export const actResponseSchema = z.object({
 			'list_databases',
 			'list_tables',
 			'list_views',
+			'list_indexes',
+			'list_triggers',
+			'list_routines',
 			'get_columns',
 			'get_ddl',
 			'preview_table',
@@ -79,11 +82,67 @@ You design a short multi-step analysis plan. Each step should be concrete and to
 Prefer discovering schema before writing SQL. Cap at 8 steps.`;
 }
 
-export function planUserPrompt(query: string, schemaDigest: string, locale: AgentLocale): string {
+function scopeDirective(locale: AgentLocale, connectionIds?: string[]): string {
+	const ids = (connectionIds ?? []).map((id) => id.trim()).filter(Boolean);
+	if (ids.length === 0) return '';
+	if (locale === 'zh') {
+		return `用户已用 @ 指定数据源，只能使用这些 connectionId：${ids.join(', ')}。不要查询其它连接。`;
+	}
+	return `The user @-mentioned these data sources only. Use solely these connectionId values: ${ids.join(', ')}. Do not query other connections.`;
+}
+
+function skillDirective(
+	locale: AgentLocale,
+	skillLabels: string[] | undefined,
+	allowedTools: string[] | undefined
+): string {
+	const labels = (skillLabels ?? []).filter(Boolean);
+	const tools = (allowedTools ?? []).filter(Boolean);
+	if (labels.length === 0 || tools.length === 0) return '';
+	if (locale === 'zh') {
+		return `用户已用 / 指定技能：${labels.join(' ')}。本轮只能使用这些工具：${tools.join(', ')}（以及 none）。不要调用其它工具。`;
+	}
+	return `The user selected slash skills: ${labels.join(' ')}. For this turn only use these tools: ${tools.join(', ')} (plus none). Do not call other tools.`;
+}
+
+function directiveBlock(
+	locale: AgentLocale,
+	connectionIds?: string[],
+	skillLabels?: string[],
+	allowedTools?: string[]
+): string {
+	const parts = [
+		scopeDirective(locale, connectionIds),
+		skillDirective(locale, skillLabels, allowedTools)
+	].filter(Boolean);
+	if (parts.length === 0) return '';
+	return `\n${parts.join('\n')}\n`;
+}
+
+function conversationBlock(locale: AgentLocale, conversationContext?: string): string {
+	const text = conversationContext?.trim();
+	if (!text) return '';
+	if (locale === 'zh') {
+		return `\n此前对话上下文（可能含压缩摘要）：\n${text}\n`;
+	}
+	return `\nPrior conversation context (may include a compressed summary):\n${text}\n`;
+}
+
+export function planUserPrompt(
+	query: string,
+	schemaDigest: string,
+	locale: AgentLocale,
+	connectionIds?: string[],
+	conversationContext?: string,
+	skillLabels?: string[],
+	allowedTools?: string[]
+): string {
+	const directives = directiveBlock(locale, connectionIds, skillLabels, allowedTools);
+	const prior = conversationBlock(locale, conversationContext);
 	if (locale === 'zh') {
 		return `用户问题：
 ${query}
-
+${prior}${directives}
 Schema 摘要（连接 / 库 / 样例表）：
 ${schemaDigest}
 
@@ -91,7 +150,7 @@ ${schemaDigest}
 	}
 	return `User question:
 ${query}
-
+${prior}${directives}
 Schema digest (connections / databases / sample tables):
 ${schemaDigest}
 
@@ -104,8 +163,10 @@ export function actSystemPrompt(systemMd: string, locale: AgentLocale): string {
 
 ${languageDirective(locale)}
 
-你一次只执行一个分析步骤，最多调用一个工具。
-若本步证据已足够，设 done=true 且 tool=none。
+你一次只决定「本步」的下一次动作，最多调用一个工具。
+- 若本步目标尚未完成：设 done=false，并指定真实 tool（不可为 none）；运行时会带着新观察再次进入本步。
+- 若本步证据已足够：设 done=true 且 tool=none。
+- 禁止仅用 note 写「下一步：…」却设 tool=none；要把下一步变成实际 tool 调用。
 写 SQL 时使用 tool=query，且只能是单条只读语句。
 参数键名使用 camelCase：connectionId、schema、table、sql、limit、offset、kind、name。`;
 	}
@@ -113,8 +174,10 @@ ${languageDirective(locale)}
 
 ${languageDirective(locale)}
 
-You execute ONE analysis step using at most one tool call.
-If you already have enough evidence for this step, set done=true and tool=none.
+Decide the NEXT action for the CURRENT plan step; at most one tool call.
+- If this step's goal is not yet met: set done=false and a real tool (not none); the runtime will re-enter this step with new observations.
+- If you already have enough evidence for this step: set done=true and tool=none.
+- Do not only write a "next:" note with tool=none — turn that into an actual tool call.
 For SQL use tool=query with a single read-only statement.
 Args must use camelCase keys: connectionId, schema, table, sql, limit, offset, kind, name.`;
 }
@@ -127,18 +190,37 @@ export function actUserPrompt(input: {
 	total: number;
 	observations: AnalystObservation[];
 	locale: AgentLocale;
+	actIter?: number;
+	maxActIters?: number;
+	connectionIds?: string[];
+	conversationContext?: string;
+	skillLabels?: string[];
+	allowedTools?: string[];
 }): string {
 	const prior = input.observations
-		.slice(-6)
+		.slice(-8)
 		.map(
 			(item) =>
 				`- step ${item.stepIndex + 1} ${item.tool} ok=${item.ok}: ${item.summary.slice(0, 500)}`
 		)
 		.join('\n');
+	const iter =
+		typeof input.actIter === 'number' && typeof input.maxActIters === 'number'
+			? input.locale === 'zh'
+				? `本步内第 ${input.actIter + 1}/${input.maxActIters} 次动作。`
+				: `Action ${input.actIter + 1}/${input.maxActIters} within this step.`
+			: '';
+	const directives = directiveBlock(
+		input.locale,
+		input.connectionIds,
+		input.skillLabels,
+		input.allowedTools
+	);
+	const history = conversationBlock(input.locale, input.conversationContext);
 	if (input.locale === 'zh') {
 		return `用户问题：
 ${input.query}
-
+${history}${directives}
 Schema 摘要：
 ${input.schemaDigest}
 
@@ -149,15 +231,16 @@ connectionHint: ${input.step.connectionHint ?? ''}
 tablesHint: ${(input.step.tablesHint ?? []).join(', ')}
 toolHint: ${input.step.toolHint ?? ''}
 sqlIntent: ${input.step.sqlIntent ?? ''}
+${iter}
 
 近期观察：
 ${prior || '（无）'}
 
-为本步决定下一次工具调用，或标记 done=true。`;
+为本步决定下一次工具调用（done=false），或标记本步完成（done=true, tool=none）。`;
 	}
 	return `User question:
 ${input.query}
-
+${history}${directives}
 Schema digest:
 ${input.schemaDigest}
 
@@ -168,11 +251,12 @@ connectionHint: ${input.step.connectionHint ?? ''}
 tablesHint: ${(input.step.tablesHint ?? []).join(', ')}
 toolHint: ${input.step.toolHint ?? ''}
 sqlIntent: ${input.step.sqlIntent ?? ''}
+${iter}
 
 Recent observations:
 ${prior || '(none)'}
 
-Decide the next tool call for this step, or mark done=true.`;
+Decide the next tool call for this step (done=false), or mark the step complete (done=true, tool=none).`;
 }
 
 export function synthesizeSystemPrompt(systemMd: string, locale: AgentLocale): string {
@@ -181,17 +265,25 @@ export function synthesizeSystemPrompt(systemMd: string, locale: AgentLocale): s
 
 ${languageDirective(locale)}
 
-用 Markdown 给用户写最终回答。
+用 Markdown 给用户写最终回答（支持标题、列表、表格、链接、代码块；需要时可内嵌 HTML，或使用 \`\`\`html\`\`\` 代码块）。
 包含：简短总结、关键发现、证据（表 / SQL）、注意事项。
-不要编造未观察到的数字。`;
+不要编造未观察到的数字。
+若观察结果适合可视化（对比、趋势、占比），额外附加一个或多个 \`\`\`chart\`\`\` JSON 代码块，格式如下之一：
+{"type":"bar"|"line"|"area","title":"...","categories":["A","B"],"series":[{"name":"指标","data":[1,2]}]}
+{"type":"pie","title":"...","data":[{"name":"A","value":1}]}
+图表数据必须来自观察，禁止臆造。`;
 	}
 	return `${systemMd}
 
 ${languageDirective(locale)}
 
-Write the final answer in Markdown for the user.
+Write the final answer in Markdown for the user (headings, lists, tables, links, code; HTML inline or in \`\`\`html\`\`\` fences when useful).
 Include: short summary, key findings, evidence (tables / SQL), and caveats.
-Do not invent numbers that were not observed.`;
+Do not invent numbers that were not observed.
+When observations are chartable (comparison, trend, share), also append one or more \`\`\`chart\`\`\` JSON fences:
+{"type":"bar"|"line"|"area","title":"...","categories":["A","B"],"series":[{"name":"metric","data":[1,2]}]}
+{"type":"pie","title":"...","data":[{"name":"A","value":1}]}
+Chart values must come from observations only.`;
 }
 
 export function synthesizeUserPrompt(input: {
@@ -199,6 +291,7 @@ export function synthesizeUserPrompt(input: {
 	plan: AnalystPlanStep[];
 	observations: AnalystObservation[];
 	locale: AgentLocale;
+	conversationContext?: string;
 }): string {
 	const planText = input.plan
 		.map((step, index) => `${index + 1}. ${step.title} — ${step.goal}`)
@@ -209,10 +302,11 @@ export function synthesizeUserPrompt(input: {
 				`### Step ${item.stepIndex + 1} · ${item.tool} · ${item.ok ? 'ok' : 'failed'}\nArgs: \`${JSON.stringify(item.args)}\`\n\n\`\`\`\n${item.summary.slice(0, 3000)}\n\`\`\``
 		)
 		.join('\n\n');
+	const history = conversationBlock(input.locale, input.conversationContext);
 	if (input.locale === 'zh') {
 		return `用户问题：
 ${input.query}
-
+${history}
 计划：
 ${planText}
 
@@ -223,7 +317,7 @@ ${obs || '（无）'}
 	}
 	return `User question:
 ${input.query}
-
+${history}
 Plan:
 ${planText}
 

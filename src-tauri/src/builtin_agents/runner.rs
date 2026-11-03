@@ -1,4 +1,7 @@
 use crate::agent::catalog::{self, ToolError};
+use crate::builtin_agents::context::{
+    context_event_payload, prepare_conversation_context, CompressLlm,
+};
 use crate::builtin_agents::store::{
     append_transcript, save_checkpoint, TranscriptEntry,
 };
@@ -14,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
@@ -41,6 +45,12 @@ pub struct AgentStartRunRequest {
     /// App UI locale (`zh` | `en`); forwarded to the Node runtime for LLM output language.
     #[serde(default = "default_locale")]
     pub locale: String,
+    /// Optional @-mentioned data sources; empty/omitted = all saved connections.
+    #[serde(default)]
+    pub connection_ids: Vec<String>,
+    /// Optional /-selected skills; empty/omitted = full tool set.
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
     pub llm: AgentLlmConfig,
 }
 
@@ -69,6 +79,7 @@ struct RunCtx {
     session_id: String,
     llm: AgentLlmConfig,
     cancelled: Arc<AtomicBool>,
+    started_at: Instant,
 }
 
 struct NdjsonMsg {
@@ -150,7 +161,7 @@ impl AgentRunner {
 
     async fn spawn_runtime(self: &Arc<Self>) -> AppResult<()> {
         let script = resolve_runtime_script(&self.app)?;
-        let node = resolve_node_bin()?;
+        let node = resolve_node_bin(&self.app)?;
         *self.script_path.write().await = Some(script.clone());
         *self.node_bin.write().await = Some(node.clone());
 
@@ -471,9 +482,10 @@ impl AgentRunner {
             return Ok(());
         };
 
-        let agents_dir = self.app_state().agents_dir().clone();
+        let chats_dir = self.app_state().chats_dir().clone();
         let agent_id = ctx.agent_id.clone();
         let session_id = ctx.session_id.clone();
+        let duration_ms = ctx.started_at.elapsed().as_millis() as u64;
         let md = markdown.clone();
         let err = error.clone();
         let status = if err.as_deref() == Some("cancelled") {
@@ -483,17 +495,19 @@ impl AgentRunner {
         } else {
             "done"
         };
+        let run_meta = json!({ "durationMs": duration_ms });
 
         let _ = crate::runtime::run_blocking({
-            let agents_dir = agents_dir.clone();
+            let chats_dir = chats_dir.clone();
             let agent_id = agent_id.clone();
             let session_id = session_id.clone();
             let md = md.clone();
             let err = err.clone();
+            let run_meta = run_meta.clone();
             move || {
                 if !md.is_empty() {
                     let _ = append_transcript(
-                        &agents_dir,
+                        &chats_dir,
                         &agent_id,
                         &session_id,
                         TranscriptEntry {
@@ -502,12 +516,12 @@ impl AgentRunner {
                             role: "assistant".into(),
                             kind: "markdown".into(),
                             content: md.clone(),
-                            meta: None,
+                            meta: Some(run_meta.clone()),
                         },
                     );
                 } else if let Some(ref message) = err {
                     let _ = append_transcript(
-                        &agents_dir,
+                        &chats_dir,
                         &agent_id,
                         &session_id,
                         TranscriptEntry {
@@ -516,16 +530,17 @@ impl AgentRunner {
                             role: "assistant".into(),
                             kind: "error".into(),
                             content: message.clone(),
-                            meta: None,
+                            meta: Some(run_meta.clone()),
                         },
                     );
                 }
                 let checkpoint = json!({
                     "markdown": md,
                     "error": err,
+                    "durationMs": duration_ms,
                 });
                 save_checkpoint(
-                    &agents_dir,
+                    &chats_dir,
                     &agent_id,
                     &session_id,
                     checkpoint,
@@ -543,7 +558,8 @@ impl AgentRunner {
                 "sessionId": session_id,
                 "markdown": markdown,
                 "error": error,
-                "status": status
+                "status": status,
+                "durationMs": duration_ms
             }),
         );
         Ok(())
@@ -566,8 +582,34 @@ impl AgentRunner {
             session_id: request.session_id.clone(),
             llm: request.llm.clone(),
             cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: Instant::now(),
         };
         self.runs.write().await.insert(run_id.clone(), ctx);
+
+        // Return runId immediately so the UI thread is not blocked by schema refresh /
+        // DB warm-up. Graph start continues on the worker runtime.
+        let runner = Arc::clone(self);
+        let run_id_bg = run_id.clone();
+        handle().spawn(async move {
+            if let Err(error) = runner.launch_run(run_id_bg, request).await {
+                log::warn!("agent run launch failed: {}", error.user_message());
+            }
+        });
+        Ok(run_id)
+    }
+
+    async fn launch_run(self: &Arc<Self>, run_id: String, request: AgentStartRunRequest) -> AppResult<()> {
+        // Bail out if the user cancelled while we were still warming schema cache.
+        {
+            let runs = self.runs.read().await;
+            if runs
+                .get(&run_id)
+                .map(|ctx| ctx.cancelled.load(Ordering::SeqCst))
+                .unwrap_or(true)
+            {
+                return Ok(());
+            }
+        }
 
         let locale = if request.locale.trim() == "zh" {
             "zh"
@@ -575,8 +617,24 @@ impl AgentRunner {
             "en"
         };
 
-        // Refresh stale local schema metadata (24h TTL) and build digest for the graph.
-        let schema_digest = match crate::schema_cache::ensure_and_digest(&self.app_state()).await {
+        let connection_ids = request
+            .connection_ids
+            .iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect::<Vec<_>>();
+        let connection_filter = if connection_ids.is_empty() {
+            None
+        } else {
+            Some(connection_ids.as_slice())
+        };
+
+        let schema_digest = match crate::schema_cache::ensure_and_digest(
+            &self.app_state(),
+            connection_filter,
+        )
+        .await
+        {
             Ok(digest) => digest,
             Err(error) => {
                 log::warn!(
@@ -587,6 +645,60 @@ impl AgentRunner {
             }
         };
 
+        {
+            let runs = self.runs.read().await;
+            if runs
+                .get(&run_id)
+                .map(|ctx| ctx.cancelled.load(Ordering::SeqCst))
+                .unwrap_or(true)
+            {
+                return Ok(());
+            }
+        }
+
+        let compress_llm = CompressLlm {
+            provider: request.llm.provider.clone(),
+            api_key: request.llm.api_key.clone(),
+            model: request.llm.model.clone(),
+            base_url: request.llm.base_url.clone(),
+            locale: locale.to_string(),
+        };
+        let conversation = match prepare_conversation_context(
+            self.app_state().chats_dir(),
+            &request.agent_id,
+            &request.session_id,
+            Some(&compress_llm),
+        )
+        .await
+        {
+            Ok(ctx) => ctx,
+            Err(error) => {
+                log::warn!(
+                    "conversation context prepare failed: {}",
+                    error.user_message()
+                );
+                crate::builtin_agents::ConversationContext {
+                    text: String::new(),
+                    compressed: false,
+                    summary_chars: 0,
+                    recent_chars: 0,
+                }
+            }
+        };
+        if conversation.compressed {
+            let _ = self
+                .app
+                .emit(
+                    "agent-run-event",
+                    json!({
+                        "runId": run_id,
+                        "agentId": request.agent_id,
+                        "sessionId": request.session_id,
+                        "event": context_event_payload(&conversation)
+                    }),
+                );
+        }
+
         // Never send apiKey to Node.
         let payload = json!({
             "runId": run_id,
@@ -596,6 +708,9 @@ impl AgentRunner {
             "systemMd": request.system_md,
             "locale": locale,
             "schemaDigest": schema_digest,
+            "connectionIds": connection_ids,
+            "skillIds": request.skill_ids,
+            "conversationContext": conversation.text,
             "llm": {
                 "provider": request.llm.provider,
                 "model": request.llm.model,
@@ -610,10 +725,24 @@ impl AgentRunner {
             }))
             .await
         {
+            let agent_id = request.agent_id.clone();
+            let session_id = request.session_id.clone();
             self.runs.write().await.remove(&run_id);
+            let message = err.user_message();
+            let _ = self.app.emit(
+                "agent-run-done",
+                json!({
+                    "runId": run_id,
+                    "agentId": agent_id,
+                    "sessionId": session_id,
+                    "markdown": "",
+                    "error": message,
+                    "status": "error"
+                }),
+            );
             return Err(err);
         }
-        Ok(run_id)
+        Ok(())
     }
 
     pub async fn cancel_run(&self, run_id: &str) -> AppResult<()> {
@@ -642,7 +771,7 @@ async fn persist_event(state: &AppState, ctx: &RunCtx, event: &Value) -> AppResu
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let agents_dir = state.agents_dir().clone();
+    let chats_dir = state.chats_dir().clone();
     let agent_id = ctx.agent_id.clone();
     let session_id = ctx.session_id.clone();
     let event = event.clone();
@@ -759,17 +888,132 @@ async fn persist_event(state: &AppState, ctx: &RunCtx, event: &Value) -> AppResu
         };
 
         if let Some(entry) = entry {
-            append_transcript(&agents_dir, &agent_id, &session_id, entry)?;
+            append_transcript(&chats_dir, &agent_id, &session_id, entry)?;
         }
         Ok(())
     })
     .await
 }
 
-fn resolve_node_bin() -> AppResult<PathBuf> {
+fn is_runnable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn node_file_names() -> &'static [&'static str] {
+    #[cfg(windows)]
+    {
+        &["node.exe", "node"]
+    }
+    #[cfg(not(windows))]
+    {
+        &["node"]
+    }
+}
+
+fn push_if_missing(out: &mut Vec<PathBuf>, path: PathBuf) {
+    if !out.iter().any(|item| item == &path) {
+        out.push(path);
+    }
+}
+
+fn candidate_node_paths(app: &AppHandle) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+
+    // 1) Tauri externalBin lands next to the executable (…/Contents/MacOS/node).
+    if let Ok(exe_dir) = app.path().executable_dir() {
+        for name in node_file_names() {
+            push_if_missing(&mut out, exe_dir.join(name));
+        }
+    }
+
+    // 2) Resources (optional copy).
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        for rel in [
+            "node",
+            "bin/node",
+            "agents-runtime/node",
+            "node.exe",
+            "bin/node.exe",
+            "agents-runtime/node.exe",
+        ] {
+            push_if_missing(&mut out, resource_dir.join(rel));
+        }
+    }
+
+    // 3) PATH entries (GUI apps often have a minimal PATH).
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path_var) {
+        for name in node_file_names() {
+            push_if_missing(&mut out, dir.join(name));
+        }
+    }
+
+    // 4) Common absolute installs (Homebrew / system).
+    for dir in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        r"C:\Program Files\nodejs",
+    ] {
+        for name in node_file_names() {
+            push_if_missing(&mut out, PathBuf::from(dir).join(name));
+        }
+    }
+
+    // 5) Version managers under $HOME (nvm / fnm / volta / asdf).
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from).or_else(|| {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }) {
+        for name in node_file_names() {
+            push_if_missing(&mut out, home.join(".volta").join("bin").join(name));
+            push_if_missing(&mut out, home.join(".local").join("bin").join(name));
+            push_if_missing(
+                &mut out,
+                home.join(".asdf").join("shims").join(name),
+            );
+        }
+
+        // nvm: ~/.nvm/versions/node/<ver>/bin/node — pick lexicographically latest.
+        let nvm_versions = home.join(".nvm").join("versions").join("node");
+        if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|entry| entry.ok().map(|e| e.path()))
+                .filter(|path| path.is_dir())
+                .collect();
+            versions.sort();
+            for version_dir in versions.into_iter().rev() {
+                for name in node_file_names() {
+                    push_if_missing(&mut out, version_dir.join("bin").join(name));
+                }
+            }
+        }
+
+        // fnm: ~/.fnm/node-versions/<ver>/installation/bin/node
+        let fnm_versions = home.join(".fnm").join("node-versions");
+        if let Ok(entries) = std::fs::read_dir(&fnm_versions) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|entry| entry.ok().map(|e| e.path()))
+                .filter(|path| path.is_dir())
+                .collect();
+            versions.sort();
+            for version_dir in versions.into_iter().rev() {
+                for name in node_file_names() {
+                    push_if_missing(
+                        &mut out,
+                        version_dir.join("installation").join("bin").join(name),
+                    );
+                }
+            }
+        }
+    }
+
+    out
+}
+
+fn resolve_node_bin(app: &AppHandle) -> AppResult<PathBuf> {
     if let Ok(custom) = std::env::var("HIDATALINKER_NODE") {
         let path = PathBuf::from(custom);
-        if path.exists() {
+        if is_runnable_file(&path) {
             return Ok(path);
         }
         return Err(AppError::msg(format!(
@@ -777,7 +1021,18 @@ fn resolve_node_bin() -> AppResult<PathBuf> {
             path.display()
         )));
     }
-    Ok(PathBuf::from("node"))
+
+    for candidate in candidate_node_paths(app) {
+        if is_runnable_file(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    Err(AppError::msg(
+        "Node.js runtime not found. Packaged builds ship a bundled node next to the app binary; \
+         for local/dev installs set HIDATALINKER_NODE or install Node on PATH \
+         (Homebrew/nvm). Rebuild with `pnpm fetch:bundled-node && pnpm tauri:build`.",
+    ))
 }
 
 fn resolve_runtime_script(app: &AppHandle) -> AppResult<PathBuf> {

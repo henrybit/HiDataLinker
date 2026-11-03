@@ -139,12 +139,11 @@ WHERE order_month = date_trunc('month', now()) - interval '1 month'
 		</button>
 	</div>
 	<AgentComposer
-		bind:value={appMode.composerDraft}
 		hint={t('agentMode.composer.hintWrite')}
-		onSubmit={() => {
-			const text = appMode.composerDraft.trim();
+		seedText={appMode.composerDraft}
+		onSubmit={(text, connectionIds, skillIds) => {
 			appMode.openHome();
-			void agentChat.newChat().then(() => agentChat.submit(text));
+			void agentChat.newChat().then(() => agentChat.submit(text, connectionIds, skillIds));
 		}}
 	/>
 </div>

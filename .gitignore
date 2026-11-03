@@ -35,6 +35,9 @@ target/
 # The application lockfile is src-tauri/Cargo.lock and stays tracked.
 src-tauri/vendor/**/Cargo.lock
 
+# Bundled Node binary for agents-runtime (downloaded by scripts/fetch-bundled-node.mjs)
+src-tauri/binaries/node-*
+
 # Tauri
 src-tauri/gen
 

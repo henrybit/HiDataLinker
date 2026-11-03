@@ -1,5 +1,12 @@
 export type AnalystEvent =
 	| { type: 'status'; message: string }
+	| {
+			type: 'context';
+			compressed: boolean;
+			summaryChars: number;
+			recentChars: number;
+			totalChars: number;
+	  }
 	| { type: 'plan'; steps: AnalystPlanStep[] }
 	| {
 			type: 'step-start';

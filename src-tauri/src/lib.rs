@@ -15,9 +15,10 @@ mod state;
 
 use agent::{agent_status, list_agent_audit, set_agent_enabled};
 use commands::{
-    agent_append_transcript, agent_cancel_run, agent_create_session, agent_list_sessions,
-    agent_load_session, agent_read_system, agent_runner_status, agent_save_checkpoint,
-    agent_start_run, agent_tool_call, agents_list, complete_llm,
+    agent_append_transcript, agent_cancel_run, agent_compress_context, agent_create_session,
+    agent_list_sessions, agent_load_session, agent_read_context, agent_read_system,
+    agent_runner_status, agent_save_checkpoint, agent_start_run, agent_tool_call, agents_list,
+    complete_llm,
     connect_session, create_database, delete_analysis_history, delete_connection,
     delete_migration_history, delete_query_cache, disconnect_session, drop_database, dump_database,
     dump_table, execute_sql, get_columns, get_ddl, list_analysis_history, list_charset_catalog,
@@ -67,6 +68,8 @@ pub fn run() {
             agent_load_session,
             agent_append_transcript,
             agent_save_checkpoint,
+            agent_read_context,
+            agent_compress_context,
             agent_tool_call,
             agent_start_run,
             agent_cancel_run,

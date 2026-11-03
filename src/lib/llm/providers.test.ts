@@ -16,7 +16,8 @@ const openai: LlmProviderProfile = {
 	kind: 'openai',
 	apiKey: 'sk-test',
 	model: 'gpt-4o-mini',
-	baseUrl: 'https://proxy.example/v1'
+	baseUrl: 'https://proxy.example/v1',
+	contextWindow: 128_000
 };
 
 function memoryStorage() {
@@ -71,11 +72,29 @@ describe('readCatalog', () => {
 					kind: 'anthropic',
 					apiKey: 'sk-ant',
 					model: 'claude-sonnet-4-5',
-					baseUrl: ''
+					baseUrl: '',
+					contextWindow: 128_000
 				}
 			],
 			selectedId: 'legacy-1'
 		});
+	});
+
+	it('fills a missing contextWindow with the 128K default', () => {
+		const raw = JSON.stringify({
+			providers: [
+				{
+					id: 'oa',
+					name: 'Work OpenAI',
+					kind: 'openai',
+					apiKey: 'sk-test',
+					model: 'gpt-4o-mini',
+					baseUrl: ''
+				}
+			],
+			selectedId: 'oa'
+		});
+		expect(readCatalog(raw, null).providers[0]?.contextWindow).toBe(128_000);
 	});
 
 	it('ignores an untouched legacy record', () => {
@@ -114,7 +133,8 @@ describe('upsertProvider and removeProvider', () => {
 			kind: 'anthropic',
 			apiKey: 'sk-ant',
 			model: 'claude-sonnet-4-5',
-			baseUrl: ''
+			baseUrl: '',
+			contextWindow: 128_000
 		};
 		const catalog = upsertProvider(upsertProvider(emptyCatalog(), openai), second);
 		const renamed = { ...openai, name: 'Renamed' };
@@ -131,7 +151,8 @@ describe('upsertProvider and removeProvider', () => {
 			kind: 'anthropic',
 			apiKey: '',
 			model: 'claude-sonnet-4-5',
-			baseUrl: ''
+			baseUrl: '',
+			contextWindow: 128_000
 		};
 		const catalog = {
 			providers: [openai, second],

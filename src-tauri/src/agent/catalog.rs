@@ -250,17 +250,29 @@ async fn list_connections(state: &AppState) -> Result<Value, ToolError> {
 
 async fn connect(state: &AppState, args: &Value) -> Result<Value, ToolError> {
     let id = connection_id(args)?;
-    let profile = state.get_profile(&id).await.map_err(tool_failed)?;
+    let result = ensure_connected(state, &id).await?;
+    Ok(json!({
+        "connected": true,
+        "evictedIds": result.map(|r| r.evicted_ids).unwrap_or_default(),
+    }))
+}
+
+/// Open a saved connection when the agent needs it (saved password required).
+async fn ensure_connected(
+    state: &AppState,
+    id: &str,
+) -> Result<Option<crate::models::ConnectResult>, ToolError> {
+    if state.is_connected(id) {
+        return Ok(None);
+    }
+    let profile = state.get_profile(id).await.map_err(tool_failed)?;
     if profile.password.as_deref().unwrap_or("").is_empty() {
         return Err(ToolError::BadRequest(
             "this connection has no saved password; connect it once in HiDataLinker before an agent can use it".into(),
         ));
     }
-    let result = state.connect(&id, None).await.map_err(tool_failed)?;
-    Ok(json!({
-        "connected": true,
-        "evictedIds": result.evicted_ids,
-    }))
+    let result = state.connect(id, None).await.map_err(tool_failed)?;
+    Ok(Some(result))
 }
 
 async fn preview_table(state: &AppState, args: &Value) -> Result<Value, ToolError> {
@@ -301,6 +313,8 @@ where
     Fut: std::future::Future<Output = AppResult<T>> + Send + 'static,
 {
     let connection_id = connection_id(args)?;
+    // Agent tools auto-connect on demand so analysis does not require a prior UI connect.
+    ensure_connected(state, &connection_id).await?;
     let value = with_engine(state, connection_id, work)
         .await
         .map_err(tool_failed)?;

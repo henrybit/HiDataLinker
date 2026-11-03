@@ -183,6 +183,26 @@
 						onToggle={(v) => appMode.patchPrefs({ writeConfirm: v })}
 					/>
 				</li>
+				<li>
+					<div>
+						<strong>{t('agentMode.behavior.chartEngine')}</strong>
+						<p>{t('agentMode.behavior.chartEngineHint')}</p>
+					</div>
+					<select
+						class="agent-chart-engine-select"
+						aria-label={t('agentMode.behavior.chartEngine')}
+						value={appMode.prefs.chartEngine}
+						onchange={(event) => {
+							const value = (event.currentTarget as HTMLSelectElement).value;
+							if (value === 'echarts' || value === 'antd') {
+								appMode.patchPrefs({ chartEngine: value });
+							}
+						}}
+					>
+						<option value="echarts">{t('agentMode.chart.engineEcharts')}</option>
+						<option value="antd">{t('agentMode.chart.engineAntd')}</option>
+					</select>
+				</li>
 			</ul>
 		</section>
 

@@ -36,6 +36,9 @@ async function startRun(payload: RunStartPayload) {
 				systemMd: payload.systemMd,
 				locale: payload.locale,
 				schemaDigest: payload.schemaDigest,
+				connectionIds: payload.connectionIds,
+				skillIds: payload.skillIds,
+				conversationContext: payload.conversationContext,
 				llm: payload.llm,
 				signal: controller.signal,
 				onEvent: (event) => emitRunEvent(runId, event)

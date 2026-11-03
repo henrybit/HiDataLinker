@@ -59,9 +59,10 @@ pub struct AgentSessionDetail {
     pub checkpoint: Option<Value>,
 }
 
-pub fn ensure_builtins(agents_root: &Path) -> AppResult<()> {
+pub fn ensure_builtins(agents_root: &Path, chats_root: &Path) -> AppResult<()> {
     let dir = agents_root.join(DATA_ANALYST_ID);
-    fs::create_dir_all(dir.join("sessions"))?;
+    fs::create_dir_all(&dir)?;
+    fs::create_dir_all(chats_root.join(DATA_ANALYST_ID))?;
     let agent_json = dir.join("agent.json");
     if !agent_json.exists() {
         let info = AgentInfo {
@@ -124,9 +125,14 @@ fn agent_dir(agents_root: &Path, agent_id: &str) -> AppResult<PathBuf> {
     Ok(dir)
 }
 
-fn session_dir(agents_root: &Path, agent_id: &str, session_id: &str) -> AppResult<PathBuf> {
+fn chat_agent_dir(chats_root: &Path, agent_id: &str) -> AppResult<PathBuf> {
+    validate_agent_id(agent_id)?;
+    Ok(chats_root.join(agent_id))
+}
+
+fn session_dir(chats_root: &Path, agent_id: &str, session_id: &str) -> AppResult<PathBuf> {
     validate_session_id(session_id)?;
-    Ok(agent_dir(agents_root, agent_id)?.join("sessions").join(session_id))
+    Ok(chat_agent_dir(chats_root, agent_id)?.join(session_id))
 }
 
 fn clip(value: &str, max: usize) -> String {
@@ -138,7 +144,6 @@ fn clip(value: &str, max: usize) -> String {
 }
 
 pub fn list_agents(agents_root: &Path) -> AppResult<Vec<AgentInfo>> {
-    ensure_builtins(agents_root)?;
     let mut items = Vec::new();
     if !agents_root.is_dir() {
         return Ok(items);
@@ -169,8 +174,8 @@ pub fn read_system_prompt(agents_root: &Path, agent_id: &str) -> AppResult<Strin
     Ok(fs::read_to_string(path)?)
 }
 
-pub fn list_sessions(agents_root: &Path, agent_id: &str) -> AppResult<Vec<AgentSessionMeta>> {
-    let sessions = agent_dir(agents_root, agent_id)?.join("sessions");
+pub fn list_sessions(chats_root: &Path, agent_id: &str) -> AppResult<Vec<AgentSessionMeta>> {
+    let sessions = chat_agent_dir(chats_root, agent_id)?;
     if !sessions.is_dir() {
         return Ok(Vec::new());
     }
@@ -197,7 +202,7 @@ pub fn list_sessions(agents_root: &Path, agent_id: &str) -> AppResult<Vec<AgentS
 }
 
 pub fn create_session(
-    agents_root: &Path,
+    chats_root: &Path,
     agent_id: &str,
     request: NewAgentSession,
 ) -> AppResult<AgentSessionMeta> {
@@ -205,10 +210,10 @@ pub fn create_session(
     if title.is_empty() {
         return Err(AppError::msg("session title is empty"));
     }
-    let root = agent_dir(agents_root, agent_id)?;
+    validate_agent_id(agent_id)?;
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-    let dir = root.join("sessions").join(&id);
+    let dir = session_dir(chats_root, agent_id, &id)?;
     fs::create_dir_all(&dir)?;
     let meta = AgentSessionMeta {
         id,
@@ -224,11 +229,11 @@ pub fn create_session(
 }
 
 pub fn load_session(
-    agents_root: &Path,
+    chats_root: &Path,
     agent_id: &str,
     session_id: &str,
 ) -> AppResult<AgentSessionDetail> {
-    let dir = session_dir(agents_root, agent_id, session_id)?;
+    let dir = session_dir(chats_root, agent_id, session_id)?;
     let meta_raw = fs::read_to_string(dir.join("meta.json"))?;
     let meta: AgentSessionMeta = serde_json::from_str(&meta_raw)?;
     let transcript = read_transcript(&dir.join("transcript.jsonl"))?;
@@ -262,12 +267,13 @@ fn read_transcript(path: &Path) -> AppResult<Vec<TranscriptEntry>> {
 }
 
 pub fn append_transcript(
-    agents_root: &Path,
+    chats_root: &Path,
     agent_id: &str,
     session_id: &str,
     entry: TranscriptEntry,
 ) -> AppResult<TranscriptEntry> {
-    let dir = session_dir(agents_root, agent_id, session_id)?;
+    let dir = session_dir(chats_root, agent_id, session_id)?;
+    fs::create_dir_all(&dir)?;
     let mut entry = entry;
     if entry.id.trim().is_empty() {
         entry.id = uuid::Uuid::new_v4().to_string();
@@ -291,13 +297,14 @@ pub fn append_transcript(
 }
 
 pub fn save_checkpoint(
-    agents_root: &Path,
+    chats_root: &Path,
     agent_id: &str,
     session_id: &str,
     checkpoint: Value,
     status: Option<String>,
 ) -> AppResult<()> {
-    let dir = session_dir(agents_root, agent_id, session_id)?;
+    let dir = session_dir(chats_root, agent_id, session_id)?;
+    fs::create_dir_all(&dir)?;
     fs::write(
         dir.join("checkpoint.json"),
         serde_json::to_vec_pretty(&checkpoint)?,

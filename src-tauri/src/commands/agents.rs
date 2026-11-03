@@ -1,9 +1,12 @@
 use crate::agent::catalog::{self, ToolError};
 use crate::builtin_agents::{
-    append_transcript, create_session, list_agents, list_sessions, load_session, read_system_prompt,
-    save_checkpoint, AgentInfo, AgentRunner, AgentRunnerStatus, AgentSessionDetail,
-    AgentSessionMeta, AgentStartRunRequest, AgentStartRunResponse, NewAgentSession, TranscriptEntry,
+    append_transcript, create_session, force_compress_session, list_agents, list_sessions,
+    load_context_file, load_session, read_system_prompt, save_checkpoint, AgentInfo, AgentRunner,
+    AgentRunnerStatus, AgentSessionDetail, AgentSessionMeta, AgentStartRunRequest,
+    AgentStartRunResponse, CompressLlm, ForceCompressResult, NewAgentSession, SessionContextFile,
+    TranscriptEntry,
 };
+use serde::Deserialize;
 use crate::error::{AppError, AppResult};
 use crate::runtime::run_blocking;
 use crate::state::AppState;
@@ -11,6 +14,20 @@ use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 use tauri::State;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCompressContextRequest {
+    pub agent_id: String,
+    pub session_id: String,
+    #[serde(default = "default_locale")]
+    pub locale: String,
+    pub llm: crate::builtin_agents::AgentLlmConfig,
+}
+
+fn default_locale() -> String {
+    "en".into()
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +59,7 @@ pub async fn agent_list_sessions(
     state: State<'_, AppState>,
     agent_id: String,
 ) -> AppResult<Vec<AgentSessionMeta>> {
-    let dir = state.agents_dir().clone();
+    let dir = state.chats_dir().clone();
     run_blocking(move || list_sessions(&dir, &agent_id)).await
 }
 
@@ -52,7 +69,7 @@ pub async fn agent_create_session(
     agent_id: String,
     request: NewAgentSession,
 ) -> AppResult<AgentSessionMeta> {
-    let dir = state.agents_dir().clone();
+    let dir = state.chats_dir().clone();
     run_blocking(move || create_session(&dir, &agent_id, request)).await
 }
 
@@ -62,7 +79,7 @@ pub async fn agent_load_session(
     agent_id: String,
     session_id: String,
 ) -> AppResult<AgentSessionDetail> {
-    let dir = state.agents_dir().clone();
+    let dir = state.chats_dir().clone();
     run_blocking(move || load_session(&dir, &agent_id, &session_id)).await
 }
 
@@ -73,7 +90,7 @@ pub async fn agent_append_transcript(
     session_id: String,
     entry: TranscriptEntry,
 ) -> AppResult<TranscriptEntry> {
-    let dir = state.agents_dir().clone();
+    let dir = state.chats_dir().clone();
     run_blocking(move || append_transcript(&dir, &agent_id, &session_id, entry)).await
 }
 
@@ -85,8 +102,44 @@ pub async fn agent_save_checkpoint(
     checkpoint: Value,
     status: Option<String>,
 ) -> AppResult<()> {
-    let dir = state.agents_dir().clone();
+    let dir = state.chats_dir().clone();
     run_blocking(move || save_checkpoint(&dir, &agent_id, &session_id, checkpoint, status)).await
+}
+
+#[tauri::command]
+pub async fn agent_read_context(
+    state: State<'_, AppState>,
+    agent_id: String,
+    session_id: String,
+) -> AppResult<SessionContextFile> {
+    let dir = state.chats_dir().clone();
+    run_blocking(move || load_context_file(&dir, &agent_id, &session_id)).await
+}
+
+#[tauri::command]
+pub async fn agent_compress_context(
+    state: State<'_, AppState>,
+    request: AgentCompressContextRequest,
+) -> AppResult<ForceCompressResult> {
+    let locale = if request.locale.trim() == "zh" {
+        "zh"
+    } else {
+        "en"
+    };
+    let llm = CompressLlm {
+        provider: request.llm.provider,
+        api_key: request.llm.api_key,
+        model: request.llm.model,
+        base_url: request.llm.base_url,
+        locale: locale.to_string(),
+    };
+    force_compress_session(
+        state.chats_dir(),
+        &request.agent_id,
+        &request.session_id,
+        Some(&llm),
+    )
+    .await
 }
 
 /// Built-in agents call Skill-compatible tools without requiring MCP to be enabled.

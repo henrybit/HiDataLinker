@@ -13,7 +13,11 @@ use std::path::{Path, PathBuf};
 ///   settings/locale
 ///   settings/agent.json
 ///   agent/endpoint.json
-///   agents/<agentId>/…
+///   agents/<agentId>/…          # agent definition (system.md, agent.json)
+///   chats/<agentId>/<sessionId>/ # chat persistence per session
+///     meta.json
+///     transcript.jsonl
+///     checkpoint.json
 ///   db/index.json
 ///   db/schemas/<connectionId>/…
 ///   runtime/YYYY-MM-DD.log
@@ -31,6 +35,8 @@ pub struct AppPaths {
     pub agent_settings: PathBuf,
     pub agent_endpoint: PathBuf,
     pub agents: PathBuf,
+    /// Conversation transcripts: `chats/<agentId>/<sessionId>/`.
+    pub chats: PathBuf,
     pub db: PathBuf,
     pub db_index: PathBuf,
     pub db_schemas: PathBuf,
@@ -55,6 +61,7 @@ impl AppPaths {
             agent_settings: root.join("settings").join("agent.json"),
             agent_endpoint: root.join("agent").join("endpoint.json"),
             agents: root.join("agents"),
+            chats: root.join("chats"),
             db_index: db.join("index.json"),
             db_schemas: db.join("schemas"),
             db,
@@ -74,6 +81,7 @@ impl AppPaths {
             self.locale.parent(),
             self.agent_endpoint.parent(),
             Some(self.agents.as_path()),
+            Some(self.chats.as_path()),
             Some(self.db.as_path()),
             Some(self.db_schemas.as_path()),
             Some(self.runtime.as_path()),
@@ -83,7 +91,8 @@ impl AppPaths {
                 std::fs::create_dir_all(dir)?;
             }
         }
-        crate::builtin_agents::ensure_builtins(&self.agents)?;
+        crate::builtin_agents::ensure_builtins(&self.agents, &self.chats)?;
+        let _ = migrate_agent_sessions_to_chats(&self.agents, &self.chats);
         Ok(())
     }
 }
@@ -111,6 +120,61 @@ pub fn migrate_file(from: &Path, to: &Path) -> AppResult<()> {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::copy(from, to)?;
+    Ok(())
+}
+
+/// Move legacy `agents/<agentId>/sessions/<sessionId>/` trees into
+/// `chats/<agentId>/<sessionId>/` when the destination does not exist yet.
+pub fn migrate_agent_sessions_to_chats(agents: &Path, chats: &Path) -> AppResult<()> {
+    if !agents.is_dir() {
+        return Ok(());
+    }
+    for agent_entry in std::fs::read_dir(agents)? {
+        let agent_entry = agent_entry?;
+        if !agent_entry.file_type()?.is_dir() {
+            continue;
+        }
+        let agent_id = agent_entry.file_name();
+        let Some(agent_id) = agent_id.to_str() else {
+            continue;
+        };
+        let legacy_sessions = agent_entry.path().join("sessions");
+        if !legacy_sessions.is_dir() {
+            continue;
+        }
+        let dest_agent = chats.join(agent_id);
+        std::fs::create_dir_all(&dest_agent)?;
+        for session_entry in std::fs::read_dir(&legacy_sessions)? {
+            let session_entry = session_entry?;
+            if !session_entry.file_type()?.is_dir() {
+                continue;
+            }
+            let session_id = session_entry.file_name();
+            let dest = dest_agent.join(&session_id);
+            if dest.exists() {
+                continue;
+            }
+            std::fs::rename(session_entry.path(), &dest).or_else(|_| {
+                copy_dir_recursive(&session_entry.path(), &dest)?;
+                let _ = std::fs::remove_dir_all(session_entry.path());
+                Ok::<(), AppError>(())
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> AppResult<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
     Ok(())
 }
 
@@ -180,6 +244,10 @@ mod tests {
             paths.agents,
             PathBuf::from("/Users/ada/.hidatalinker/agents")
         );
+        assert_eq!(
+            paths.chats,
+            PathBuf::from("/Users/ada/.hidatalinker/chats")
+        );
         assert_eq!(paths.db, PathBuf::from("/Users/ada/.hidatalinker/db"));
         assert_eq!(
             paths.db_index,
@@ -223,6 +291,36 @@ mod tests {
         std::fs::write(legacy.join("connections.json"), "old").unwrap();
         migrate_file(&legacy.join("connections.json"), &paths.connections).unwrap();
         assert_eq!(std::fs::read_to_string(&paths.connections).unwrap(), "kept");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn migrates_agent_sessions_into_chats() {
+        let root = std::env::temp_dir().join(format!("hidatalinker-chats-{}", uuid::Uuid::new_v4()));
+        let agents = root.join("agents");
+        let chats = root.join("chats");
+        let session = agents
+            .join("data-analyst")
+            .join("sessions")
+            .join("sess-1");
+        std::fs::create_dir_all(&session).unwrap();
+        std::fs::write(session.join("meta.json"), "{\"id\":\"sess-1\"}").unwrap();
+        std::fs::write(session.join("transcript.jsonl"), "{\"id\":\"m1\"}\n").unwrap();
+
+        migrate_agent_sessions_to_chats(&agents, &chats).unwrap();
+        let dest = chats.join("data-analyst").join("sess-1");
+        assert!(dest.join("meta.json").is_file());
+        assert!(dest.join("transcript.jsonl").is_file());
+        assert!(!session.exists());
+
+        // Second run keeps destination and is idempotent.
+        std::fs::create_dir_all(&session).unwrap();
+        std::fs::write(session.join("meta.json"), "old").unwrap();
+        migrate_agent_sessions_to_chats(&agents, &chats).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dest.join("meta.json")).unwrap(),
+            "{\"id\":\"sess-1\"}"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

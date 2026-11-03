@@ -14,6 +14,12 @@ export type RunStartPayload = {
 	locale?: 'zh' | 'en';
 	/** Prebuilt schema digest from local ~/.hidatalinker/db cache. */
 	schemaDigest?: string;
+	/** Optional @-mentioned connection ids; empty/omitted = all sources. */
+	connectionIds?: string[];
+	/** Optional /-selected skill ids; empty/omitted = full tool set. */
+	skillIds?: string[];
+	/** Compressed prior conversation (summary + recent turns). */
+	conversationContext?: string;
 	llm: {
 		provider: 'openai' | 'anthropic';
 		model: string;

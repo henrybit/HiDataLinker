@@ -254,6 +254,21 @@ export const api = {
 			status: status ?? null
 		}),
 
+	agentReadContext: (agentId: string, sessionId: string) =>
+		call<import('./types').SessionContextFile>('agent_read_context', { agentId, sessionId }),
+
+	agentCompressContext: (request: {
+		agentId: string;
+		sessionId: string;
+		locale: 'zh' | 'en';
+		llm: {
+			provider: string;
+			apiKey: string;
+			model: string;
+			baseUrl: string;
+		};
+	}) => call<import('./types').ForceCompressResult>('agent_compress_context', { request }),
+
 	agentToolCall: (name: string, args: Record<string, unknown> = {}) =>
 		call<import('./types').AgentToolResult>('agent_tool_call', { name, args }),
 
@@ -263,6 +278,10 @@ export const api = {
 		query: string;
 		systemMd: string;
 		locale: 'zh' | 'en';
+		/** Optional @-mentioned data sources; empty = all connections. */
+		connectionIds?: string[];
+		/** Optional /-selected skills; empty = all skills/tools. */
+		skillIds?: string[];
 		llm: {
 			provider: string;
 			apiKey: string;

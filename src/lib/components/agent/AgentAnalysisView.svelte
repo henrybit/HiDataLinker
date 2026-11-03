@@ -93,12 +93,11 @@ WHERE dt BETWEEN DATE_SUB(CURDATE(), INTERVAL 60 DAY) AND CURDATE();</pre>
 	</div>
 
 	<AgentComposer
-		bind:value={appMode.composerDraft}
 		hint={t('agentMode.composer.hintFollow')}
-		onSubmit={() => {
-			const text = appMode.composerDraft.trim();
+		seedText={appMode.composerDraft}
+		onSubmit={(text, connectionIds, skillIds) => {
 			appMode.openHome();
-			void agentChat.newChat().then(() => agentChat.submit(text));
+			void agentChat.newChat().then(() => agentChat.submit(text, connectionIds, skillIds));
 		}}
 	/>
 </div>

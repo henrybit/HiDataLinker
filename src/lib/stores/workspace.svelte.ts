@@ -421,10 +421,15 @@ class WorkspaceStore {
 	}
 
 	/** Establish a live session. Returns true on success. */
-	async connectAsync(id: string, password?: string): Promise<boolean> {
+	async connectAsync(
+		id: string,
+		password?: string,
+		options?: { quiet?: boolean }
+	): Promise<boolean> {
+		const quiet = options?.quiet === true;
 		const key = `connect:${id}`;
 		this.begin(key);
-		this.error = null;
+		if (!quiet) this.error = null;
 		try {
 			await afterPaint();
 			const result = await api.connect(id, password);
@@ -437,7 +442,7 @@ class WorkspaceStore {
 			await this.boot();
 			this.expanded = new Set([...this.expanded, `conn:${id}`]);
 			void this.loadDatabases(id);
-			this.status = connectStatus(evictedNames);
+			if (!quiet) this.status = connectStatus(evictedNames);
 			return true;
 		} catch (error) {
 			const message = errorMessage(error);
@@ -448,13 +453,36 @@ class WorkspaceStore {
 					error
 				);
 			}
-			if (message.toLowerCase().includes('access denied') || !item?.password) {
-				this.passwordPrompt = { id, name: item?.name ?? id };
+			if (!quiet) {
+				if (message.toLowerCase().includes('access denied') || !item?.password) {
+					this.passwordPrompt = { id, name: item?.name ?? id };
+				}
+				this.error = message;
 			}
-			this.error = message;
 			return false;
 		} finally {
 			this.end(key);
+		}
+	}
+
+	/** Best-effort connect for agent mode: saved-password sources only, no password prompts. */
+	async warmAgentConnections(
+		options?: {
+			autoConnect?: boolean;
+			sourceAutoConnect?: Record<string, boolean>;
+		}
+	): Promise<void> {
+		const autoConnect = options?.autoConnect !== false;
+		if (!autoConnect) return;
+		const overrides = options?.sourceAutoConnect ?? {};
+		const targets = this.connections.filter((item) => {
+			if (item.connected) return false;
+			if (overrides[item.id] === false) return false;
+			if (overrides[item.id] !== true && !autoConnect) return false;
+			return !!(item.password || item.savePassword);
+		});
+		for (const item of targets) {
+			await this.connectAsync(item.id, undefined, { quiet: true });
 		}
 	}
 

@@ -12,6 +12,8 @@ commands.allow = [
   "agent_load_session",
   "agent_append_transcript",
   "agent_save_checkpoint",
+  "agent_read_context",
+  "agent_compress_context",
   "agent_tool_call",
   "agent_start_run",
   "agent_cancel_run",
