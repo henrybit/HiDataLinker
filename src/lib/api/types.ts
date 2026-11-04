@@ -325,6 +325,78 @@ export interface AgentToolResult {
 	error?: string | null;
 }
 
+export type AttachmentKind = 'csv' | 'xlsx' | 'xls';
+
+export interface AttachmentMeta {
+	id: string;
+	name: string;
+	path: string;
+	kind: AttachmentKind;
+	size: number;
+	sha256: string;
+}
+
+export interface ColumnStat {
+	name: string;
+	nullCount: number;
+	sampleValues: string[];
+}
+
+export interface ParseSample {
+	headers: string[];
+	sampleRows: string[][];
+	totalRows: number;
+	columnCount: number;
+	columnStats: ColumnStat[];
+	suggestedTable: string;
+	sheetName?: string | null;
+	encoding?: string | null;
+	delimiter?: string | null;
+}
+
+export interface SuggestedColumn {
+	sourceName: string;
+	name: string;
+	sqlType: string;
+	nullable: boolean;
+}
+
+export interface ImportScriptPackage {
+	jobId: string;
+	scriptDir: string;
+	manifestPath: string;
+	schemaSqlPath: string;
+	loadSqlPath: string;
+	ddl: string;
+	suggestedColumns: SuggestedColumn[];
+	sample: ParseSample;
+	totalRows: number;
+}
+
+export interface ImportJobStatus {
+	jobId: string;
+	status: string;
+	writtenRows: number;
+	totalRows: number;
+	error?: string | null;
+}
+
+export interface ImportJobProgress {
+	jobId: string;
+	phase: string;
+	writtenRows: number;
+	totalRows: number;
+	message: string;
+}
+
+export interface ComposerAttachment {
+	id: string;
+	name: string;
+	/** Local path chosen by the user (before staging). */
+	sourcePath: string;
+	size?: number;
+}
+
 export interface ContextMenuState {
 	x: number;
 	y: number;

@@ -282,6 +282,16 @@ export const api = {
 		connectionIds?: string[];
 		/** Optional /-selected skills; empty = all skills/tools. */
 		skillIds?: string[];
+		/** Staged tabular attachments with parse samples for import analysis. */
+		attachments?: Array<{
+			id: string;
+			name: string;
+			path: string;
+			kind: string;
+			size: number;
+			sha256: string;
+			sample?: import('./types').ParseSample | null;
+		}>;
 		llm: {
 			provider: string;
 			apiKey: string;
@@ -299,6 +309,52 @@ export const api = {
 			scriptPath?: string | null;
 			nodeBin?: string | null;
 		}>('agent_runner_status'),
+
+	agentStageAttachments: (request: {
+		agentId: string;
+		sessionId: string;
+		files: Array<{ sourcePath: string; name?: string }>;
+	}) => call<import('./types').AttachmentMeta[]>('agent_stage_attachments', { request }),
+
+	importParseSample: (request: { path: string; name: string }) =>
+		call<import('./types').ParseSample>('import_parse_sample', { request }),
+
+	importInferSchema: (
+		request: { sample: import('./types').ParseSample; engine: string },
+		schema?: string,
+		table?: string
+	) =>
+		call<{
+			columns: import('./types').SuggestedColumn[];
+			ddl: string;
+			table: string;
+			schema: string;
+		}>('import_infer_schema', { request, schema, table }),
+
+	importPrepare: (request: {
+		agentId: string;
+		sessionId: string;
+		attachmentPath: string;
+		attachmentName: string;
+		connectionId: string;
+		engine: string;
+		schema: string;
+		table: string;
+		mode: string;
+		createTable: boolean;
+		ddl?: string;
+		columnMappings?: Array<{ source: string; target: string }>;
+	}) => call<import('./types').ImportScriptPackage>('import_prepare', { request }),
+
+	importStart: (request: { jobId: string; scriptDir: string }) =>
+		call<import('./types').ImportJobStatus>('import_start', { request }),
+
+	importCancel: (jobId: string) => call<void>('import_cancel', { jobId }),
+
+	importStatus: (jobId: string) =>
+		call<import('./types').ImportJobStatus | null>('import_status', { jobId }),
+
+	importReadTextFile: (path: string) => call<string>('import_read_text_file', { path }),
 
 	readRuntimeSettings: () =>
 		call<{ fileLoggingEnabled: boolean }>('read_runtime_settings'),

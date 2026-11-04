@@ -9,6 +9,7 @@
 	import { appMode } from '$lib/stores/app-mode.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 	import AgentComposer from './AgentComposer.svelte';
+	import AgentImportPlanCard from './AgentImportPlanCard.svelte';
 	import AgentMarkdown from './AgentMarkdown.svelte';
 	import AgentMessageMeta from './AgentMessageMeta.svelte';
 	import AgentProgressCard from './AgentProgressCard.svelte';
@@ -210,6 +211,13 @@
 								/>
 							{/if}
 						</div>
+					{:else if message.kind === 'import'}
+						<div class="agent-msg assistant">
+							<AgentImportPlanCard {message} />
+							{#if showMeta(message)}
+								<AgentMessageMeta at={message.at} text={messageCopyText(message)} />
+							{/if}
+						</div>
 					{:else}
 						<div class="agent-msg assistant">
 							<AgentProgressCard
@@ -237,8 +245,8 @@
 			placeholder={t('agentMode.composer.placeholder')}
 			hint={composerHint}
 			clearSignal={agentChat.composerClearSignal}
-			onSubmit={(text, connectionIds, skillIds) =>
-				void agentChat.submit(text, connectionIds, skillIds)}
+			onSubmit={(text, connectionIds, skillIds, attachments) =>
+				void agentChat.submit(text, connectionIds, skillIds, attachments)}
 		/>
 	</div>
 </div>

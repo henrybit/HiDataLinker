@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AtSign, ArrowUp, Paperclip, Settings2, Slash, X } from '@lucide/svelte';
+	import type { ComposerAttachment } from '$lib/api/types';
 	import { AGENT_SKILLS, findSkill, type AgentSkillDef } from '$lib/builtin-agents/skills/catalog';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import {
@@ -34,6 +35,8 @@
 
 	type ActiveMenu = 'mention' | 'skill' | null;
 
+	const ATTACH_EXTENSIONS = ['csv', 'xlsx', 'xls'] as const;
+
 	let {
 		placeholder,
 		hint,
@@ -59,7 +62,12 @@
 		enableLlmPicker?: boolean;
 		/** When true, show context used / max progress for the active session. */
 		enableContextMeter?: boolean;
-		onSubmit?: (text: string, connectionIds: string[], skillIds: string[]) => void;
+		onSubmit?: (
+			text: string,
+			connectionIds: string[],
+			skillIds: string[],
+			attachments: ComposerAttachment[]
+		) => void;
 	} = $props();
 
 	let localValue = $state('');
@@ -68,6 +76,8 @@
 	let lastSeed = $state('');
 	let selected = $state<ComposerSource[]>([]);
 	let selectedSkills = $state<ComposerSkill[]>([]);
+	let attachments = $state<ComposerAttachment[]>([]);
+	let attachError = $state<string | null>(null);
 	let activeMenu = $state<ActiveMenu>(null);
 	let menuQuery = $state('');
 	let menuStart = $state<number | null>(null);
@@ -123,6 +133,8 @@
 			localValue = '';
 			selected = [];
 			selectedSkills = [];
+			attachments = [];
+			attachError = null;
 			closeMenus();
 		}
 	});
@@ -253,17 +265,74 @@
 		queueMicrotask(() => inputEl?.focus());
 	}
 
+	function isAllowedAttachment(name: string): boolean {
+		const lower = name.toLowerCase();
+		return ATTACH_EXTENSIONS.some((ext) => lower.endsWith(`.${ext}`));
+	}
+
+	function formatSize(bytes?: number): string {
+		if (!bytes || bytes <= 0) return '';
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	async function pickAttachments() {
+		if (disabled) return;
+		attachError = null;
+		try {
+			const { open } = await import('@tauri-apps/plugin-dialog');
+			const selectedPaths = await open({
+				multiple: true,
+				filters: [
+					{
+						name: 'CSV / Excel',
+						extensions: [...ATTACH_EXTENSIONS]
+					}
+				]
+			});
+			if (!selectedPaths) return;
+			const paths = Array.isArray(selectedPaths) ? selectedPaths : [selectedPaths];
+			const next = [...attachments];
+			for (const path of paths) {
+				const name = path.split(/[/\\]/).pop() || path;
+				if (!isAllowedAttachment(name)) {
+					attachError = t('agentMode.composer.attachUnsupported', { name });
+					continue;
+				}
+				if (next.some((item) => item.sourcePath === path)) continue;
+				next.push({
+					id: crypto.randomUUID(),
+					name,
+					sourcePath: path
+				});
+			}
+			attachments = next;
+		} catch (error) {
+			attachError =
+				error instanceof Error ? error.message : t('agentMode.composer.attachFailed');
+		}
+	}
+
+	function removeAttachment(id: string) {
+		attachments = attachments.filter((item) => item.id !== id);
+	}
+
 	function submit() {
 		const text = localValue.trim();
-		if (disabled || !text) return;
+		if (disabled) return;
+		if (!text && attachments.length === 0) return;
 		onSubmit?.(
-			text,
+			text || t('agentMode.composer.attachDefaultQuery'),
 			selected.map((item) => item.id),
-			selectedSkills.map((item) => item.id)
+			selectedSkills.map((item) => item.id),
+			attachments
 		);
 		localValue = '';
 		selected = [];
 		selectedSkills = [];
+		attachments = [];
+		attachError = null;
 		closeMenus();
 		queueMicrotask(() => inputEl?.focus());
 	}
@@ -450,8 +519,25 @@
 		{/if}
 	{/if}
 
-	{#if selected.length > 0 || selectedSkills.length > 0}
+	{#if selected.length > 0 || selectedSkills.length > 0 || attachments.length > 0}
 		<div class="agent-composer-sources" aria-label={t('agentMode.composer.chipsLabel')}>
+			{#each attachments as file (file.id)}
+				<span class="agent-attach-chip" title={file.sourcePath}>
+					<span class="agent-attach-chip-name">{file.name}</span>
+					{#if file.size}
+						<span class="agent-attach-chip-meta">{formatSize(file.size)}</span>
+					{/if}
+					<button
+						type="button"
+						class="agent-attach-chip-remove"
+						disabled={disabled}
+						aria-label={t('agentMode.composer.removeAttach', { name: file.name })}
+						onclick={() => removeAttachment(file.id)}
+					>
+						<X size={12} />
+					</button>
+				</span>
+			{/each}
 			{#each selectedSkills as skill (skill.id)}
 				{@const def = findSkill(skill.id)}
 				<span class="agent-skill-chip">
@@ -487,6 +573,9 @@
 				</span>
 			{/each}
 		</div>
+	{/if}
+	{#if attachError}
+		<p class="agent-composer-attach-error">{attachError}</p>
 	{/if}
 
 	<div class="agent-composer-shell">
@@ -549,7 +638,8 @@
 				type="button"
 				class="agent-composer-icon"
 				title={t('agentMode.composer.attach')}
-				disabled
+				disabled={disabled}
+				onclick={() => void pickAttachments()}
 			>
 				<Paperclip size={16} />
 			</button>
@@ -590,7 +680,7 @@
 			<button
 				type="button"
 				class="agent-composer-send"
-				disabled={disabled || !localValue.trim()}
+				disabled={disabled || (!localValue.trim() && attachments.length === 0)}
 				onclick={submit}
 				aria-label={t('agentMode.composer.send')}
 			>

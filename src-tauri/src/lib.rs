@@ -4,6 +4,7 @@ mod builtin_agents;
 mod commands;
 mod db;
 mod error;
+mod import;
 mod llm;
 mod migration_history;
 mod models;
@@ -17,17 +18,18 @@ use agent::{agent_status, list_agent_audit, set_agent_enabled};
 use commands::{
     agent_append_transcript, agent_cancel_run, agent_compress_context, agent_create_session,
     agent_list_sessions, agent_load_session, agent_read_context, agent_read_system,
-    agent_runner_status, agent_save_checkpoint, agent_start_run, agent_tool_call, agents_list,
-    complete_llm,
-    connect_session, create_database, delete_analysis_history, delete_connection,
-    delete_migration_history, delete_query_cache, disconnect_session, drop_database, dump_database,
-    dump_table, execute_sql, get_columns, get_ddl, list_analysis_history, list_charset_catalog,
-    list_connections, list_databases, list_indexes, list_migration_history, list_routines,
-    list_tables, list_triggers, list_views, migrate_database, poll_llm, preview_table,
-    read_analysis_history, read_llm_catalog, read_locale, read_migration_history, read_query_cache,
-    read_runtime_settings, save_analysis_history, save_migration_history, start_llm,
-    table_row_count, test_connection, upsert_connection, write_llm_catalog, write_locale,
-    write_query_cache, write_runtime_settings, write_text_file,
+    agent_runner_status, agent_save_checkpoint, agent_stage_attachments, agent_start_run,
+    agent_tool_call, agents_list, complete_llm, connect_session, create_database,
+    delete_analysis_history, delete_connection, delete_migration_history, delete_query_cache,
+    disconnect_session, drop_database, dump_database, dump_table, execute_sql, get_columns, get_ddl,
+    import_cancel, import_infer_schema, import_parse_sample, import_prepare, import_read_text_file,
+    import_start, import_status, list_analysis_history, list_charset_catalog, list_connections,
+    list_databases, list_indexes, list_migration_history, list_routines, list_tables, list_triggers,
+    list_views, migrate_database, poll_llm, preview_table, read_analysis_history, read_llm_catalog,
+    read_locale, read_migration_history, read_query_cache, read_runtime_settings,
+    save_analysis_history, save_migration_history, start_llm, table_row_count, test_connection,
+    upsert_connection, write_llm_catalog, write_locale, write_query_cache, write_runtime_settings,
+    write_text_file,
 };
 use state::AppState;
 use tauri::Manager;
@@ -74,6 +76,14 @@ pub fn run() {
             agent_start_run,
             agent_cancel_run,
             agent_runner_status,
+            agent_stage_attachments,
+            import_parse_sample,
+            import_infer_schema,
+            import_prepare,
+            import_start,
+            import_cancel,
+            import_status,
+            import_read_text_file,
             complete_llm,
             start_llm,
             poll_llm,

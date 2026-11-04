@@ -1,6 +1,13 @@
 import type { AnalystEvent } from '$lib/builtin-agents/data-analyst/events';
 import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
-import type { AgentSessionMeta, TranscriptEntry } from '$lib/api/types';
+import type {
+	AgentSessionMeta,
+	AttachmentMeta,
+	ComposerAttachment,
+	ImportJobProgress,
+	ParseSample,
+	TranscriptEntry
+} from '$lib/api/types';
 import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 import { estimateTokensFromText } from '$lib/llm/context-window';
 import { toLlmSettings } from '$lib/llm/providers';
@@ -16,10 +23,12 @@ export type ChatMessage = {
 	id: string;
 	at: string;
 	role: 'user' | 'assistant' | 'system';
-	kind: 'text' | 'markdown' | 'progress' | 'tool' | 'error';
+	kind: 'text' | 'markdown' | 'progress' | 'tool' | 'error' | 'import';
 	content: string;
 	meta?: Record<string, unknown> | null;
 };
+
+type StagedAttachment = AttachmentMeta & { sample?: ParseSample | null };
 
 type QueuedPrompt = {
 	id: string;
@@ -27,6 +36,7 @@ type QueuedPrompt = {
 	messageId: string;
 	connectionIds: string[];
 	skillIds: string[];
+	attachments: ComposerAttachment[];
 	sessionId: string;
 };
 
@@ -135,6 +145,76 @@ class AgentChatStore {
 				void this.onRunDone(event.payload);
 			})
 		);
+		this.unsubs.push(
+			await listen<ImportJobProgress>('import-progress', (event) => {
+				this.onImportProgress(event.payload);
+			})
+		);
+		this.unsubs.push(
+			await listen<{ jobId: string; writtenRows: number; totalRows: number; connectionId?: string; schema?: string; table?: string }>(
+				'import-done',
+				(event) => {
+					this.onImportDone(event.payload);
+				}
+			)
+		);
+		this.unsubs.push(
+			await listen<{ jobId: string; error: string }>('import-error', (event) => {
+				this.onImportError(event.payload);
+			})
+		);
+	}
+
+	private findImportMessageId(jobId: string): string | null {
+		const hit = [...this.messages]
+			.reverse()
+			.find((item) => item.kind === 'import' && item.meta?.jobId === jobId);
+		return hit?.id ?? null;
+	}
+
+	private onImportProgress(payload: ImportJobProgress) {
+		const id = this.findImportMessageId(payload.jobId);
+		if (!id) return;
+		this.updateImportMessage(id, {
+			phase: payload.phase,
+			writtenRows: payload.writtenRows,
+			totalRows: payload.totalRows,
+			progressMessage: payload.message,
+			importing: payload.phase !== 'done' && payload.phase !== 'cancelled'
+		});
+	}
+
+	private onImportDone(payload: {
+		jobId: string;
+		writtenRows: number;
+		totalRows: number;
+		connectionId?: string;
+		schema?: string;
+		table?: string;
+	}) {
+		const id = this.findImportMessageId(payload.jobId);
+		if (!id) return;
+		this.updateImportMessage(id, {
+			phase: 'done',
+			writtenRows: payload.writtenRows,
+			totalRows: payload.totalRows,
+			importing: false,
+			progressMessage: t('agentMode.live.importDone', {
+				rows: payload.writtenRows,
+				table: payload.table ?? ''
+			})
+		});
+	}
+
+	private onImportError(payload: { jobId: string; error: string }) {
+		const id = this.findImportMessageId(payload.jobId);
+		if (!id) return;
+		this.updateImportMessage(id, {
+			phase: 'error',
+			importing: false,
+			progressMessage: payload.error,
+			error: payload.error
+		});
 	}
 
 	dispose() {
@@ -239,11 +319,17 @@ class AgentChatStore {
 		await this.refreshHistory();
 	}
 
-	async submit(text?: string, connectionIds: string[] = [], skillIds: string[] = []) {
+	async submit(
+		text?: string,
+		connectionIds: string[] = [],
+		skillIds: string[] = [],
+		attachments: ComposerAttachment[] = []
+	) {
 		const query = (text ?? this.draft).trim();
-		if (!query) return;
+		if (!query && attachments.length === 0) return;
 		const scopedIds = connectionIds.map((id) => id.trim()).filter(Boolean);
 		const scopedSkills = skillIds.map((id) => id.trim()).filter(Boolean);
+		const files = attachments.slice();
 
 		if (!isTauriRuntime()) {
 			this.error = t('agentMode.live.needDesktop');
@@ -273,16 +359,23 @@ class AgentChatStore {
 			this.activeRunSessionId !== viewingId;
 		const busyHere = this.isSessionRunning(viewingId) || (this.running && !!viewingId);
 
+		const finalQuery =
+			query ||
+			(files.length > 0
+				? t('agentMode.composer.attachDefaultQuery')
+				: '');
+
 		if (busyHere || busyElsewhere) {
-			void this.enqueue(query, scopedIds, scopedSkills);
+			void this.enqueue(finalQuery, scopedIds, scopedSkills, files);
 			return;
 		}
 
 		// Fire-and-forget: run lifecycle continues via agent-run-* events.
-		void this.beginRun(query, {
+		void this.beginRun(finalQuery, {
 			addUserMessage: true,
 			connectionIds: scopedIds,
-			skillIds: scopedSkills
+			skillIds: scopedSkills,
+			attachments: files
 		});
 	}
 
@@ -308,7 +401,8 @@ class AgentChatStore {
 	private async enqueue(
 		query: string,
 		connectionIds: string[] = [],
-		skillIds: string[] = []
+		skillIds: string[] = [],
+		attachments: ComposerAttachment[] = []
 	) {
 		if (!this.session) {
 			this.session = await api.agentCreateSession(DATA_ANALYST_ID, {
@@ -327,7 +421,16 @@ class AgentChatStore {
 			meta: {
 				queued: true,
 				...(connectionIds.length > 0 ? { connectionIds } : {}),
-				...(skillIds.length > 0 ? { skillIds } : {})
+				...(skillIds.length > 0 ? { skillIds } : {}),
+				...(attachments.length > 0
+					? {
+							attachments: attachments.map((item) => ({
+								id: item.id,
+								name: item.name,
+								sourcePath: item.sourcePath
+							}))
+						}
+					: {})
 			}
 		});
 		this.messages = [...this.messages, toChatMessage(entry)];
@@ -339,6 +442,7 @@ class AgentChatStore {
 				messageId: entry.id || messageId,
 				connectionIds,
 				skillIds,
+				attachments,
 				sessionId
 			}
 		];
@@ -359,6 +463,7 @@ class AgentChatStore {
 			messageId?: string;
 			connectionIds?: string[];
 			skillIds?: string[];
+			attachments?: ComposerAttachment[];
 		}
 	) {
 		this.running = true;
@@ -366,6 +471,7 @@ class AgentChatStore {
 			.map((id) => id.trim())
 			.filter(Boolean);
 		const skillIds = (options.skillIds ?? []).map((id) => id.trim()).filter(Boolean);
+		const pendingAttachments = options.attachments ?? [];
 		try {
 			// Connection warm-up / schema refresh runs in Rust after start_run returns.
 			// Do not await FE connect loops here — they re-boot the workspace and stall typing.
@@ -376,10 +482,21 @@ class AgentChatStore {
 				});
 			}
 
+			const staged = await this.stageAndParseAttachments(pendingAttachments);
+
 			if (options.addUserMessage) {
 				const meta: Record<string, unknown> = {};
 				if (connectionIds.length > 0) meta.connectionIds = connectionIds;
 				if (skillIds.length > 0) meta.skillIds = skillIds;
+				if (staged.length > 0) {
+					meta.attachments = staged.map((item) => ({
+						id: item.id,
+						name: item.name,
+						path: item.path,
+						kind: item.kind,
+						size: item.size
+					}));
+				}
 				const userEntry = await this.persist({
 					id: uid(),
 					at: nowIso(),
@@ -391,6 +508,10 @@ class AgentChatStore {
 				this.messages = [...this.messages, toChatMessage(userEntry)];
 			} else if (options.messageId) {
 				this.markDequeued(options.messageId);
+			}
+
+			if (staged.length > 0) {
+				await this.pushImportPlanCards(staged);
 			}
 
 			const systemMd = await api.agentReadSystem(DATA_ANALYST_ID);
@@ -412,15 +533,27 @@ class AgentChatStore {
 				}
 			];
 
+			const enrichedQuery =
+				staged.length > 0 ? `${query}\n\n${formatAttachmentContext(staged)}` : query;
+
 			// Returns immediately; schema warm + Node graph start continue in the background.
 			const { runId } = await api.agentStartRun({
 				agentId: DATA_ANALYST_ID,
 				sessionId: this.session.id,
-				query,
+				query: enrichedQuery,
 				systemMd,
 				locale: getLocale(),
 				connectionIds,
 				skillIds,
+				attachments: staged.map((item) => ({
+					id: item.id,
+					name: item.name,
+					path: item.path,
+					kind: item.kind,
+					size: item.size,
+					sha256: item.sha256,
+					sample: item.sample ?? null
+				})),
 				llm: {
 					provider: llm.provider,
 					apiKey: llm.apiKey,
@@ -477,7 +610,8 @@ class AgentChatStore {
 				addUserMessage: false,
 				messageId: next.messageId,
 				connectionIds: next.connectionIds,
-				skillIds: next.skillIds
+				skillIds: next.skillIds,
+				attachments: next.attachments
 			});
 		} finally {
 			this.draining = false;
@@ -493,6 +627,84 @@ class AgentChatStore {
 			this.messages = this.messages.filter((item) => item.id !== this.liveProgressId);
 			this.liveProgressId = null;
 		}
+	}
+
+	private async stageAndParseAttachments(
+		files: ComposerAttachment[]
+	): Promise<StagedAttachment[]> {
+		if (!this.session || files.length === 0) return [];
+		const staged = await api.agentStageAttachments({
+			agentId: DATA_ANALYST_ID,
+			sessionId: this.session.id,
+			files: files.map((item) => ({
+				sourcePath: item.sourcePath,
+				name: item.name
+			}))
+		});
+		const out: StagedAttachment[] = [];
+		for (const item of staged) {
+			try {
+				const sample = await api.importParseSample({
+					path: item.path,
+					name: item.name
+				});
+				out.push({ ...item, sample });
+			} catch (error) {
+				out.push({ ...item, sample: null });
+				const message = errorMessage(error);
+				const entry: ChatMessage = {
+					id: uid(),
+					at: nowIso(),
+					role: 'assistant',
+					kind: 'error',
+					content: t('agentMode.live.importParseFailed', {
+						name: item.name,
+						error: message
+					})
+				};
+				this.messages = [...this.messages, entry];
+			}
+		}
+		return out;
+	}
+
+	private async pushImportPlanCards(staged: StagedAttachment[]) {
+		for (const item of staged) {
+			if (!item.sample) continue;
+			const entry = await this.persist({
+				id: uid(),
+				at: nowIso(),
+				role: 'assistant',
+				kind: 'import',
+				content: t('agentMode.live.importPlanTitle', { name: item.name }),
+				meta: {
+					phase: 'plan',
+					attachment: {
+						id: item.id,
+						name: item.name,
+						path: item.path,
+						kind: item.kind,
+						size: item.size,
+						sha256: item.sha256
+					},
+					sample: item.sample
+				}
+			});
+			this.messages = [...this.messages, toChatMessage(entry)];
+		}
+	}
+
+	updateImportMessage(messageId: string, patch: Record<string, unknown>) {
+		this.messages = this.messages.map((item) => {
+			if (item.id !== messageId) return item;
+			return {
+				...item,
+				meta: {
+					...(item.meta ?? {}),
+					...patch
+				}
+			};
+		});
 	}
 
 	private async persist(entry: TranscriptEntry): Promise<TranscriptEntry> {
@@ -656,6 +868,35 @@ class AgentChatStore {
 			this.error = event.message;
 		}
 	}
+}
+
+function formatAttachmentContext(staged: StagedAttachment[]): string {
+	const blocks = staged.map((item) => {
+		const sample = item.sample;
+		if (!sample) {
+			return `Attachment: ${item.name} (${item.kind}) — parse failed`;
+		}
+		const headerLine = sample.headers.join(' | ');
+		const rowLines = sample.sampleRows
+			.slice(0, 20)
+			.map((row) => row.join(' | '))
+			.join('\n');
+		return [
+			`Attachment: ${item.name} (${item.kind})`,
+			`Suggested table: ${sample.suggestedTable}`,
+			`Total data rows: ${sample.totalRows}; columns: ${sample.columnCount}`,
+			`Headers: ${headerLine}`,
+			`Sample rows (up to 20):`,
+			rowLines || '(none)'
+		].join('\n');
+	});
+	return [
+		'The user attached tabular file(s). Analyze the sample below (NOT the full file).',
+		'Recommend either CREATE TABLE DDL (MySQL/PostgreSQL) or matching an existing table with column mapping.',
+		'Do not execute writes; the UI will let the user confirm import via a script.',
+		'',
+		...blocks
+	].join('\n');
 }
 
 export const agentChat = new AgentChatStore();
