@@ -322,6 +322,8 @@ export const en = {
 	'query.summaryExplain': 'Explain · {summary}',
 	'query.summaryTruncated': '{summary} (truncated)',
 	'query.log.title': 'Execution log',
+	'query.log.show': 'Show execution log',
+	'query.log.hide': 'Hide execution log',
 	'query.log.starting': 'Starting query…',
 	'query.log.explaining': 'Explaining query…',
 	'query.log.failed': 'Query failed',

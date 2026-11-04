@@ -11,6 +11,7 @@
 	import StackSplit from '$lib/components/layout/StackSplit.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import DataGrid from './DataGrid.svelte';
+	import QueryExecLog from './QueryExecLog.svelte';
 	import SqlEditor from './SqlEditor.svelte';
 
 	let {
@@ -213,26 +214,18 @@
 					{/if}
 					{#if result.truncated}· {t('query.truncated')}{/if}
 				</div>
-			{:else if !running}
-				<div class="empty">{t('query.empty')}</div>
 			{/if}
+
+			<div class="query-results-area">
+				{#if result?.columns.length}
+					<DataGrid {result} />
+				{:else if !error && !result && !running}
+					<div class="empty">{t('query.empty')}</div>
+				{/if}
+			</div>
 
 			{#if executionLog.length}
-				<div class="query-exec-log" aria-label={t('query.log.title')}>
-					<div class="query-exec-log-title">{t('query.log.title')}</div>
-					<ol class="query-exec-log-list">
-						{#each executionLog as entry, index (index)}
-							<li class="query-exec-log-item level-{entry.level}">
-								<span class="query-exec-log-level">{entry.level}</span>
-								<span class="query-exec-log-text">{entry.text}</span>
-							</li>
-						{/each}
-					</ol>
-				</div>
-			{/if}
-
-			{#if result?.columns.length}
-				<DataGrid {result} />
+				<QueryExecLog entries={executionLog} />
 			{/if}
 		{/snippet}
 	</StackSplit>

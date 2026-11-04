@@ -315,6 +315,8 @@ export const zh: Record<MessageKey, string> = {
 	'query.summaryExplain': 'Explain · {summary}',
 	'query.summaryTruncated': '{summary}（已截断）',
 	'query.log.title': '执行日志',
+	'query.log.show': '展开执行日志',
+	'query.log.hide': '收起执行日志',
 	'query.log.starting': '开始执行查询…',
 	'query.log.explaining': '正在分析执行计划…',
 	'query.log.failed': '查询失败',
