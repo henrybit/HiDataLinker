@@ -21,12 +21,14 @@
 	const attachment = $derived((message.meta?.attachment ?? null) as AttachmentMeta | null);
 	const sample = $derived((message.meta?.sample ?? null) as ParseSample | null);
 	const importing = $derived(message.meta?.importing === true);
+	const awaitingDecision = $derived(message.meta?.awaitingDecision === true);
 	const phase = $derived(String(message.meta?.phase ?? 'plan'));
 	const progressMessage = $derived(String(message.meta?.progressMessage ?? ''));
 	const writtenRows = $derived(Number(message.meta?.writtenRows ?? 0));
 	const totalRows = $derived(Number(message.meta?.totalRows ?? sample?.totalRows ?? 0));
 	const scriptPreview = $derived(String(message.meta?.scriptPreview ?? ''));
 	const jobId = $derived(String(message.meta?.jobId ?? ''));
+	const decided = $derived(message.meta?.decision != null);
 
 	let mode = $state<'create' | 'append'>('create');
 	let connectionId = $state('');
@@ -39,6 +41,8 @@
 	let busy = $state(false);
 	let localError = $state<string | null>(null);
 	let showScript = $state(false);
+
+	const formLocked = $derived(busy || importing || phase === 'done' || decided);
 
 	const connections = $derived(
 		workspace.connections.filter((item) => {
@@ -124,6 +128,35 @@
 		ddl = inferred.ddl;
 	}
 
+	function decisionTarget(imported: boolean, jobId?: string) {
+		return {
+			messageId: message.id,
+			connectionId: connectionId.trim(),
+			schema: schema.trim(),
+			table: table.trim(),
+			mode,
+			imported,
+			...(jobId ? { jobId } : {})
+		};
+	}
+
+	async function continueAnalyze() {
+		if (!sample || !selectedConnection) return;
+		if (!schema.trim() || !table.trim()) {
+			localError = t('agentMode.live.importNeedTarget');
+			return;
+		}
+		busy = true;
+		localError = null;
+		try {
+			await agentChat.resumeAfterImportDecision(decisionTarget(false));
+		} catch (error) {
+			localError = errorMessage(error);
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function confirmImport() {
 		if (!attachment || !sample || !selectedConnection || !agentChat.session) return;
 		if (!schema.trim() || !table.trim()) {
@@ -175,6 +208,11 @@
 				phase: 'load',
 				progressMessage: t('agentMode.live.importStarting')
 			});
+
+			// Wait for native import-done/error before the agent continues.
+			if (agentChat.awaitingImportDecision) {
+				await agentChat.resumeAfterImportDecision(decisionTarget(true, pkg.jobId));
+			}
 		} catch (error) {
 			localError = errorMessage(error);
 		} finally {
@@ -235,14 +273,17 @@
 		<div class="agent-import-form">
 			<label>
 				<span>{t('agentMode.live.importMode')}</span>
-				<select bind:value={mode} disabled={busy || importing}>
+				<select bind:value={mode} disabled={formLocked}>
 					<option value="create">{t('agentMode.live.importModeCreate')}</option>
 					<option value="append">{t('agentMode.live.importModeAppend')}</option>
 				</select>
 			</label>
 			<label>
 				<span>{t('agentMode.live.importConnection')}</span>
-				<select bind:value={connectionId} disabled={busy || importing || connections.length === 0}>
+				<select
+					bind:value={connectionId}
+					disabled={formLocked || connections.length === 0}
+				>
 					{#if connections.length === 0}
 						<option value="">{t('agentMode.live.importNoMysqlPg')}</option>
 					{:else}
@@ -254,7 +295,7 @@
 			</label>
 			<label>
 				<span>{t('agentMode.live.importSchema')}</span>
-				<select bind:value={schema} disabled={busy || importing || schemas.length === 0}>
+				<select bind:value={schema} disabled={formLocked || schemas.length === 0}>
 					{#each schemas as item}
 						<option value={item.name}>{item.name}</option>
 					{/each}
@@ -263,13 +304,13 @@
 			<label>
 				<span>{t('agentMode.live.importTable')}</span>
 				{#if mode === 'append'}
-					<select bind:value={table} disabled={busy || importing}>
+					<select bind:value={table} disabled={formLocked}>
 						{#each tables as item}
 							<option value={item.name}>{item.name}</option>
 						{/each}
 					</select>
 				{:else}
-					<input bind:value={table} disabled={busy || importing} />
+					<input bind:value={table} disabled={formLocked} />
 				{/if}
 			</label>
 		</div>
@@ -307,6 +348,16 @@
 		<p class="agent-import-done">{progressMessage}</p>
 	{:else}
 		<div class="agent-import-actions">
+			{#if awaitingDecision}
+				<button
+					type="button"
+					class="agent-btn ghost"
+					disabled={busy || !connectionId || !schema || !table}
+					onclick={() => void continueAnalyze()}
+				>
+					{t('agentMode.live.importAnalyzeOnly')}
+				</button>
+			{/if}
 			<button
 				type="button"
 				class="agent-btn primary"
@@ -316,6 +367,9 @@
 				{busy ? t('agentMode.live.importPreparing') : t('agentMode.live.importConfirm')}
 			</button>
 		</div>
+		{#if awaitingDecision}
+			<p class="agent-import-wait-hint">{t('agentMode.live.importWaitHint')}</p>
+		{/if}
 	{/if}
 
 	{#if localError || message.meta?.error}

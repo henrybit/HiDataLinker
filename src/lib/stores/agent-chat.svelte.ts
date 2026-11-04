@@ -41,6 +41,45 @@ type QueuedPrompt = {
 	sessionId: string;
 };
 
+/** Deferred agent start while the user picks import targets. */
+type PendingImportRun = {
+	query: string;
+	connectionIds: string[];
+	skillIds: string[];
+	staged: StagedAttachment[];
+	sessionId: string;
+	importMessageIds: string[];
+};
+
+export type ImportDecisionTarget = {
+	messageId: string;
+	connectionId: string;
+	schema: string;
+	table: string;
+	mode: 'create' | 'append';
+	/** True when the user confirmed an import job for this target. */
+	imported?: boolean;
+	/** Native import job id when waiting for import-done before starting the agent. */
+	jobId?: string;
+	/** Optional import outcome once the native job finishes. */
+	importResult?: {
+		ok: boolean;
+		writtenRows?: number;
+		totalRows?: number;
+		error?: string;
+	};
+};
+
+type PendingPostImportRun = {
+	query: string;
+	connectionIds: string[];
+	skillIds: string[];
+	staged: StagedAttachment[];
+	sessionId: string;
+	target: ImportDecisionTarget;
+	jobId: string;
+};
+
 type AgentRunEventPayload = {
 	runId: string;
 	agentId: string;
@@ -96,8 +135,14 @@ class AgentChatStore {
 	contextNotice = $state<string | null>(null);
 	/** Last prompt context size reported by the runtime (token estimate from chars). */
 	lastPromptContextTokens = $state(0);
+	/** True while import plan card(s) are waiting for the user before the agent starts. */
+	awaitingImportDecision = $state(false);
+	/** True while a confirmed native import job must finish before the agent starts. */
+	awaitingImportJob = $state(false);
 	private liveProgressId: string | null = null;
 	private activeRunId: string | null = null;
+	private pendingImportRun: PendingImportRun | null = null;
+	private pendingPostImportRun: PendingPostImportRun | null = null;
 	private draining = false;
 	private unsubs: UnlistenFn[] = [];
 	private subscribed = false;
@@ -112,6 +157,16 @@ class AgentChatStore {
 
 	isSessionRunning(sessionId: string | null | undefined) {
 		return !!sessionId && this.activeRunSessionId === sessionId && !!this.activeRunId;
+	}
+
+	isAwaitingImportDecision(sessionId: string | null | undefined = this.session?.id) {
+		return (
+			((this.awaitingImportDecision && !!this.pendingImportRun) ||
+				(this.awaitingImportJob && !!this.pendingPostImportRun)) &&
+			!!sessionId &&
+			(this.pendingImportRun?.sessionId === sessionId ||
+				this.pendingPostImportRun?.sessionId === sessionId)
+		);
 	}
 
 	/**
@@ -194,26 +249,37 @@ class AgentChatStore {
 		table?: string;
 	}) {
 		const id = this.findImportMessageId(payload.jobId);
-		if (!id) return;
-		this.updateImportMessage(id, {
-			phase: 'done',
+		if (id) {
+			this.updateImportMessage(id, {
+				phase: 'done',
+				writtenRows: payload.writtenRows,
+				totalRows: payload.totalRows,
+				importing: false,
+				progressMessage: t('agentMode.live.importDone', {
+					rows: payload.writtenRows,
+					table: payload.table ?? ''
+				})
+			});
+		}
+		void this.finishPostImportRun(payload.jobId, {
+			ok: true,
 			writtenRows: payload.writtenRows,
-			totalRows: payload.totalRows,
-			importing: false,
-			progressMessage: t('agentMode.live.importDone', {
-				rows: payload.writtenRows,
-				table: payload.table ?? ''
-			})
+			totalRows: payload.totalRows
 		});
 	}
 
 	private onImportError(payload: { jobId: string; error: string }) {
 		const id = this.findImportMessageId(payload.jobId);
-		if (!id) return;
-		this.updateImportMessage(id, {
-			phase: 'error',
-			importing: false,
-			progressMessage: payload.error,
+		if (id) {
+			this.updateImportMessage(id, {
+				phase: 'error',
+				importing: false,
+				progressMessage: payload.error,
+				error: payload.error
+			});
+		}
+		void this.finishPostImportRun(payload.jobId, {
+			ok: false,
 			error: payload.error
 		});
 	}
@@ -253,6 +319,7 @@ class AgentChatStore {
 	async newChat() {
 		await this.ensureSubscribed();
 		// Keep background runs; only reset the viewed conversation.
+		this.clearPendingImportDecision();
 		this.clearLiveProgress();
 		this.session = null;
 		this.messages = [];
@@ -309,6 +376,13 @@ class AgentChatStore {
 		options: { clearQueue: boolean }
 	) {
 		if (options.clearQueue) this.clearQueue();
+		// Drop deferred start when leaving the session that owns it.
+		if (
+			(this.pendingImportRun && this.pendingImportRun.sessionId !== sessionId) ||
+			(this.pendingPostImportRun && this.pendingPostImportRun.sessionId !== sessionId)
+		) {
+			this.clearPendingImportDecision();
+		}
 		this.clearLiveProgress();
 		const detail = await api.agentLoadSession(DATA_ANALYST_ID, sessionId);
 		this.session = detail.meta;
@@ -316,7 +390,8 @@ class AgentChatStore {
 		this.error = null;
 		this.contextNotice = null;
 		this.lastPromptContextTokens = 0;
-		this.running = this.isSessionRunning(sessionId);
+		this.running =
+			this.isSessionRunning(sessionId) || this.isAwaitingImportDecision(sessionId);
 		await this.refreshHistory();
 	}
 
@@ -355,10 +430,16 @@ class AgentChatStore {
 
 		const viewingId = this.session?.id ?? null;
 		const busyElsewhere =
-			!!this.activeRunId &&
-			!!this.activeRunSessionId &&
-			this.activeRunSessionId !== viewingId;
-		const busyHere = this.isSessionRunning(viewingId) || (this.running && !!viewingId);
+			(!!this.activeRunId &&
+				!!this.activeRunSessionId &&
+				this.activeRunSessionId !== viewingId) ||
+			(!!this.pendingImportRun &&
+				!!viewingId &&
+				this.pendingImportRun.sessionId !== viewingId);
+		const busyHere =
+			this.isSessionRunning(viewingId) ||
+			this.isAwaitingImportDecision(viewingId) ||
+			(this.running && !!viewingId);
 
 		const finalQuery =
 			query ||
@@ -383,6 +464,7 @@ class AgentChatStore {
 	cancel() {
 		const runId = this.activeRunId;
 		this.clearQueue();
+		this.clearPendingImportDecision();
 		if (runId) {
 			void api.agentCancelRun(runId).catch(() => undefined);
 		}
@@ -390,6 +472,118 @@ class AgentChatStore {
 		this.activeRunSessionId = null;
 		this.running = false;
 		this.clearLiveProgress();
+	}
+
+	/**
+	 * Called from the import plan card after the user picks a target
+	 * (and optionally starts import). Releases the gate and starts the agent.
+	 * When `imported` + `jobId` are set, waits for native import-done/error first.
+	 */
+	async resumeAfterImportDecision(target: ImportDecisionTarget) {
+		const pending = this.pendingImportRun;
+		if (!pending) return;
+		if (this.session?.id && this.session.id !== pending.sessionId) return;
+
+		this.updateImportMessage(target.messageId, {
+			awaitingDecision: false,
+			decision: {
+				connectionId: target.connectionId,
+				schema: target.schema,
+				table: target.table,
+				mode: target.mode,
+				imported: target.imported === true,
+				jobId: target.jobId ?? null
+			}
+		});
+		for (const id of pending.importMessageIds) {
+			if (id === target.messageId) continue;
+			this.updateImportMessage(id, { awaitingDecision: false });
+		}
+
+		this.pendingImportRun = null;
+		this.awaitingImportDecision = false;
+
+		if (target.imported && target.jobId) {
+			this.pendingPostImportRun = {
+				query: pending.query,
+				connectionIds: pending.connectionIds,
+				skillIds: pending.skillIds,
+				staged: pending.staged,
+				sessionId: pending.sessionId,
+				target,
+				jobId: target.jobId
+			};
+			this.awaitingImportJob = true;
+			this.running = true;
+			this.clearLiveProgress();
+			this.liveProgressId = uid();
+			this.messages = [
+				...this.messages,
+				{
+					id: this.liveProgressId,
+					at: nowIso(),
+					role: 'assistant',
+					kind: 'progress',
+					content: t('agentMode.live.awaitingImportJob'),
+					meta: { phase: 'awaiting-import-job', jobId: target.jobId }
+				}
+			];
+			return;
+		}
+
+		await this.startAgentAfterImportDecision(pending, target);
+	}
+
+	private async startAgentAfterImportDecision(
+		pending: Pick<PendingImportRun, 'query' | 'connectionIds' | 'skillIds' | 'staged'>,
+		target: ImportDecisionTarget
+	) {
+		try {
+			await this.launchAgentRun({
+				query: pending.query,
+				connectionIds: pending.connectionIds,
+				skillIds: pending.skillIds,
+				staged: pending.staged,
+				importTarget: target
+			});
+		} catch (error) {
+			const message = errorMessage(error);
+			this.error = message;
+			this.clearLiveProgress();
+			this.running = false;
+			this.activeRunId = null;
+			this.activeRunSessionId = null;
+			this.messages = [
+				...this.messages,
+				{
+					id: uid(),
+					at: nowIso(),
+					role: 'assistant',
+					kind: 'error',
+					content: message
+				}
+			];
+			if (!this.activeRunId && !this.isAwaitingImportDecision() && this.queue.length > 0) {
+				void this.drainQueue();
+			}
+		}
+	}
+
+	private async finishPostImportRun(
+		jobId: string,
+		result: NonNullable<ImportDecisionTarget['importResult']>
+	) {
+		const pending = this.pendingPostImportRun;
+		if (!pending || pending.jobId !== jobId) return;
+		this.pendingPostImportRun = null;
+		this.awaitingImportJob = false;
+		const target: ImportDecisionTarget = {
+			...pending.target,
+			imported: true,
+			jobId,
+			importResult: result
+		};
+		await this.startAgentAfterImportDecision(pending, target);
 	}
 
 	private clearQueue() {
@@ -511,65 +705,47 @@ class AgentChatStore {
 				this.markDequeued(options.messageId);
 			}
 
-			if (staged.length > 0) {
-				await this.pushImportPlanCards(staged);
+			const importMessageIds =
+				staged.length > 0 ? await this.pushImportPlanCards(staged) : [];
+
+			// Import plan cards need an explicit user choice before the agent continues.
+			if (importMessageIds.length > 0 && this.session) {
+				this.pendingImportRun = {
+					query,
+					connectionIds,
+					skillIds,
+					staged,
+					sessionId: this.session.id,
+					importMessageIds
+				};
+				this.awaitingImportDecision = true;
+				this.running = true;
+				this.liveProgressId = uid();
+				this.messages = [
+					...this.messages,
+					{
+						id: this.liveProgressId,
+						at: nowIso(),
+						role: 'assistant',
+						kind: 'progress',
+						content: t('agentMode.live.awaitingImportDecision'),
+						meta: { phase: 'awaiting-import' }
+					}
+				];
+				await this.refreshHistory();
+				return;
 			}
 
-			const systemMd = await api.agentReadSystem(DATA_ANALYST_ID);
-			const profile = selectedLlmProvider();
-			if (!profile) {
-				throw new Error(t('agentMode.live.needLlm'));
-			}
-			const llm = toLlmSettings(profile);
-			this.liveProgressId = uid();
-			this.messages = [
-				...this.messages,
-				{
-					id: this.liveProgressId,
-					at: nowIso(),
-					role: 'assistant',
-					kind: 'progress',
-					content: t('agentMode.live.starting'),
-					meta: { phase: 'start' }
-				}
-			];
-
-			const enrichedQuery =
-				staged.length > 0 ? `${query}\n\n${formatAttachmentContext(staged)}` : query;
-
-			// Returns immediately; schema warm + Node graph start continue in the background.
-			const { runId } = await api.agentStartRun({
-				agentId: DATA_ANALYST_ID,
-				sessionId: this.session.id,
-				query: enrichedQuery,
-				systemMd,
-				locale: getLocale(),
+			await this.launchAgentRun({
+				query,
 				connectionIds,
 				skillIds,
-				authMode: appMode.prefs.authMode,
-				attachments: staged.map((item) => ({
-					id: item.id,
-					name: item.name,
-					path: item.path,
-					kind: item.kind,
-					size: item.size,
-					sha256: item.sha256,
-					sample: item.sample ?? null
-				})),
-				llm: {
-					provider: llm.provider,
-					apiKey: llm.apiKey,
-					model: llm.model,
-					baseUrl: llm.baseUrl
-				}
+				staged
 			});
-			this.activeRunId = runId;
-			this.activeRunSessionId = this.session.id;
-			this.running = this.isSessionRunning(this.session.id);
-			await this.refreshHistory();
 		} catch (error) {
 			const message = errorMessage(error);
 			this.error = message;
+			this.clearPendingImportDecision();
 			this.clearLiveProgress();
 			this.running = false;
 			this.activeRunId = null;
@@ -598,8 +774,102 @@ class AgentChatStore {
 		}
 	}
 
+	private async launchAgentRun(input: {
+		query: string;
+		connectionIds: string[];
+		skillIds: string[];
+		staged: StagedAttachment[];
+		importTarget?: ImportDecisionTarget;
+	}) {
+		if (!this.session) {
+			throw new Error(t('agentMode.live.needDesktop'));
+		}
+		const systemMd = await api.agentReadSystem(DATA_ANALYST_ID);
+		const profile = selectedLlmProvider();
+		if (!profile) {
+			throw new Error(t('agentMode.live.needLlm'));
+		}
+		const llm = toLlmSettings(profile);
+		this.clearLiveProgress();
+		this.liveProgressId = uid();
+		this.messages = [
+			...this.messages,
+			{
+				id: this.liveProgressId,
+				at: nowIso(),
+				role: 'assistant',
+				kind: 'progress',
+				content: t('agentMode.live.starting'),
+				meta: { phase: 'start' }
+			}
+		];
+
+		const enrichedQuery =
+			input.staged.length > 0
+				? `${input.query}\n\n${formatAttachmentContext(input.staged, input.importTarget)}`
+				: input.query;
+
+		const connectionIds = [...input.connectionIds];
+		if (
+			input.importTarget?.connectionId &&
+			!connectionIds.includes(input.importTarget.connectionId)
+		) {
+			connectionIds.push(input.importTarget.connectionId);
+		}
+
+		// Returns immediately; schema warm + Node graph start continue in the background.
+		const { runId } = await api.agentStartRun({
+			agentId: DATA_ANALYST_ID,
+			sessionId: this.session.id,
+			query: enrichedQuery,
+			systemMd,
+			locale: getLocale(),
+			connectionIds,
+			skillIds: input.skillIds,
+			authMode: appMode.prefs.authMode,
+			attachments: input.staged.map((item) => ({
+				id: item.id,
+				name: item.name,
+				path: item.path,
+				kind: item.kind,
+				size: item.size,
+				sha256: item.sha256,
+				sample: item.sample ?? null
+			})),
+			llm: {
+				provider: llm.provider,
+				apiKey: llm.apiKey,
+				model: llm.model,
+				baseUrl: llm.baseUrl
+			}
+		});
+		this.activeRunId = runId;
+		this.activeRunSessionId = this.session.id;
+		this.running = this.isSessionRunning(this.session.id);
+		await this.refreshHistory();
+	}
+
+	private clearPendingImportDecision() {
+		const pending = this.pendingImportRun;
+		this.pendingImportRun = null;
+		this.awaitingImportDecision = false;
+		this.pendingPostImportRun = null;
+		this.awaitingImportJob = false;
+		if (!pending) return;
+		for (const id of pending.importMessageIds) {
+			this.updateImportMessage(id, { awaitingDecision: false });
+		}
+	}
+
 	private async drainQueue() {
-		if (this.draining || this.activeRunId) return;
+		if (
+			this.draining ||
+			this.activeRunId ||
+			this.awaitingImportDecision ||
+			this.awaitingImportJob
+		) {
+			return;
+		}
 		const [next, ...rest] = this.queue;
 		if (!next) return;
 		this.draining = true;
@@ -617,8 +887,13 @@ class AgentChatStore {
 			});
 		} finally {
 			this.draining = false;
-			// beginRun failure clears activeRunId — keep draining remaining items.
-			if (!this.activeRunId && this.queue.length > 0) {
+			// beginRun failure / import wait clears activeRunId — only drain when free.
+			if (
+				!this.activeRunId &&
+				!this.awaitingImportDecision &&
+				!this.awaitingImportJob &&
+				this.queue.length > 0
+			) {
 				void this.drainQueue();
 			}
 		}
@@ -670,7 +945,8 @@ class AgentChatStore {
 		return out;
 	}
 
-	private async pushImportPlanCards(staged: StagedAttachment[]) {
+	private async pushImportPlanCards(staged: StagedAttachment[]): Promise<string[]> {
+		const ids: string[] = [];
 		for (const item of staged) {
 			if (!item.sample) continue;
 			const entry = await this.persist({
@@ -681,6 +957,7 @@ class AgentChatStore {
 				content: t('agentMode.live.importPlanTitle', { name: item.name }),
 				meta: {
 					phase: 'plan',
+					awaitingDecision: true,
 					attachment: {
 						id: item.id,
 						name: item.name,
@@ -692,8 +969,10 @@ class AgentChatStore {
 					sample: item.sample
 				}
 			});
+			ids.push(entry.id);
 			this.messages = [...this.messages, toChatMessage(entry)];
 		}
+		return ids;
 	}
 
 	updateImportMessage(messageId: string, patch: Record<string, unknown>) {
@@ -872,11 +1151,14 @@ class AgentChatStore {
 	}
 }
 
-function formatAttachmentContext(staged: StagedAttachment[]): string {
+function formatAttachmentContext(
+	staged: StagedAttachment[],
+	importTarget?: ImportDecisionTarget
+): string {
 	const blocks = staged.map((item) => {
 		const sample = item.sample;
 		if (!sample) {
-			return `Attachment: ${item.name} (${item.kind}) — parse failed`;
+			return `Attachment: ${item.name} (${item.kind}) path=${item.path} — parse failed`;
 		}
 		const headerLine = sample.headers.join(' | ');
 		const rowLines = sample.sampleRows
@@ -885,6 +1167,7 @@ function formatAttachmentContext(staged: StagedAttachment[]): string {
 			.join('\n');
 		return [
 			`Attachment: ${item.name} (${item.kind})`,
+			`Absolute path (use this path; do not scan the disk): ${item.path}`,
 			`Suggested table: ${sample.suggestedTable}`,
 			`Total data rows: ${sample.totalRows}; columns: ${sample.columnCount}`,
 			`Headers: ${headerLine}`,
@@ -892,13 +1175,45 @@ function formatAttachmentContext(staged: StagedAttachment[]): string {
 			rowLines || '(none)'
 		].join('\n');
 	});
-	return [
+	const lines = [
 		'The user attached tabular file(s). Analyze the sample below (NOT the full file).',
 		'Recommend either CREATE TABLE DDL (MySQL/PostgreSQL) or matching an existing table with column mapping.',
-		'Do not execute writes; the UI will let the user confirm import via a script.',
-		'',
-		...blocks
-	].join('\n');
+		'Never walk the whole filesystem to find the file — use the Absolute path below.'
+	];
+	if (importTarget) {
+		lines.push(
+			`User selected import target: connectionId=${importTarget.connectionId}, schema=${importTarget.schema}, table=${importTarget.table}, mode=${importTarget.mode}.`
+		);
+		if (importTarget.imported) {
+			const result = importTarget.importResult;
+			if (result?.ok) {
+				lines.push(
+					`Native UI import already completed successfully: writtenRows=${result.writtenRows ?? '?'}, totalRows=${result.totalRows ?? '?'}.`,
+					'Do NOT DELETE/TRUNCATE/DROP this table and do NOT run write_script/run_script to re-import.',
+					'Focus on SELECT validation and analysis guidance only.'
+				);
+			} else if (result && !result.ok) {
+				lines.push(
+					`Native UI import failed: ${result.error ?? 'unknown error'}.`,
+					'Do NOT DELETE/TRUNCATE the table. Diagnose with SELECT / schema tools; only propose a fix, do not clear existing data unless the user explicitly asks.'
+				);
+			} else {
+				lines.push(
+					'Native UI import owns loading for this target.',
+					'Do NOT DELETE/TRUNCATE/DROP the target table and do NOT re-import via scripts.'
+				);
+			}
+		} else {
+			lines.push(
+				'The user asked to analyze with this target first; do not execute writes unless they later confirm import.'
+			);
+		}
+	} else {
+		lines.push(
+			'Do not execute writes; the UI will let the user confirm import via the native import job.'
+		);
+	}
+	return [...lines, '', ...blocks].join('\n');
 }
 
 export const agentChat = new AgentChatStore();

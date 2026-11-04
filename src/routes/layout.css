@@ -2580,7 +2580,14 @@ button {
 
 .agent-import-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
+}
+
+.agent-import-wait-hint {
+	margin: 8px 0 0;
+	color: #b45309;
+	font-size: 12px;
 }
 
 .agent-import-progress {
@@ -4453,6 +4460,66 @@ button {
 	display: inline-flex;
 	flex: none;
 	color: var(--text-muted);
+}
+
+.agent-process-group {
+	margin-bottom: 10px;
+	border: 1px solid #e2e8f0;
+	border-radius: 12px;
+	background: #f8fafc;
+	overflow: hidden;
+}
+
+.agent-process-group.live {
+	border-color: #cbd5e1;
+	background: white;
+}
+
+.agent-process-summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	cursor: pointer;
+	list-style: none;
+	font-size: 12px;
+	color: var(--text-muted);
+	user-select: none;
+}
+
+.agent-process-summary::-webkit-details-marker {
+	display: none;
+}
+
+.agent-process-chevron {
+	display: inline-flex;
+	flex: none;
+	transition: transform 0.15s ease;
+}
+
+.agent-process-group[open] > .agent-process-summary .agent-process-chevron {
+	transform: rotate(90deg);
+}
+
+.agent-process-meta {
+	color: #94a3b8;
+}
+
+.agent-process-body {
+	padding: 0 10px 10px;
+	border-top: 1px solid #e2e8f0;
+}
+
+.agent-process-body .agent-progress-card {
+	margin-bottom: 8px;
+}
+
+.agent-process-body .agent-progress-card:last-child {
+	margin-bottom: 0;
+}
+
+.agent-process-group:not([open]) .agent-process-body {
+	display: none;
 }
 
 .agent-progress-card {

@@ -119,14 +119,18 @@ function authDirective(locale: AgentLocale, authMode: AgentAuthMode): string {
 			return [
 				'当前为完全授权模式：',
 				'- tool=query 可执行单条写入 / DDL（INSERT、UPDATE、DELETE、CREATE、ALTER 等）；仍禁止多语句与文件/系统侧信道函数。',
-				'- 可使用 write_script / run_script / list_scripts 编写并执行 Python(.py)、Node(.js)、Shell(.sh) 脚本（如数据导入）。脚本落在软件数据目录 temp/scripts/<runId>/。',
+				'- 可使用 write_script / run_script / list_scripts 编写并执行 Python(.py)、Node(.js)、Shell(.sh) 脚本。脚本落在软件数据目录 temp/scripts/<runId>/。',
+				'- 若用户消息写明「Native UI import already completed」或给出了附件 Absolute path：禁止对该目标表 DELETE/TRUNCATE/DROP，也禁止再用脚本重复导入；只用 SELECT 做校验分析。',
+				'- 需要跑脚本时必须用用户提供的 Absolute path，禁止全盘扫描找文件。',
 				'写库或跑脚本前先确认目标环境。'
 			].join('\n');
 		}
 		return [
 			'Full authorization mode:',
 			'- tool=query may run a single write/DDL statement (INSERT, UPDATE, DELETE, CREATE, ALTER, etc.). Multi-statements and file/OS side channels remain blocked.',
-			'- You may use write_script / run_script / list_scripts for Python (.py), Node (.js), or Shell (.sh) scripts (e.g. data import). Scripts live under the app data temp/scripts/<runId>/ directory.',
+			'- You may use write_script / run_script / list_scripts for Python (.py), Node (.js), or Shell (.sh) scripts. Scripts live under the app data temp/scripts/<runId>/ directory.',
+			'- If the user message says "Native UI import already completed" or gives an Absolute path for an attachment: do NOT DELETE/TRUNCATE/DROP that target table and do NOT re-import via scripts; only SELECT for validation/analysis.',
+			'- When running scripts, use the provided Absolute path; never scan the whole filesystem for the file.',
 			'Confirm the target environment before writes or script runs.'
 		].join('\n');
 	}

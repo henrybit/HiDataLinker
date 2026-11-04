@@ -122,6 +122,24 @@ pub fn start_import(app: AppHandle, request: ImportStartRequest) -> AppResult<Im
             run_import_job(app_bg.clone(), script_dir_bg, job_id_bg.clone(), live).await;
         if let Err(error) = result {
             let message = error.user_message();
+            if let Ok(map) = jobs().lock() {
+                if let Some(job) = map.get(&job_id_bg) {
+                    if let Ok(mut status) = job.status.lock() {
+                        status.status = "error".into();
+                        status.error = Some(message.clone());
+                    }
+                }
+            }
+            let _ = app_bg.emit(
+                IMPORT_PROGRESS_EVENT,
+                ImportJobProgress {
+                    job_id: job_id_bg.clone(),
+                    phase: "error".into(),
+                    written_rows: 0,
+                    total_rows: 0,
+                    message: message.clone(),
+                },
+            );
             let _ = app_bg.emit(
                 IMPORT_ERROR_EVENT,
                 json!({
@@ -229,15 +247,41 @@ async fn run_import_job(
     let state = app.state::<AppState>();
     let db_engine = state.engine(&connection_id)?;
 
+    let qualified = qualify_table(&engine, &schema, &table);
+
     if create_table {
         if live.cancelled.load(Ordering::SeqCst) {
             emit_progress("cancelled", 0, total_rows, "Cancelled");
             return Ok(());
         }
         emit_progress("ddl", 0, total_rows, "Creating table");
-        db_engine
+        match db_engine
             .execute_sql(Some(schema.as_str()), &ddl)
-            .await?;
+            .await
+        {
+            Ok(_) => {}
+            Err(error) if is_table_already_exists(&error) => {
+                // "Create" against an existing table means replace rows, not abort.
+                emit_progress(
+                    "ddl",
+                    0,
+                    total_rows,
+                    "Table already exists — clearing rows before reload",
+                );
+                let clear_sql = clear_table_sql(&engine, &qualified);
+                db_engine
+                    .execute_sql(Some(schema.as_str()), &clear_sql)
+                    .await
+                    .map_err(|clear_error| {
+                        AppError::msg(format!(
+                            "table already exists and clear failed: {}; original create error: {}",
+                            clear_error.user_message(),
+                            error.user_message()
+                        ))
+                    })?;
+            }
+            Err(error) => return Err(error),
+        }
     }
 
     emit_progress("load", 0, total_rows, "Loading rows");
@@ -272,7 +316,6 @@ async fn run_import_job(
         .map(|(_, t)| quote_ident(&engine, t))
         .collect::<Vec<_>>()
         .join(", ");
-    let qualified = qualify_table(&engine, &schema, &table);
 
     let mut written = 0u64;
     let mut batch: Vec<String> = Vec::with_capacity(INSERT_BATCH_SIZE);
@@ -296,7 +339,9 @@ async fn run_import_job(
                 let record = record.map_err(|e| AppError::msg(format!("csv: {e}")))?;
                 let values = mapped
                     .iter()
-                    .map(|(idx, _)| sql_literal(record.get(*idx).unwrap_or("").trim(), &engine))
+                    .map(|(idx, _)| {
+                        sql_literal(normalize_cell(record.get(*idx).unwrap_or("")), &engine)
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 batch.push(format!("({values})"));
@@ -350,7 +395,7 @@ async fn run_import_job(
                     .iter()
                     .map(|(idx, _)| {
                         let raw = row.get(*idx).map(cell_str).unwrap_or_default();
-                        sql_literal(raw.trim(), &engine)
+                        sql_literal(normalize_cell(&raw), &engine)
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -427,6 +472,33 @@ async fn flush_batch(
     Ok(())
 }
 
+fn is_table_already_exists(error: &AppError) -> bool {
+    let message = error.user_message().to_ascii_lowercase();
+    message.contains("already exists")
+        || message.contains("1050")
+        || message.contains("42p07")
+}
+
+fn clear_table_sql(engine: &str, qualified: &str) -> String {
+    // Prefer DELETE for broad engine compatibility (TRUNCATE may need privileges).
+    if engine.starts_with("postgres") {
+        format!("TRUNCATE TABLE {qualified} RESTART IDENTITY;")
+    } else {
+        format!("DELETE FROM {qualified};")
+    }
+}
+
+/// Strip Excel/CSV leading apostrophe used to force text (e.g. `'008` → `008`).
+fn normalize_cell(value: &str) -> &str {
+    let trimmed = value.trim();
+    if let Some(rest) = trimmed.strip_prefix('\'') {
+        if !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit()) {
+            return rest;
+        }
+    }
+    trimmed
+}
+
 fn sql_literal(value: &str, engine: &str) -> String {
     if value.is_empty() {
         return "NULL".into();
@@ -443,6 +515,19 @@ fn sql_literal(value: &str, engine: &str) -> String {
     }
     let escaped = value.replace('\'', "''");
     format!("'{escaped}'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_excel_text_apostrophe_from_numeric_codes() {
+        assert_eq!(normalize_cell("'008"), "008");
+        assert_eq!(normalize_cell("  '012  "), "012");
+        assert_eq!(normalize_cell("Albania"), "Albania");
+        assert_eq!(normalize_cell("'ABC"), "'ABC");
+    }
 }
 
 fn cell_str(cell: &Data) -> String {

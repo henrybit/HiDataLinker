@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { Minimize2, Sparkles, Square } from '@lucide/svelte';
 	import { DEMO_SUGGESTIONS } from '$lib/agent/demo';
+	import { buildChatRenderItems } from '$lib/agent/message-groups';
 	import { messageCopyText, messageDurationMs } from '$lib/agent/message-meta';
 	import { findSkill } from '$lib/builtin-agents/skills/catalog';
 	import { t } from '$lib/i18n/i18n.svelte';
@@ -12,7 +13,7 @@
 	import AgentImportPlanCard from './AgentImportPlanCard.svelte';
 	import AgentMarkdown from './AgentMarkdown.svelte';
 	import AgentMessageMeta from './AgentMessageMeta.svelte';
-	import AgentProgressCard from './AgentProgressCard.svelte';
+	import AgentProcessGroup from './AgentProcessGroup.svelte';
 	import AgentSessionRail from './AgentSessionRail.svelte';
 
 	let scroller = $state<HTMLDivElement | null>(null);
@@ -29,17 +30,27 @@
 		void scrollBottom();
 	});
 
+	const awaitingImport = $derived(agentChat.isAwaitingImportDecision());
+
 	const composerHint = $derived(
 		agentChat.queueLength > 0
 			? t('agentMode.live.queueHint', { count: agentChat.queueLength })
-			: agentChat.running
-				? t('agentMode.live.runningHint')
-				: t('agentMode.composer.hint')
+			: agentChat.awaitingImportJob
+				? t('agentMode.live.awaitingImportJob')
+				: awaitingImport
+					? t('agentMode.live.importWaitHint')
+					: agentChat.running
+						? t('agentMode.live.runningHint')
+						: t('agentMode.composer.hint')
 	);
 
 	const viewingRunning = $derived(
-		agentChat.isSessionRunning(agentChat.session?.id) || agentChat.running
+		agentChat.isSessionRunning(agentChat.session?.id) ||
+			awaitingImport ||
+			agentChat.running
 	);
+
+	const renderItems = $derived(buildChatRenderItems(agentChat.messages, viewingRunning));
 
 	function showMeta(message: ChatMessage): boolean {
 		return message.content.trim().length > 0 || message.kind === 'tool';
@@ -154,8 +165,13 @@
 				<p class="agent-context-notice">{agentChat.contextNotice}</p>
 			{/if}
 			<div class="agent-session-scroll" bind:this={scroller}>
-				{#each agentChat.messages as message (message.id)}
-					{#if message.role === 'user'}
+				{#each renderItems as item (item.id)}
+					{#if item.type === 'process'}
+						<div class="agent-msg assistant">
+							<AgentProcessGroup messages={item.messages} live={item.live} />
+						</div>
+					{:else if item.message.role === 'user'}
+						{@const message = item.message}
 						<div class="agent-msg user">
 							{#if skillChips(message).length > 0 || sourceLabels(message).length > 0}
 								<div class="agent-msg-sources">
@@ -183,7 +199,8 @@
 								/>
 							{/if}
 						</div>
-					{:else if message.kind === 'markdown'}
+					{:else if item.message.kind === 'markdown'}
+						{@const message = item.message}
 						<div class="agent-msg assistant">
 							<div class="agent-agent-block">
 								<div class="agent-agent-label">
@@ -200,7 +217,8 @@
 								/>
 							{/if}
 						</div>
-					{:else if message.kind === 'error'}
+					{:else if item.message.kind === 'error'}
+						{@const message = item.message}
 						<div class="agent-msg assistant">
 							<div class="agent-error-banner">{message.content}</div>
 							{#if showMeta(message)}
@@ -211,7 +229,8 @@
 								/>
 							{/if}
 						</div>
-					{:else if message.kind === 'import'}
+					{:else if item.message.kind === 'import'}
+						{@const message = item.message}
 						<div class="agent-msg assistant">
 							<AgentImportPlanCard {message} />
 							{#if showMeta(message)}
@@ -219,18 +238,9 @@
 							{/if}
 						</div>
 					{:else}
+						{@const message = item.message}
 						<div class="agent-msg assistant">
-							<AgentProgressCard
-								{message}
-								live={viewingRunning && message.meta?.phase === 'status'}
-							/>
-							{#if showMeta(message)}
-								<AgentMessageMeta
-									at={message.at}
-									durationMs={messageDurationMs(message)}
-									text={messageCopyText(message)}
-								/>
-							{/if}
+							<AgentProcessGroup messages={[message]} live={false} />
 						</div>
 					{/if}
 				{/each}
