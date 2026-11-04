@@ -25,6 +25,7 @@ pub struct AppState {
     locale_path: PathBuf,
     agents_dir: PathBuf,
     chats_dir: PathBuf,
+    temp_dir: PathBuf,
     schema_index_path: PathBuf,
     schema_cache_dir: PathBuf,
     profiles: RwLock<Vec<ConnectionProfile>>,
@@ -50,6 +51,7 @@ impl AppState {
         let locale_path = paths.locale;
         let agents_dir = paths.agents;
         let chats_dir = paths.chats;
+        let temp_dir = paths.temp;
         let schema_index_path = paths.db_index;
         let schema_cache_dir = paths.db_schemas;
         let profiles = if data_file.exists() {
@@ -68,6 +70,7 @@ impl AppState {
             locale_path,
             agents_dir,
             chats_dir,
+            temp_dir,
             schema_index_path,
             schema_cache_dir,
             profiles: RwLock::new(profiles),
@@ -238,6 +241,10 @@ impl AppState {
 
     pub fn chats_dir(&self) -> &PathBuf {
         &self.chats_dir
+    }
+
+    pub fn temp_dir(&self) -> &PathBuf {
+        &self.temp_dir
     }
 
     pub fn schema_index_path(&self) -> &PathBuf {

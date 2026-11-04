@@ -38,6 +38,7 @@ async function startRun(payload: RunStartPayload) {
 				schemaDigest: payload.schemaDigest,
 				connectionIds: payload.connectionIds,
 				skillIds: payload.skillIds,
+				authMode: payload.authMode,
 				conversationContext: payload.conversationContext,
 				llm: payload.llm,
 				signal: controller.signal,

@@ -2,9 +2,14 @@ import { z } from 'zod';
 import type { AnalystObservation, AnalystPlanStep } from './events.js';
 
 export type AgentLocale = 'zh' | 'en';
+export type AgentAuthMode = 'readonly' | 'full';
 
 export function normalizeLocale(value: unknown): AgentLocale {
 	return value === 'zh' ? 'zh' : 'en';
+}
+
+export function normalizeAuthMode(value: unknown): AgentAuthMode {
+	return value === 'full' ? 'full' : 'readonly';
 }
 
 export function languageDirective(locale: AgentLocale): string {
@@ -55,6 +60,9 @@ export const actResponseSchema = z.object({
 			'get_ddl',
 			'preview_table',
 			'query',
+			'write_script',
+			'run_script',
+			'list_scripts',
 			'none'
 		])
 		.optional(),
@@ -105,13 +113,38 @@ function skillDirective(
 	return `The user selected slash skills: ${labels.join(' ')}. For this turn only use these tools: ${tools.join(', ')} (plus none). Do not call other tools.`;
 }
 
+function authDirective(locale: AgentLocale, authMode: AgentAuthMode): string {
+	if (authMode === 'full') {
+		if (locale === 'zh') {
+			return [
+				'当前为完全授权模式：',
+				'- tool=query 可执行单条写入 / DDL（INSERT、UPDATE、DELETE、CREATE、ALTER 等）；仍禁止多语句与文件/系统侧信道函数。',
+				'- 可使用 write_script / run_script / list_scripts 编写并执行 Python(.py)、Node(.js)、Shell(.sh) 脚本（如数据导入）。脚本落在软件数据目录 temp/scripts/<runId>/。',
+				'写库或跑脚本前先确认目标环境。'
+			].join('\n');
+		}
+		return [
+			'Full authorization mode:',
+			'- tool=query may run a single write/DDL statement (INSERT, UPDATE, DELETE, CREATE, ALTER, etc.). Multi-statements and file/OS side channels remain blocked.',
+			'- You may use write_script / run_script / list_scripts for Python (.py), Node (.js), or Shell (.sh) scripts (e.g. data import). Scripts live under the app data temp/scripts/<runId>/ directory.',
+			'Confirm the target environment before writes or script runs.'
+		].join('\n');
+	}
+	if (locale === 'zh') {
+		return '当前为只读模式：tool=query 只能是单条只读语句（SELECT / WITH…SELECT / EXPLAIN / SHOW / DESCRIBE / TABLE / VALUES）。不可使用脚本工具。';
+	}
+	return 'Read-only mode: tool=query must be a single read-only statement (SELECT / WITH…SELECT / EXPLAIN / SHOW / DESCRIBE / TABLE / VALUES). Script tools are unavailable.';
+}
+
 function directiveBlock(
 	locale: AgentLocale,
 	connectionIds?: string[],
 	skillLabels?: string[],
-	allowedTools?: string[]
+	allowedTools?: string[],
+	authMode: AgentAuthMode = 'readonly'
 ): string {
 	const parts = [
+		authDirective(locale, authMode),
 		scopeDirective(locale, connectionIds),
 		skillDirective(locale, skillLabels, allowedTools)
 	].filter(Boolean);
@@ -135,9 +168,16 @@ export function planUserPrompt(
 	connectionIds?: string[],
 	conversationContext?: string,
 	skillLabels?: string[],
-	allowedTools?: string[]
+	allowedTools?: string[],
+	authMode: AgentAuthMode = 'readonly'
 ): string {
-	const directives = directiveBlock(locale, connectionIds, skillLabels, allowedTools);
+	const directives = directiveBlock(
+		locale,
+		connectionIds,
+		skillLabels,
+		allowedTools,
+		authMode
+	);
 	const prior = conversationBlock(locale, conversationContext);
 	if (locale === 'zh') {
 		return `用户问题：
@@ -157,7 +197,19 @@ ${schemaDigest}
 Return JSON steps only.`;
 }
 
-export function actSystemPrompt(systemMd: string, locale: AgentLocale): string {
+export function actSystemPrompt(
+	systemMd: string,
+	locale: AgentLocale,
+	authMode: AgentAuthMode = 'readonly'
+): string {
+	const sqlRule =
+		authMode === 'full'
+			? locale === 'zh'
+				? '写 SQL 时使用 tool=query，可执行单条语句（含写入 / DDL）；禁止多语句与文件/系统侧信道函数。需要跑导入/ETL 时先 write_script 再 run_script（.py / .js / .sh）。'
+				: 'For SQL use tool=query with a single statement (writes/DDL allowed). Multi-statements and file/OS side channels are blocked. For import/ETL use write_script then run_script (.py / .js / .sh).'
+			: locale === 'zh'
+				? '写 SQL 时使用 tool=query，且只能是单条只读语句。'
+				: 'For SQL use tool=query with a single read-only statement.';
 	if (locale === 'zh') {
 		return `${systemMd}
 
@@ -167,7 +219,7 @@ ${languageDirective(locale)}
 - 若本步目标尚未完成：设 done=false，并指定真实 tool（不可为 none）；运行时会带着新观察再次进入本步。
 - 若本步证据已足够：设 done=true 且 tool=none。
 - 禁止仅用 note 写「下一步：…」却设 tool=none；要把下一步变成实际 tool 调用。
-写 SQL 时使用 tool=query，且只能是单条只读语句。
+${sqlRule}
 参数键名使用 camelCase：connectionId、schema、table、sql、limit、offset、kind、name。
 必须通过 emit_analysis 工具或纯 JSON 返回（字段：done/note/tool/args），禁止输出 Markdown 分析正文。`;
 	}
@@ -179,7 +231,7 @@ Decide the NEXT action for the CURRENT plan step; at most one tool call.
 - If this step's goal is not yet met: set done=false and a real tool (not none); the runtime will re-enter this step with new observations.
 - If you already have enough evidence for this step: set done=true and tool=none.
 - Do not only write a "next:" note with tool=none — turn that into an actual tool call.
-For SQL use tool=query with a single read-only statement.
+${sqlRule}
 Args must use camelCase keys: connectionId, schema, table, sql, limit, offset, kind, name.
 You MUST reply via the emit_analysis tool or raw JSON only (fields: done/note/tool/args). Do not write Markdown analysis prose.`;
 }
@@ -198,6 +250,7 @@ export function actUserPrompt(input: {
 	conversationContext?: string;
 	skillLabels?: string[];
 	allowedTools?: string[];
+	authMode?: AgentAuthMode;
 }): string {
 	const prior = input.observations
 		.slice(-8)
@@ -216,7 +269,8 @@ export function actUserPrompt(input: {
 		input.locale,
 		input.connectionIds,
 		input.skillLabels,
-		input.allowedTools
+		input.allowedTools,
+		input.authMode ?? 'readonly'
 	);
 	const history = conversationBlock(input.locale, input.conversationContext);
 	if (input.locale === 'zh') {

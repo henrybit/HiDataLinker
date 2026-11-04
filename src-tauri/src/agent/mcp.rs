@@ -70,6 +70,7 @@ fn initialize_result(message: &Value) -> Value {
 fn tool_list() -> Vec<Value> {
     catalog::tool_specs()
         .into_iter()
+        .filter(|tool| !catalog::is_desktop_only_tool(tool.name))
         .map(|tool| {
             json!({
                 "name": tool.name,

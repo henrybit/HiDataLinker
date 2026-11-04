@@ -37,6 +37,11 @@ export const AGENT_SKILLS: readonly AgentSkillDef[] = [
 		id: 'sql',
 		slash: 'sql',
 		tools: ['query']
+	},
+	{
+		id: 'script',
+		slash: 'script',
+		tools: ['write_script', 'run_script', 'list_scripts']
 	}
 ] as const;
 

@@ -1,4 +1,5 @@
 use crate::agent::catalog::{self, ToolError};
+use crate::agent::policy::SqlAuthMode;
 use crate::builtin_agents::context::{
     context_event_payload, prepare_conversation_context, CompressLlm,
 };
@@ -51,7 +52,14 @@ pub struct AgentStartRunRequest {
     /// Optional /-selected skills; empty/omitted = full tool set.
     #[serde(default)]
     pub skill_ids: Vec<String>,
+    /// Authorization mode for SQL tools (`readonly` | `full`). Defaults to read-only.
+    #[serde(default = "default_auth_mode")]
+    pub auth_mode: String,
     pub llm: AgentLlmConfig,
+}
+
+fn default_auth_mode() -> String {
+    "readonly".into()
 }
 
 fn default_locale() -> String {
@@ -78,6 +86,7 @@ struct RunCtx {
     agent_id: String,
     session_id: String,
     llm: AgentLlmConfig,
+    auth_mode: SqlAuthMode,
     cancelled: Arc<AtomicBool>,
     started_at: Instant,
 }
@@ -308,16 +317,27 @@ impl AgentRunner {
             .cloned()
             .unwrap_or_else(|| json!({}));
 
-        let cancelled = {
+        let (cancelled, auth_mode) = {
             let runs = self.runs.read().await;
-            runs.get(&run_id)
-                .map(|r| r.cancelled.load(Ordering::SeqCst))
-                .unwrap_or(true)
+            match runs.get(&run_id) {
+                Some(ctx) => (ctx.cancelled.load(Ordering::SeqCst), ctx.auth_mode),
+                None => (true, SqlAuthMode::ReadOnly),
+            }
         };
         let reply = if cancelled {
             json!({ "ok": false, "error": "cancelled", "result": null })
         } else {
-            match catalog::invoke(&self.app_state(), &name, &args).await {
+            match catalog::invoke_with_context(
+                &self.app_state(),
+                &name,
+                &args,
+                catalog::ToolContext {
+                    auth_mode,
+                    run_id: Some(run_id.clone()),
+                },
+            )
+            .await
+            {
                 Ok(result) => json!({ "ok": true, "result": result, "error": null }),
                 Err(ToolError::Unknown) => {
                     json!({ "ok": false, "error": "unknown tool", "result": null })
@@ -577,10 +597,12 @@ impl AgentRunner {
         }
 
         let run_id = Uuid::new_v4().to_string();
+        let auth_mode = SqlAuthMode::parse(&request.auth_mode);
         let ctx = RunCtx {
             agent_id: request.agent_id.clone(),
             session_id: request.session_id.clone(),
             llm: request.llm.clone(),
+            auth_mode,
             cancelled: Arc::new(AtomicBool::new(false)),
             started_at: Instant::now(),
         };
@@ -699,6 +721,11 @@ impl AgentRunner {
                 );
         }
 
+        let auth_mode = match SqlAuthMode::parse(&request.auth_mode) {
+            SqlAuthMode::Full => "full",
+            SqlAuthMode::ReadOnly => "readonly",
+        };
+
         // Never send apiKey to Node.
         let payload = json!({
             "runId": run_id,
@@ -710,6 +737,7 @@ impl AgentRunner {
             "schemaDigest": schema_digest,
             "connectionIds": connection_ids,
             "skillIds": request.skill_ids,
+            "authMode": auth_mode,
             "conversationContext": conversation.text,
             "llm": {
                 "provider": request.llm.provider,

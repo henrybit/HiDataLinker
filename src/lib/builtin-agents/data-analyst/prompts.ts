@@ -31,6 +31,9 @@ export const actResponseSchema = z.object({
 			'get_ddl',
 			'preview_table',
 			'query',
+			'write_script',
+			'run_script',
+			'list_scripts',
 			'none'
 		])
 		.optional(),
@@ -63,7 +66,7 @@ export function actSystemPrompt(systemMd: string): string {
 
 You execute ONE analysis step using at most one tool call.
 If you already have enough evidence for this step, set done=true and tool=none.
-For SQL use tool=query with a single read-only statement.
+For SQL use tool=query with a single statement; write/DDL only when the user enabled full authorization.
 Args must use camelCase keys: connectionId, schema, table, sql, limit, offset, kind, name.`;
 }
 

@@ -18,6 +18,8 @@ export type RunStartPayload = {
 	connectionIds?: string[];
 	/** Optional /-selected skill ids; empty/omitted = full tool set. */
 	skillIds?: string[];
+	/** Authorization mode for SQL tools: readonly (default) or full. */
+	authMode?: 'readonly' | 'full';
 	/** Compressed prior conversation (summary + recent turns). */
 	conversationContext?: string;
 	llm: {

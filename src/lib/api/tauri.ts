@@ -282,6 +282,8 @@ export const api = {
 		connectionIds?: string[];
 		/** Optional /-selected skills; empty = all skills/tools. */
 		skillIds?: string[];
+		/** Authorization mode for SQL tools on this run. */
+		authMode?: 'readonly' | 'full';
 		/** Staged tabular attachments with parse samples for import analysis. */
 		attachments?: Array<{
 			id: string;

@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 ///     checkpoint.json
 ///   db/index.json
 ///   db/schemas/<connectionId>/…
+///   temp/scripts/<runId>/…     # agent-authored import/analysis scripts
 ///   runtime/YYYY-MM-DD.log
 ///   settings/runtime.json
 /// ```
@@ -40,6 +41,8 @@ pub struct AppPaths {
     pub db: PathBuf,
     pub db_index: PathBuf,
     pub db_schemas: PathBuf,
+    /// Ephemeral agent workspace: `temp/scripts/<runId>/`.
+    pub temp: PathBuf,
     pub runtime: PathBuf,
     pub runtime_settings: PathBuf,
 }
@@ -65,6 +68,7 @@ impl AppPaths {
             db_index: db.join("index.json"),
             db_schemas: db.join("schemas"),
             db,
+            temp: root.join("temp"),
             runtime: root.join("runtime"),
             runtime_settings: root.join("settings").join("runtime.json"),
             root,
@@ -84,6 +88,7 @@ impl AppPaths {
             Some(self.chats.as_path()),
             Some(self.db.as_path()),
             Some(self.db_schemas.as_path()),
+            Some(self.temp.as_path()),
             Some(self.runtime.as_path()),
             self.runtime_settings.parent(),
         ] {
@@ -91,6 +96,7 @@ impl AppPaths {
                 std::fs::create_dir_all(dir)?;
             }
         }
+        std::fs::create_dir_all(self.temp.join("scripts"))?;
         crate::builtin_agents::ensure_builtins(&self.agents, &self.chats)?;
         let _ = migrate_agent_sessions_to_chats(&self.agents, &self.chats);
         Ok(())
@@ -256,6 +262,10 @@ mod tests {
         assert_eq!(
             paths.db_schemas,
             PathBuf::from("/Users/ada/.hidatalinker/db/schemas")
+        );
+        assert_eq!(
+            paths.temp,
+            PathBuf::from("/Users/ada/.hidatalinker/temp")
         );
         assert_eq!(
             paths.runtime,

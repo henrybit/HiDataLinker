@@ -7,6 +7,7 @@ import {
 	actSystemPrompt,
 	actUserPrompt,
 	fallbackStepNote,
+	normalizeAuthMode,
 	normalizeLocale,
 	planResponseSchema,
 	planSystemPrompt,
@@ -169,12 +170,14 @@ export async function runDataAnalyst(input: {
 	schemaDigest?: string;
 	connectionIds?: string[];
 	skillIds?: string[];
+	authMode?: string;
 	conversationContext?: string;
 	llm: RunLlmConfig;
 	signal?: AbortSignal;
 	onEvent?: (event: AnalystEvent) => void;
 }): Promise<{ markdown: string; error?: string }> {
 	const locale = normalizeLocale(input.locale);
+	const authMode = normalizeAuthMode(input.authMode);
 	const scopedIds = (input.connectionIds ?? []).map((id) => id.trim()).filter(Boolean);
 	const skillIds = (input.skillIds ?? []).map((id) => id.trim()).filter(Boolean);
 	const allowedTools = resolveSkillTools(skillIds);
@@ -211,7 +214,8 @@ export async function runDataAnalyst(input: {
 				scopedIds,
 				conversationContext,
 				skillLabelList,
-				allowedTools.length > 0 ? allowedTools : undefined
+				allowedTools.length > 0 ? allowedTools : undefined,
+				authMode
 			)
 		);
 		const steps = response.steps.slice(0, MAX_STEPS).map((step) => ({
@@ -245,7 +249,7 @@ export async function runDataAnalyst(input: {
 			input.runId,
 			input.llm,
 			actResponseSchema,
-			actSystemPrompt(state.systemMd, locale),
+			actSystemPrompt(state.systemMd, locale, authMode),
 			actUserPrompt({
 				query: state.userQuery,
 				schemaDigest: state.schemaDigest,
@@ -259,7 +263,8 @@ export async function runDataAnalyst(input: {
 				connectionIds: scopedIds,
 				conversationContext,
 				skillLabels: skillLabelList,
-				allowedTools: allowedTools.length > 0 ? allowedTools : undefined
+				allowedTools: allowedTools.length > 0 ? allowedTools : undefined,
+				authMode
 			})
 		);
 

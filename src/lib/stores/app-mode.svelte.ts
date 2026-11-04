@@ -6,6 +6,8 @@ export type AppMode = 'database' | 'agent';
 export type AgentNav = 'chat' | 'sources' | 'insights' | 'history';
 export type AgentSessionId = 'home' | 'analysis-revenue' | 'write-orders';
 export type WritePlanStatus = 'pending' | 'confirmed' | 'canceled' | 'dry-run';
+/** Agent tool authorization: read-only SQL vs full DML/DDL. */
+export type AgentAuthMode = 'readonly' | 'full';
 
 const PREFS_KEY = 'hidatalinker-agent-prefs';
 
@@ -15,12 +17,18 @@ export type AgentBehaviorPrefs = {
 	crossDbJoins: boolean;
 	maskSensitive: boolean;
 	writeConfirm: boolean;
+	/** Composer authorization mode for agent SQL tools. */
+	authMode: AgentAuthMode;
 	/** Chat chart renderer: ECharts or Ant Design Charts (AntV G2). */
 	chartEngine: ChartEngine;
 	/** Conversation session rail expanded (true) or collapsed (false). */
 	sessionRailExpanded: boolean;
 	sourceAutoConnect: Record<string, boolean>;
 };
+
+export function isAgentAuthMode(value: unknown): value is AgentAuthMode {
+	return value === 'readonly' || value === 'full';
+}
 
 function defaultPrefs(): AgentBehaviorPrefs {
 	return {
@@ -29,6 +37,7 @@ function defaultPrefs(): AgentBehaviorPrefs {
 		crossDbJoins: true,
 		maskSensitive: true,
 		writeConfirm: true,
+		authMode: 'readonly',
 		chartEngine: 'echarts',
 		sessionRailExpanded: true,
 		sourceAutoConnect: {}
@@ -42,6 +51,7 @@ function readPrefs(): AgentBehaviorPrefs {
 		if (!raw) return defaultPrefs();
 		const parsed = { ...defaultPrefs(), ...JSON.parse(raw) } as AgentBehaviorPrefs;
 		if (!isChartEngine(parsed.chartEngine)) parsed.chartEngine = 'echarts';
+		if (!isAgentAuthMode(parsed.authMode)) parsed.authMode = 'readonly';
 		return parsed;
 	} catch {
 		return defaultPrefs();

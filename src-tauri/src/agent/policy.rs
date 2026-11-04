@@ -3,19 +3,35 @@ pub const PREVIEW_ROW_CAP: u32 = 1_000;
 
 const MAX_SQL_CHARS: usize = 100_000;
 
+/// Authorization mode for agent SQL tools.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SqlAuthMode {
+    /// SELECT / WITH…SELECT / EXPLAIN / SHOW / DESCRIBE / TABLE / VALUES only.
+    ReadOnly,
+    /// Allows DML/DDL; still blocks multi-statements and file/OS side-channel functions.
+    Full,
+}
+
+impl SqlAuthMode {
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "full" => Self::Full,
+            _ => Self::ReadOnly,
+        }
+    }
+}
+
+/// Validate SQL for the agent `query` tool under the given authorization mode.
+pub fn assert_agent_sql(sql: &str, mode: SqlAuthMode) -> Result<String, String> {
+    match mode {
+        SqlAuthMode::ReadOnly => assert_read_only_sql(sql),
+        SqlAuthMode::Full => assert_full_auth_sql(sql),
+    }
+}
+
 /// Keep a single read-only statement. Writes, multi-statements, and file/admin functions are rejected.
 pub fn assert_read_only_sql(sql: &str) -> Result<String, String> {
-    if sql.contains('\0') {
-        return Err("SQL contains a null byte".into());
-    }
-    if sql.chars().count() > MAX_SQL_CHARS {
-        return Err("SQL is too long".into());
-    }
-    let statements = split_statements(sql)?;
-    if statements.len() != 1 {
-        return Err("only one SQL statement is allowed".into());
-    }
-    let statement = statements.into_iter().next().unwrap();
+    let statement = normalize_single_statement(sql)?;
     let tokens = tokenize(&statement)?;
     let opening = opening_keyword(&tokens).ok_or_else(|| {
         "statement must start with SELECT, WITH, EXPLAIN, SHOW, DESCRIBE, DESC, TABLE, or VALUES"
@@ -43,6 +59,31 @@ pub fn assert_read_only_sql(sql: &str) -> Result<String, String> {
     }
     assert_no_writes(&tokens, &opening)?;
     Ok(statement)
+}
+
+/// Full authorization: one statement, no file/OS side channels.
+pub fn assert_full_auth_sql(sql: &str) -> Result<String, String> {
+    let statement = normalize_single_statement(sql)?;
+    let tokens = tokenize(&statement)?;
+    if opening_keyword(&tokens).is_none() {
+        return Err("statement is empty".into());
+    }
+    assert_no_dangerous_side_channels(&tokens)?;
+    Ok(statement)
+}
+
+fn normalize_single_statement(sql: &str) -> Result<String, String> {
+    if sql.contains('\0') {
+        return Err("SQL contains a null byte".into());
+    }
+    if sql.chars().count() > MAX_SQL_CHARS {
+        return Err("SQL is too long".into());
+    }
+    let statements = split_statements(sql)?;
+    if statements.len() != 1 {
+        return Err("only one SQL statement is allowed".into());
+    }
+    Ok(statements.into_iter().next().unwrap())
 }
 
 pub fn clamp_preview_limit(limit: u32) -> u32 {
@@ -124,6 +165,38 @@ fn assert_no_writes(tokens: &[Token], opening: &str) -> Result<(), String> {
         }
         if denied(&upper) {
             return Err(format!("read-only queries cannot use {upper}"));
+        }
+    }
+    Ok(())
+}
+
+fn is_dangerous_side_channel(keyword: &str) -> bool {
+    matches!(
+        keyword,
+        "OUTFILE"
+            | "DUMPFILE"
+            | "PG_READ_FILE"
+            | "PG_READ_BINARY_FILE"
+            | "PG_LS_DIR"
+            | "PG_STAT_FILE"
+            | "LO_IMPORT"
+            | "LO_EXPORT"
+            | "LOAD_FILE"
+            | "DBLINK"
+            | "DBLINK_EXEC"
+            | "SHUTDOWN"
+            | "KILL"
+    )
+}
+
+fn assert_no_dangerous_side_channels(tokens: &[Token]) -> Result<(), String> {
+    for token in tokens {
+        let Token::Ident(name) = token else {
+            continue;
+        };
+        let upper = name.to_ascii_uppercase();
+        if is_dangerous_side_channel(&upper) {
+            return Err(format!("SQL cannot use {upper} even in full authorization mode"));
         }
     }
     Ok(())
@@ -521,5 +594,24 @@ mod tests {
         assert_eq!(clamp_preview_limit(0), 1);
         assert_eq!(clamp_preview_limit(100), 100);
         assert_eq!(clamp_preview_limit(50_000), PREVIEW_ROW_CAP);
+    }
+
+    #[test]
+    fn full_mode_allows_writes_but_blocks_side_channels() {
+        assert_agent_sql("UPDATE orders SET paid = 1", SqlAuthMode::Full).unwrap();
+        assert_agent_sql("INSERT INTO orders VALUES (1)", SqlAuthMode::Full).unwrap();
+        assert_agent_sql("DELETE FROM orders WHERE id = 1", SqlAuthMode::Full).unwrap();
+        assert_agent_sql("CREATE TABLE t (id INT)", SqlAuthMode::Full).unwrap();
+        assert!(assert_agent_sql("UPDATE orders SET paid = 1", SqlAuthMode::ReadOnly).is_err());
+        assert!(assert_agent_sql(
+            "SELECT pg_read_file('/etc/passwd')",
+            SqlAuthMode::Full
+        )
+        .is_err());
+        assert!(assert_agent_sql(
+            "SELECT 1; DELETE FROM orders",
+            SqlAuthMode::Full
+        )
+        .is_err());
     }
 }

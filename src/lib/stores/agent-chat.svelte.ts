@@ -12,6 +12,7 @@ import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 import { estimateTokensFromText } from '$lib/llm/context-window';
 import { toLlmSettings } from '$lib/llm/providers';
 import { getLocale, t } from '$lib/i18n/i18n.svelte';
+import { appMode } from '$lib/stores/app-mode.svelte';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export const DATA_ANALYST_ID = 'data-analyst';
@@ -545,6 +546,7 @@ class AgentChatStore {
 				locale: getLocale(),
 				connectionIds,
 				skillIds,
+				authMode: appMode.prefs.authMode,
 				attachments: staged.map((item) => ({
 					id: item.id,
 					name: item.name,

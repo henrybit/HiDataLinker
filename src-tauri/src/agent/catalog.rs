@@ -7,7 +7,7 @@ use crate::state::AppState;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::policy;
+use super::{policy, script};
 
 #[derive(Debug)]
 pub enum ToolError {
@@ -132,7 +132,7 @@ pub fn tool_specs() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "query",
-            description: "Run one read-only statement: SELECT, WITH … SELECT, EXPLAIN, SHOW, DESCRIBE, TABLE, or VALUES. Writes, multiple statements, and file-reading functions are rejected. Results are capped by the desktop engine (5000 rows).",
+            description: "Run one SQL statement. In read-only mode only SELECT/WITH…SELECT/EXPLAIN/SHOW/DESCRIBE/TABLE/VALUES are allowed. In full authorization mode DML/DDL are allowed. Multiple statements and file/OS side-channel functions are always rejected. Results are capped by the desktop engine (5000 rows).",
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -143,11 +143,66 @@ pub fn tool_specs() -> Vec<ToolSpec> {
                 "required": ["connectionId", "sql"]
             }),
         },
+        ToolSpec {
+            name: "write_script",
+            description: "Write a Python (.py), Node (.js/.mjs/.cjs), or shell (.sh) script into ~/.hidatalinker/temp/scripts/<runId>/. Requires full authorization. Use before run_script for import/ETL automation.",
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "filename": { "type": "string", "description": "Plain filename with .py, .js/.mjs/.cjs, or .sh extension" },
+                    "content": { "type": "string", "description": "Full script source" },
+                    "overwrite": { "type": "boolean", "description": "Replace an existing file (default false)" }
+                },
+                "required": ["filename", "content"]
+            }),
+        },
+        ToolSpec {
+            name: "run_script",
+            description: "Execute a previously written script from the run's temp workspace with python3, node, or bash/sh. Requires full authorization. stdout/stderr are truncated.",
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "filename": { "type": "string" },
+                    "args": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional argv passed after the script path"
+                    },
+                    "timeoutMs": { "type": "integer", "description": "Timeout in ms (default 60000, max 120000)" }
+                },
+                "required": ["filename"]
+            }),
+        },
+        ToolSpec {
+            name: "list_scripts",
+            description: "List scripts written for the current agent run under ~/.hidatalinker/temp/scripts/<runId>/. Requires full authorization.",
+            schema: json!({ "type": "object", "properties": {} }),
+        },
     ]
 }
 
 pub fn is_tool(name: &str) -> bool {
     tool_specs().iter().any(|tool| tool.name == name)
+}
+
+/// Tools that must not be exposed over MCP/HTTP (desktop agent run only).
+pub fn is_desktop_only_tool(name: &str) -> bool {
+    script::is_script_tool(name)
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolContext {
+    pub auth_mode: policy::SqlAuthMode,
+    pub run_id: Option<String>,
+}
+
+impl Default for ToolContext {
+    fn default() -> Self {
+        Self {
+            auth_mode: policy::SqlAuthMode::ReadOnly,
+            run_id: None,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -162,6 +217,34 @@ struct AgentConnection {
 }
 
 pub async fn invoke(state: &AppState, name: &str, args: &Value) -> Result<Value, ToolError> {
+    invoke_with_context(state, name, args, ToolContext::default()).await
+}
+
+#[allow(dead_code)]
+pub async fn invoke_with_auth(
+    state: &AppState,
+    name: &str,
+    args: &Value,
+    auth_mode: policy::SqlAuthMode,
+) -> Result<Value, ToolError> {
+    invoke_with_context(
+        state,
+        name,
+        args,
+        ToolContext {
+            auth_mode,
+            run_id: None,
+        },
+    )
+    .await
+}
+
+pub async fn invoke_with_context(
+    state: &AppState,
+    name: &str,
+    args: &Value,
+    ctx: ToolContext,
+) -> Result<Value, ToolError> {
     if !is_tool(name) {
         return Err(ToolError::Unknown);
     }
@@ -227,9 +310,82 @@ pub async fn invoke(state: &AppState, name: &str, args: &Value) -> Result<Value,
             .await
         }
         "preview_table" => preview_table(state, args).await,
-        "query" => query(state, args).await,
+        "query" => query(state, args, ctx.auth_mode).await,
+        "write_script" => write_script_tool(state, args, &ctx),
+        "run_script" => run_script_tool(state, args, &ctx).await,
+        "list_scripts" => list_scripts_tool(state, &ctx),
         _ => Err(ToolError::Unknown),
     }
+}
+
+fn script_gate(ctx: &ToolContext) -> Result<String, ToolError> {
+    script::require_full_auth(ctx.auth_mode).map_err(ToolError::BadRequest)?;
+    script::require_run_id(ctx.run_id.as_deref()).map_err(ToolError::BadRequest)
+}
+
+fn write_script_tool(
+    state: &AppState,
+    args: &Value,
+    ctx: &ToolContext,
+) -> Result<Value, ToolError> {
+    let run_id = script_gate(ctx)?;
+    let filename = required_str(args, "filename")?;
+    let content = required_str_allow_empty(args, "content")?;
+    let overwrite = args
+        .get("overwrite")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    script::write_script(state.temp_dir(), &run_id, &filename, &content, overwrite).map_err(
+        |message| {
+            if message.starts_with("failed to") {
+                ToolError::Failed(message)
+            } else {
+                ToolError::BadRequest(message)
+            }
+        },
+    )
+}
+
+async fn run_script_tool(
+    state: &AppState,
+    args: &Value,
+    ctx: &ToolContext,
+) -> Result<Value, ToolError> {
+    let run_id = script_gate(ctx)?;
+    let filename = required_str(args, "filename")?;
+    let script_args = optional_string_array(args, "args")?;
+    let timeout_ms = match args.get("timeoutMs") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(u64_arg(value, "timeoutMs")?),
+    };
+    script::run_script(
+        state.temp_dir(),
+        &run_id,
+        &filename,
+        &script_args,
+        timeout_ms,
+    )
+    .await
+    .map_err(|message| {
+        if message.contains("timed out") || message.contains("not found on PATH") {
+            ToolError::Failed(message)
+        } else if message.starts_with("script not found")
+            || message.contains("must not")
+            || message.contains("too long")
+            || message.contains("invalid")
+            || message.contains("escapes")
+            || message.contains("require")
+        {
+            ToolError::BadRequest(message)
+        } else {
+            ToolError::Failed(message)
+        }
+    })
+}
+
+fn list_scripts_tool(state: &AppState, ctx: &ToolContext) -> Result<Value, ToolError> {
+    let run_id = script_gate(ctx)?;
+    script::list_scripts(state.temp_dir(), &run_id).map_err(ToolError::Failed)
 }
 
 async fn list_connections(state: &AppState) -> Result<Value, ToolError> {
@@ -293,9 +449,13 @@ async fn preview_table(state: &AppState, args: &Value) -> Result<Value, ToolErro
     .await
 }
 
-async fn query(state: &AppState, args: &Value) -> Result<Value, ToolError> {
+async fn query(
+    state: &AppState,
+    args: &Value,
+    auth_mode: policy::SqlAuthMode,
+) -> Result<Value, ToolError> {
     let sql = required_str(args, "sql")?;
-    let sql = policy::assert_read_only_sql(&sql).map_err(ToolError::BadRequest)?;
+    let sql = policy::assert_agent_sql(&sql, auth_mode).map_err(ToolError::BadRequest)?;
     let schema = optional_str(args, "schema")?;
     if let Some(schema) = &schema {
         validate_ident(schema).map_err(|error| ToolError::BadRequest(error.user_message()))?;
@@ -356,12 +516,43 @@ fn required_str(args: &Value, key: &str) -> Result<String, ToolError> {
     }
 }
 
+fn required_str_allow_empty(args: &Value, key: &str) -> Result<String, ToolError> {
+    match args.get(key) {
+        Some(Value::String(value)) => Ok(value.clone()),
+        _ => Err(ToolError::BadRequest(format!("{key} is required"))),
+    }
+}
+
 fn optional_str(args: &Value, key: &str) -> Result<Option<String>, ToolError> {
     match args.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) if value.trim().is_empty() => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.trim().to_string())),
         _ => Err(ToolError::BadRequest(format!("{key} must be a string"))),
+    }
+}
+
+fn optional_string_array(args: &Value, key: &str) -> Result<Vec<String>, ToolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) => {
+            let mut out = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                let Some(text) = item.as_str() else {
+                    return Err(ToolError::BadRequest(format!(
+                        "{key}[{index}] must be a string"
+                    )));
+                };
+                out.push(text.to_string());
+            }
+            if out.len() > 32 {
+                return Err(ToolError::BadRequest(format!(
+                    "{key} supports at most 32 entries"
+                )));
+            }
+            Ok(out)
+        }
+        _ => Err(ToolError::BadRequest(format!("{key} must be an array of strings"))),
     }
 }
 
@@ -405,6 +596,12 @@ pub fn audit_fields(tool: &str, args: &Value) -> (Option<String>, String) {
             join_names(args, &["schema"])
         }
         "connect" | "list_databases" => connection_id.clone().unwrap_or_default(),
+        "write_script" | "run_script" => args
+            .get("filename")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        "list_scripts" => "list".into(),
         _ => String::new(),
     };
     (connection_id, truncate(&summary, 160))

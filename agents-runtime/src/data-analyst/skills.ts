@@ -34,7 +34,13 @@ export const AGENT_SKILLS: readonly AgentSkillDef[] = [
 	{
 		id: 'sql',
 		slash: 'sql',
+		// query policy (read-only vs full) follows the run's authMode
 		tools: ['query']
+	},
+	{
+		id: 'script',
+		slash: 'script',
+		tools: ['write_script', 'run_script', 'list_scripts']
 	}
 ] as const;
 

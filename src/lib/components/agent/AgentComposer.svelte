@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AtSign, ArrowUp, Paperclip, Settings2, Slash, X } from '@lucide/svelte';
+	import { AtSign, ArrowUp, Paperclip, Settings2, Shield, Slash, X } from '@lucide/svelte';
 	import type { ComposerAttachment } from '$lib/api/types';
 	import { AGENT_SKILLS, findSkill, type AgentSkillDef } from '$lib/builtin-agents/skills/catalog';
 	import { t } from '$lib/i18n/i18n.svelte';
@@ -20,6 +20,11 @@
 	import { modalityI18nKey, resolveProfileModality } from '$lib/llm/modality';
 	import type { LlmProviderProfile } from '$lib/llm/providers';
 	import { agentChat } from '$lib/stores/agent-chat.svelte';
+	import {
+		appMode,
+		isAgentAuthMode,
+		type AgentAuthMode
+	} from '$lib/stores/app-mode.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
 	export type ComposerSource = {
@@ -389,13 +394,22 @@
 		return t('agentMode.composer.badge');
 	});
 
+	const authMode = $derived(appMode.prefs.authMode);
+
 	const hintText = $derived.by(() => {
 		if (hint) return hint;
+		if (authMode === 'full') return t('agentMode.composer.hintFull');
 		if (enableSkillSlash && enableSourceMention) return t('agentMode.composer.hintBoth');
 		if (enableSkillSlash) return t('agentMode.composer.hintSkill');
 		if (enableSourceMention) return t('agentMode.composer.hintMention');
 		return t('agentMode.composer.hint');
 	});
+
+	function onAuthModeChange(event: Event) {
+		const value = (event.currentTarget as HTMLSelectElement).value;
+		if (!isAgentAuthMode(value)) return;
+		appMode.patchPrefs({ authMode: value as AgentAuthMode });
+	}
 
 	const providers = $derived(llmCatalog.providers);
 	const activeProvider = $derived(selectedLlmProvider());
@@ -577,6 +591,27 @@
 	{#if attachError}
 		<p class="agent-composer-attach-error">{attachError}</p>
 	{/if}
+
+	<label
+		class="agent-composer-auth"
+		class:full={authMode === 'full'}
+		title={authMode === 'full'
+			? t('agentMode.composer.authModeHintFull')
+			: t('agentMode.composer.authModeHintReadonly')}
+	>
+		<Shield size={14} />
+		<span class="agent-composer-auth-label">{t('agentMode.composer.authMode')}</span>
+		<select
+			class="agent-composer-auth-select"
+			aria-label={t('agentMode.composer.authMode')}
+			disabled={disabled}
+			value={authMode}
+			onchange={onAuthModeChange}
+		>
+			<option value="readonly">{t('agentMode.composer.authModeReadonly')}</option>
+			<option value="full">{t('agentMode.composer.authModeFull')}</option>
+		</select>
+	</label>
 
 	<div class="agent-composer-shell">
 		{#if activeMenu === 'mention'}

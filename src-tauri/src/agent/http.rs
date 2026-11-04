@@ -192,6 +192,18 @@ async fn dispatch(state: &AppState, hub: &AgentHub, incoming: &Incoming) -> Outg
     if !catalog::is_tool(tool) {
         return finish(hub, tool, &args, started, 404, Err(ToolError::Unknown));
     }
+    if catalog::is_desktop_only_tool(tool) {
+        return finish(
+            hub,
+            tool,
+            &args,
+            started,
+            403,
+            Err(ToolError::BadRequest(
+                "script tools are only available inside the desktop agent".into(),
+            )),
+        );
+    }
 
     let result = catalog::invoke(state, tool, &args).await;
     let status = match &result {
