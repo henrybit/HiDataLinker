@@ -517,7 +517,9 @@ export const zh: Record<MessageKey, string> = {
 	'settings.kind': '类型',
 	'settings.apiKey': 'API 密钥',
 	'settings.model': '模型',
-	'settings.modality': '模型类型',
+	'settings.modality': '是否支持多模态',
+	'settings.modalityHint':
+		'选择该模型是否接受图片等非文本输入。新建时会按模型名给出默认值，可随时手动修改。',
 	'settings.contextWindow': '最大上下文（tokens）',
 	'settings.contextWindowHint': '模型上下文窗口上限，默认 {default}。用于对话输入区的用量进度。',
 	'settings.baseUrl': 'API 地址',
@@ -609,7 +611,7 @@ export const zh: Record<MessageKey, string> = {
 	'agentMode.composer.modalityMultimodal': '多模态',
 	'agentMode.composer.modalityUnknown': '类型未知',
 	'agentMode.composer.modalityHint':
-		'根据模型名称推断：纯文本仅支持文字；多模态还可理解图片等输入（当前对话以文本为主）。',
+		'来自模型配置：纯文本仅支持文字；多模态还可理解图片等输入（当前对话以文本为主）。',
 	'agentMode.composer.context': '上下文',
 	'agentMode.composer.contextUsage': '{used} / {max}',
 	'agentMode.composer.contextHint':

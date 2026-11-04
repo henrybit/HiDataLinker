@@ -2,6 +2,32 @@
 
 export type ModelModality = 'text' | 'multimodal' | 'unknown';
 
+/** User-selectable modalities when configuring a provider. */
+export type SelectableModelModality = 'text' | 'multimodal';
+
+/**
+ * Prefer an explicit profile modality; otherwise infer from the model id.
+ */
+export function resolveProfileModality(profile: {
+	model: string;
+	modality?: ModelModality | null;
+}): ModelModality {
+	if (profile.modality === 'text' || profile.modality === 'multimodal') {
+		return profile.modality;
+	}
+	if (profile.modality === 'unknown') return 'unknown';
+	return detectModelModality(profile.model);
+}
+
+export function normalizeSelectableModality(
+	value: unknown,
+	fallbackModel = ''
+): SelectableModelModality {
+	if (value === 'text' || value === 'multimodal') return value;
+	const detected = detectModelModality(fallbackModel);
+	return detected === 'multimodal' ? 'multimodal' : 'text';
+}
+
 /**
  * Infer whether a model id is text-only or multimodal (vision / audio / etc.).
  * Heuristic on common OpenAI / Anthropic / Gemini / open-source names — not a guarantee.

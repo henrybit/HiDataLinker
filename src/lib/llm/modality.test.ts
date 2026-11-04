@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { detectModelModality } from './modality';
+import {
+	detectModelModality,
+	normalizeSelectableModality,
+	resolveProfileModality
+} from './modality';
 
 describe('detectModelModality', () => {
 	it('marks common vision / omni models as multimodal', () => {
@@ -23,5 +27,29 @@ describe('detectModelModality', () => {
 	it('returns unknown for blank or unfamiliar ids', () => {
 		expect(detectModelModality('')).toBe('unknown');
 		expect(detectModelModality('my-custom-proxy-model')).toBe('unknown');
+	});
+});
+
+describe('resolveProfileModality', () => {
+	it('prefers the explicit profile modality', () => {
+		expect(resolveProfileModality({ model: 'gpt-4o-mini', modality: 'text' })).toBe('text');
+		expect(resolveProfileModality({ model: 'deepseek-chat', modality: 'multimodal' })).toBe(
+			'multimodal'
+		);
+	});
+
+	it('falls back to model-name detection', () => {
+		expect(resolveProfileModality({ model: 'gpt-4o-mini' })).toBe('multimodal');
+		expect(resolveProfileModality({ model: 'deepseek-chat' })).toBe('text');
+	});
+});
+
+describe('normalizeSelectableModality', () => {
+	it('keeps valid selections and maps missing values from the model id', () => {
+		expect(normalizeSelectableModality('text')).toBe('text');
+		expect(normalizeSelectableModality('multimodal')).toBe('multimodal');
+		expect(normalizeSelectableModality(undefined, 'gpt-4o-mini')).toBe('multimodal');
+		expect(normalizeSelectableModality('nope', 'deepseek-chat')).toBe('text');
+		expect(normalizeSelectableModality(undefined, 'custom-model')).toBe('text');
 	});
 });

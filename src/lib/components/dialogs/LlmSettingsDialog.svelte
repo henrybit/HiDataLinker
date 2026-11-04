@@ -15,7 +15,12 @@
 		formatTokenCount,
 		normalizeContextWindow
 	} from '$lib/llm/context-window';
-	import { detectModelModality, modalityI18nKey } from '$lib/llm/modality';
+	import {
+		modalityI18nKey,
+		normalizeSelectableModality,
+		resolveProfileModality,
+		type SelectableModelModality
+	} from '$lib/llm/modality';
 	import {
 		createProviderId,
 		removeProvider,
@@ -28,14 +33,16 @@
 	type SettingsTab = 'basic' | 'llm';
 
 	function blankProvider(): LlmProviderProfile {
+		const model = DEFAULT_MODELS.openai;
 		return {
 			id: createProviderId(),
 			name: '',
 			kind: 'openai',
 			apiKey: '',
-			model: DEFAULT_MODELS.openai,
+			model,
 			baseUrl: '',
-			contextWindow: DEFAULT_CONTEXT_WINDOW
+			contextWindow: DEFAULT_CONTEXT_WINDOW,
+			modality: normalizeSelectableModality(undefined, model)
 		};
 	}
 
@@ -55,7 +62,11 @@
 	let editingId = $state<string | null>(initial?.id ?? null);
 	let draft = $state<LlmProviderProfile>(
 		initial
-			? { ...initial, contextWindow: normalizeContextWindow(initial.contextWindow) }
+			? {
+					...initial,
+					contextWindow: normalizeContextWindow(initial.contextWindow),
+					modality: normalizeSelectableModality(initial.modality, initial.model)
+				}
 			: blankProvider()
 	);
 	let error = $state<string | null>(null);
@@ -78,15 +89,21 @@
 		error = null;
 		draft = {
 			...profile,
-			contextWindow: normalizeContextWindow(profile.contextWindow)
+			contextWindow: normalizeContextWindow(profile.contextWindow),
+			modality: normalizeSelectableModality(profile.modality, profile.model)
 		};
 	}
 
 	function setKind(kind: LlmProviderKind) {
 		if (draft.model.trim() === DEFAULT_MODELS[draft.kind]) {
 			draft.model = DEFAULT_MODELS[kind];
+			draft.modality = normalizeSelectableModality(undefined, draft.model);
 		}
 		draft.kind = kind;
+	}
+
+	function setModality(modality: SelectableModelModality) {
+		draft.modality = modality;
 	}
 
 	function save() {
@@ -95,13 +112,15 @@
 			error = t('settings.nameRequired');
 			return;
 		}
+		const model = draft.model.trim() || DEFAULT_MODELS[draft.kind];
 		const profile: LlmProviderProfile = {
 			...draft,
 			name,
 			apiKey: draft.apiKey.trim(),
-			model: draft.model.trim() || DEFAULT_MODELS[draft.kind],
+			model,
 			baseUrl: draft.baseUrl.trim(),
-			contextWindow: normalizeContextWindow(draft.contextWindow)
+			contextWindow: normalizeContextWindow(draft.contextWindow),
+			modality: normalizeSelectableModality(draft.modality, model)
 		};
 		replaceLlmCatalog(upsertProvider(snapshot(), profile));
 		editingId = profile.id;
@@ -122,11 +141,11 @@
 		return kind === 'anthropic' ? t('analysis.provider.anthropic') : t('analysis.provider.openai');
 	}
 
-	function modalityLabel(model: string): string {
-		return t(modalityI18nKey(detectModelModality(model)));
+	function modalityLabel(profile: LlmProviderProfile): string {
+		return t(modalityI18nKey(resolveProfileModality(profile)));
 	}
 
-	const draftModality = $derived(detectModelModality(draft.model));
+	const draftModality = $derived(resolveProfileModality(draft));
 
 	async function toggleMcp(enabled: boolean) {
 		try {
@@ -281,7 +300,7 @@
 										<strong>{provider.name}</strong>
 										<small
 											>{kindLabel(provider.kind)} · {provider.model} · {modalityLabel(
-												provider.model
+												provider
 											)}</small
 										>
 									</button>
@@ -320,8 +339,21 @@
 								<span>{t('settings.model')}</span>
 								<input bind:value={draft.model} autocomplete="off" spellcheck="false" />
 							</label>
-							<p class="hint settings-modality-hint" title={t('agentMode.composer.modalityHint')}>
-								{t('settings.modality')}:
+							<label class="field">
+								<span>{t('settings.modality')}</span>
+								<select
+									value={draft.modality}
+									onchange={(event) =>
+										setModality(
+											(event.currentTarget as HTMLSelectElement).value as SelectableModelModality
+										)}
+								>
+									<option value="text">{t('agentMode.composer.modalityText')}</option>
+									<option value="multimodal">{t('agentMode.composer.modalityMultimodal')}</option>
+								</select>
+							</label>
+							<p class="hint settings-modality-hint" title={t('settings.modalityHint')}>
+								{t('settings.modalityHint')}
 								<span
 									class="agent-composer-modality"
 									class:text={draftModality === 'text'}

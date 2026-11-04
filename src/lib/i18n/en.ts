@@ -531,7 +531,9 @@ export const en = {
 	'settings.kind': 'Type',
 	'settings.apiKey': 'API key',
 	'settings.model': 'Model',
-	'settings.modality': 'Model type',
+	'settings.modality': 'Multimodal support',
+	'settings.modalityHint':
+		'Choose whether this model accepts images and other non-text inputs. New profiles default from the model name; you can override anytime.',
 	'settings.contextWindow': 'Max context (tokens)',
 	'settings.contextWindowHint':
 		'Context window size for this model. Default {default}. Powers the chat usage meter.',
@@ -626,7 +628,7 @@ export const en = {
 	'agentMode.composer.modalityMultimodal': 'Multimodal',
 	'agentMode.composer.modalityUnknown': 'Unknown type',
 	'agentMode.composer.modalityHint':
-		'Inferred from the model name: text-only handles text; multimodal can also take images (chat is still text-first today).',
+		'Configured on the model profile: text-only handles text; multimodal can also take images (chat is still text-first today).',
 	'agentMode.composer.context': 'Context',
 	'agentMode.composer.contextUsage': '{used} / {max}',
 	'agentMode.composer.contextHint':

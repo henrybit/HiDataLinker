@@ -1,6 +1,10 @@
 import { DEFAULT_MODELS, type LlmProvider, type LlmSettings } from '$lib/analysis/llm';
 import { api, isTauriRuntime } from '$lib/api/tauri';
 import { DEFAULT_CONTEXT_WINDOW, normalizeContextWindow } from './context-window';
+import {
+	normalizeSelectableModality,
+	type SelectableModelModality
+} from './modality';
 
 export type LlmProviderKind = LlmProvider;
 
@@ -13,6 +17,8 @@ export interface LlmProviderProfile {
 	baseUrl: string;
 	/** Max context window in tokens (default 128_000). */
 	contextWindow: number;
+	/** Whether the configured model accepts multimodal inputs (vision, etc.). */
+	modality: SelectableModelModality;
 }
 
 export { DEFAULT_CONTEXT_WINDOW };
@@ -166,6 +172,7 @@ function parseLegacy(raw: string, createId: () => string): LlmCatalog | null {
 			(model !== '' && model !== DEFAULT_MODELS[kind]);
 		if (!configured) return null;
 		const id = createId();
+		const resolvedModel = model || DEFAULT_MODELS[kind];
 		return {
 			providers: [
 				{
@@ -173,9 +180,10 @@ function parseLegacy(raw: string, createId: () => string): LlmCatalog | null {
 					name: kind === 'anthropic' ? 'Anthropic' : 'OpenAI',
 					kind,
 					apiKey,
-					model: model || DEFAULT_MODELS[kind],
+					model: resolvedModel,
 					baseUrl,
-					contextWindow: DEFAULT_CONTEXT_WINDOW
+					contextWindow: DEFAULT_CONTEXT_WINDOW,
+					modality: normalizeSelectableModality(undefined, resolvedModel)
 				}
 			],
 			selectedId: id
@@ -194,16 +202,18 @@ function normalizeProfile(value: unknown): LlmProviderProfile | null {
 	const id = typeof item.id === 'string' ? item.id.trim() : '';
 	if (!id) return null;
 	const name = typeof item.name === 'string' ? item.name.trim() : '';
-	const model = typeof item.model === 'string' ? item.model.trim() : '';
+	const model =
+		(typeof item.model === 'string' ? item.model.trim() : '') || DEFAULT_MODELS[kind];
 	return {
 		id,
 		name: name || (kind === 'anthropic' ? 'Anthropic' : 'OpenAI'),
 		kind,
 		apiKey: typeof item.apiKey === 'string' ? item.apiKey : '',
-		model: model || DEFAULT_MODELS[kind],
+		model,
 		baseUrl: typeof item.baseUrl === 'string' ? item.baseUrl : '',
 		contextWindow: normalizeContextWindow(
 			item.contextWindow ?? item.context_window ?? item.maxContext
-		)
+		),
+		modality: normalizeSelectableModality(item.modality, model)
 	};
 }

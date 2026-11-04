@@ -168,7 +168,8 @@ ${languageDirective(locale)}
 - 若本步证据已足够：设 done=true 且 tool=none。
 - 禁止仅用 note 写「下一步：…」却设 tool=none；要把下一步变成实际 tool 调用。
 写 SQL 时使用 tool=query，且只能是单条只读语句。
-参数键名使用 camelCase：connectionId、schema、table、sql、limit、offset、kind、name。`;
+参数键名使用 camelCase：connectionId、schema、table、sql、limit、offset、kind、name。
+必须通过 emit_analysis 工具或纯 JSON 返回（字段：done/note/tool/args），禁止输出 Markdown 分析正文。`;
 	}
 	return `${systemMd}
 
@@ -179,7 +180,8 @@ Decide the NEXT action for the CURRENT plan step; at most one tool call.
 - If you already have enough evidence for this step: set done=true and tool=none.
 - Do not only write a "next:" note with tool=none — turn that into an actual tool call.
 For SQL use tool=query with a single read-only statement.
-Args must use camelCase keys: connectionId, schema, table, sql, limit, offset, kind, name.`;
+Args must use camelCase keys: connectionId, schema, table, sql, limit, offset, kind, name.
+You MUST reply via the emit_analysis tool or raw JSON only (fields: done/note/tool/args). Do not write Markdown analysis prose.`;
 }
 
 export function actUserPrompt(input: {
@@ -236,7 +238,8 @@ ${iter}
 近期观察：
 ${prior || '（无）'}
 
-为本步决定下一次工具调用（done=false），或标记本步完成（done=true, tool=none）。`;
+为本步决定下一次工具调用（done=false），或标记本步完成（done=true, tool=none）。
+只返回 JSON / 工具调用，不要写「本步目标」「判断」等 Markdown。`;
 	}
 	return `User question:
 ${input.query}
@@ -256,7 +259,8 @@ ${iter}
 Recent observations:
 ${prior || '(none)'}
 
-Decide the next tool call for this step (done=false), or mark the step complete (done=true, tool=none).`;
+Decide the next tool call for this step (done=false), or mark the step complete (done=true, tool=none).
+Return JSON / tool call only — no Markdown analysis.`;
 }
 
 export function synthesizeSystemPrompt(systemMd: string, locale: AgentLocale): string {
@@ -265,25 +269,27 @@ export function synthesizeSystemPrompt(systemMd: string, locale: AgentLocale): s
 
 ${languageDirective(locale)}
 
-用 Markdown 给用户写最终回答（支持标题、列表、表格、链接、代码块；需要时可内嵌 HTML，或使用 \`\`\`html\`\`\` 代码块）。
+通过 emit_analysis 返回 JSON：{"markdown":"..."}。markdown 字段里写给用户的最终回答（标题、列表、表格、链接、代码块；需要时可内嵌 HTML，或使用 \`\`\`html\`\`\` 代码块）。
 包含：简短总结、关键发现、证据（表 / SQL）、注意事项。
 不要编造未观察到的数字。
-若观察结果适合可视化（对比、趋势、占比），额外附加一个或多个 \`\`\`chart\`\`\` JSON 代码块，格式如下之一：
+若观察结果适合可视化（对比、趋势、占比），在 markdown 中额外附加一个或多个 \`\`\`chart\`\`\` JSON 代码块，格式如下之一：
 {"type":"bar"|"line"|"area","title":"...","categories":["A","B"],"series":[{"name":"指标","data":[1,2]}]}
 {"type":"pie","title":"...","data":[{"name":"A","value":1}]}
-图表数据必须来自观察，禁止臆造。`;
+图表数据必须来自观察，禁止臆造。
+不要直接输出裸 Markdown；必须包在 JSON 的 markdown 字段中。`;
 	}
 	return `${systemMd}
 
 ${languageDirective(locale)}
 
-Write the final answer in Markdown for the user (headings, lists, tables, links, code; HTML inline or in \`\`\`html\`\`\` fences when useful).
+Return JSON via emit_analysis: {"markdown":"..."}. Put the user-facing final answer inside the markdown field (headings, lists, tables, links, code; HTML inline or in \`\`\`html\`\`\` fences when useful).
 Include: short summary, key findings, evidence (tables / SQL), and caveats.
 Do not invent numbers that were not observed.
-When observations are chartable (comparison, trend, share), also append one or more \`\`\`chart\`\`\` JSON fences:
+When observations are chartable (comparison, trend, share), also append one or more \`\`\`chart\`\`\` JSON fences inside markdown:
 {"type":"bar"|"line"|"area","title":"...","categories":["A","B"],"series":[{"name":"metric","data":[1,2]}]}
 {"type":"pie","title":"...","data":[{"name":"A","value":1}]}
-Chart values must come from observations only.`;
+Chart values must come from observations only.
+Do not emit bare Markdown outside the JSON markdown field.`;
 }
 
 export function synthesizeUserPrompt(input: {

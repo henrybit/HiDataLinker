@@ -3240,16 +3240,16 @@ button {
 .agent-bubble.user {
 	position: relative;
 	width: fit-content;
-	min-width: 3rem;
 	max-width: min(72%, 36rem);
 	margin-left: auto;
 	margin-bottom: 14px;
-	padding: 10px 14px;
+	padding: 7px 12px;
 	border-radius: 14px 14px 4px 14px;
 	background: #2563eb;
 	color: white;
-	line-height: 1.45;
+	line-height: 1.4;
 	font-size: 13px;
+	/* Plain-text bubbles keep newlines; .agent-md.user resets to normal so marked's trailing \n doesn't add a blank line. */
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	word-break: break-word;
@@ -4502,7 +4502,8 @@ button {
 	padding: 0;
 	color: inherit;
 	font-size: inherit;
-	line-height: 1.45;
+	line-height: 1.4;
+	white-space: normal;
 }
 
 .agent-md.user > :first-child {
@@ -4511,6 +4512,14 @@ button {
 
 .agent-md.user > :last-child {
 	margin-bottom: 0;
+}
+
+.agent-md.user :is(p, ul, ol, blockquote, pre, table, hr) {
+	margin: 0;
+}
+
+.agent-md.user :is(p, ul, ol, blockquote, pre, table, hr) + :is(p, ul, ol, blockquote, pre, table, hr) {
+	margin-top: 0.45em;
 }
 
 .agent-md :is(h1, h2, h3, h4) {

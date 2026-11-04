@@ -163,12 +163,18 @@ pub async fn complete(request: LlmCompleteRequest) -> AppResult<Value> {
             snippet(&text, BODY_LIMIT)
         ))
     })?;
-    extract_result(provider, &payload).map_err(|error| match request_id {
-        Some(id) if !error.to_string().contains("request-id") => {
-            AppError::msg(format!("{error}\nrequest-id {id}"))
-        }
-        _ => error,
-    })
+    extract_result(provider, &payload)
+        .or_else(|error| {
+            // Some OpenAI-compatible proxies ignore tool_choice and return prose.
+            // If the schema is a single `markdown` field, wrap the text content.
+            coerce_prose_to_schema(provider, &payload, &request.schema).ok_or(error)
+        })
+        .map_err(|error| match request_id {
+            Some(id) if !error.to_string().contains("request-id") => {
+                AppError::msg(format!("{error}\nrequest-id {id}"))
+            }
+            _ => error,
+        })
 }
 
 pub fn extract_result(provider: LlmProvider, payload: &Value) -> AppResult<Value> {
@@ -268,12 +274,151 @@ fn parse_json_value(value: &Value) -> AppResult<Value> {
 
 fn parse_json_text(text: &str) -> AppResult<Value> {
     let cleaned = strip_fence(text);
-    serde_json::from_str(cleaned).map_err(|error| {
-        AppError::msg(format!(
-            "model result is not JSON: {error}\n{}",
-            snippet(cleaned, BODY_LIMIT)
-        ))
-    })
+    if let Ok(value) = serde_json::from_str::<Value>(cleaned) {
+        return Ok(value);
+    }
+    if let Some(value) = extract_first_json_value(cleaned) {
+        return Ok(value);
+    }
+    Err(AppError::msg(format!(
+        "model result is not JSON: expected value at line 1 column 1\n{}",
+        snippet(cleaned, BODY_LIMIT)
+    )))
+}
+
+/// Pull the first top-level JSON object/array out of mixed model prose.
+fn extract_first_json_value(text: &str) -> Option<Value> {
+    let bytes = text.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let start = match bytes[index] {
+            b'{' | b'[' => index,
+            _ => {
+                index += 1;
+                continue;
+            }
+        };
+        if let Some(end) = scan_json_end(bytes, start) {
+            let candidate = &text[start..end];
+            if let Ok(value) = serde_json::from_str::<Value>(candidate) {
+                return Some(value);
+            }
+        }
+        index = start + 1;
+    }
+    None
+}
+
+fn scan_json_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let open = *bytes.get(start)?;
+    let close = match open {
+        b'{' => b'}',
+        b'[' => b']',
+        _ => return None,
+    };
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (offset, &byte) in bytes[start..].iter().enumerate() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if byte == b'\\' {
+                escape = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b if b == open => depth += 1,
+            b if b == close => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(start + offset + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn coerce_prose_to_schema(
+    provider: LlmProvider,
+    payload: &Value,
+    schema: &Value,
+) -> Option<Value> {
+    let text = match provider {
+        LlmProvider::OpenAi => payload
+            .pointer("/choices/0/message/content")
+            .and_then(message_text_from_value),
+        LlmProvider::Anthropic => anthropic_text(payload),
+    }?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Prefer embedded JSON if the prose still contains a structured object.
+    if let Ok(value) = parse_json_text(trimmed) {
+        if schema_is_markdown_only(schema) && value.get("markdown").and_then(Value::as_str).is_some()
+        {
+            return Some(value);
+        }
+        if schema_is_act(schema) && value.get("done").and_then(Value::as_bool).is_some() {
+            return Some(value);
+        }
+    }
+    if schema_is_markdown_only(schema) {
+        return Some(json!({ "markdown": trimmed }));
+    }
+    // Act steps sometimes emit analysis Markdown instead of JSON; treat as done
+    // so the graph can synthesize instead of aborting the whole run.
+    if schema_is_act(schema) {
+        return Some(json!({
+            "done": true,
+            "note": snippet(trimmed, BODY_LIMIT),
+            "tool": "none",
+            "args": {}
+        }));
+    }
+    None
+}
+
+fn schema_is_markdown_only(schema: &Value) -> bool {
+    let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+        return false;
+    };
+    props.len() == 1 && props.contains_key("markdown")
+}
+
+fn schema_is_act(schema: &Value) -> bool {
+    let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+        return false;
+    };
+    props.contains_key("done") && props.contains_key("note") && props.contains_key("tool")
+}
+
+fn message_text_from_value(content: &Value) -> Option<String> {
+    message_text(Some(content))
+}
+
+fn anthropic_text(payload: &Value) -> Option<String> {
+    if let Some(text) = message_text(payload.get("content")) {
+        return Some(text);
+    }
+    let blocks = payload.get("content")?.as_array()?;
+    let text = blocks
+        .iter()
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn message_text(content: Option<&Value>) -> Option<String> {
@@ -477,6 +622,67 @@ mod tests {
         assert_eq!(
             extract_result(LlmProvider::OpenAi, &fenced).expect("fence"),
             json!({"relations": []})
+        );
+    }
+
+    #[test]
+    fn extracts_json_object_embedded_in_prose() {
+        let prose = "**本步目标**：校验\n**判断**：库不存在\n{\"done\":true,\"note\":\"目标库不存在\",\"tool\":\"none\"}\n还有尾巴";
+        assert_eq!(
+            parse_json_text(prose).expect("embedded"),
+            json!({"done": true, "note": "目标库不存在", "tool": "none"})
+        );
+    }
+
+    #[test]
+    fn coerces_bare_markdown_when_schema_is_markdown_only() {
+        let payload = json!({
+            "choices": [{
+                "message": {"content": "**总结**\n目标库不存在，无法校验。"}
+            }]
+        });
+        let schema = json!({
+            "type": "object",
+            "properties": {"markdown": {"type": "string"}},
+            "required": ["markdown"]
+        });
+        let coerced = coerce_prose_to_schema(LlmProvider::OpenAi, &payload, &schema)
+            .expect("coerce");
+        assert_eq!(
+            coerced.get("markdown").and_then(Value::as_str),
+            Some("**总结**\n目标库不存在，无法校验。")
+        );
+    }
+
+    #[test]
+    fn coerces_act_prose_to_done_none() {
+        let payload = json!({
+            "choices": [{
+                "message": {
+                    "content": "**本步目标**：导入后数据质量校验查询。\n**判断**：目标库 `asti_data` 仍不存在。"
+                }
+            }]
+        });
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "done": {"type": "boolean"},
+                "note": {"type": "string"},
+                "tool": {"type": "string"},
+                "args": {"type": "object"}
+            },
+            "required": ["done", "note"]
+        });
+        let coerced =
+            coerce_prose_to_schema(LlmProvider::OpenAi, &payload, &schema).expect("act coerce");
+        assert_eq!(coerced.get("done"), Some(&json!(true)));
+        assert_eq!(coerced.get("tool"), Some(&json!("none")));
+        assert!(
+            coerced
+                .get("note")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("asti_data")
         );
     }
 

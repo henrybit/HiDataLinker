@@ -17,7 +17,7 @@
 		formatTokenCount,
 		normalizeContextWindow
 	} from '$lib/llm/context-window';
-	import { detectModelModality, modalityI18nKey } from '$lib/llm/modality';
+	import { modalityI18nKey, resolveProfileModality } from '$lib/llm/modality';
 	import type { LlmProviderProfile } from '$lib/llm/providers';
 	import { agentChat } from '$lib/stores/agent-chat.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
@@ -400,7 +400,7 @@
 	const providers = $derived(llmCatalog.providers);
 	const activeProvider = $derived(selectedLlmProvider());
 	const activeModality = $derived(
-		activeProvider ? detectModelModality(activeProvider.model) : 'unknown'
+		activeProvider ? resolveProfileModality(activeProvider) : 'unknown'
 	);
 	const contextMax = $derived(
 		normalizeContextWindow(activeProvider?.contextWindow ?? DEFAULT_CONTEXT_WINDOW)
@@ -415,7 +415,7 @@
 	const contextLevel = $derived(contextUsageLevel(contextRatio));
 
 	function modalityLabel(profile: LlmProviderProfile): string {
-		return t(modalityI18nKey(detectModelModality(profile.model)));
+		return t(modalityI18nKey(resolveProfileModality(profile)));
 	}
 
 	function providerOptionLabel(profile: LlmProviderProfile): string {

@@ -17,7 +17,8 @@ const openai: LlmProviderProfile = {
 	apiKey: 'sk-test',
 	model: 'gpt-4o-mini',
 	baseUrl: 'https://proxy.example/v1',
-	contextWindow: 128_000
+	contextWindow: 128_000,
+	modality: 'multimodal'
 };
 
 function memoryStorage() {
@@ -73,7 +74,8 @@ describe('readCatalog', () => {
 					apiKey: 'sk-ant',
 					model: 'claude-sonnet-4-5',
 					baseUrl: '',
-					contextWindow: 128_000
+					contextWindow: 128_000,
+					modality: 'multimodal'
 				}
 			],
 			selectedId: 'legacy-1'
@@ -95,6 +97,41 @@ describe('readCatalog', () => {
 			selectedId: 'oa'
 		});
 		expect(readCatalog(raw, null).providers[0]?.contextWindow).toBe(128_000);
+	});
+
+	it('infers modality from model when the field is missing', () => {
+		const raw = JSON.stringify({
+			providers: [
+				{
+					id: 'oa',
+					name: 'Work OpenAI',
+					kind: 'openai',
+					apiKey: 'sk-test',
+					model: 'gpt-4o-mini',
+					baseUrl: ''
+				}
+			],
+			selectedId: 'oa'
+		});
+		expect(readCatalog(raw, null).providers[0]?.modality).toBe('multimodal');
+	});
+
+	it('keeps an explicit modality override', () => {
+		const raw = JSON.stringify({
+			providers: [
+				{
+					id: 'oa',
+					name: 'Work OpenAI',
+					kind: 'openai',
+					apiKey: 'sk-test',
+					model: 'gpt-4o-mini',
+					baseUrl: '',
+					modality: 'text'
+				}
+			],
+			selectedId: 'oa'
+		});
+		expect(readCatalog(raw, null).providers[0]?.modality).toBe('text');
 	});
 
 	it('ignores an untouched legacy record', () => {
@@ -134,7 +171,8 @@ describe('upsertProvider and removeProvider', () => {
 			apiKey: 'sk-ant',
 			model: 'claude-sonnet-4-5',
 			baseUrl: '',
-			contextWindow: 128_000
+			contextWindow: 128_000,
+			modality: 'multimodal'
 		};
 		const catalog = upsertProvider(upsertProvider(emptyCatalog(), openai), second);
 		const renamed = { ...openai, name: 'Renamed' };
@@ -152,7 +190,8 @@ describe('upsertProvider and removeProvider', () => {
 			apiKey: '',
 			model: 'claude-sonnet-4-5',
 			baseUrl: '',
-			contextWindow: 128_000
+			contextWindow: 128_000,
+			modality: 'multimodal'
 		};
 		const catalog = {
 			providers: [openai, second],

@@ -86,7 +86,9 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
 	const raw = markdown ?? '';
 	if (!raw.trim()) return '';
 	const html = marked.parse(raw, { async: false }) as string;
-	return sanitizeHtml(html);
+	// marked often appends a trailing newline after the last block; strip it so
+	// chat bubbles don't grow an empty line when white-space is pre-wrap/pre-line.
+	return sanitizeHtml(typeof html === 'string' ? html.trim() : html);
 }
 
 export function sanitizeHtml(html: string): string {
