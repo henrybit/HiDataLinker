@@ -2,7 +2,7 @@
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
 
 const MIN_CONTEXT_WINDOW = 1_024;
-const MAX_CONTEXT_WINDOW = 2_000_000;
+export const MAX_CONTEXT_WINDOW = 100_000_000;
 
 /** Normalize a stored / form value into a sane token budget. */
 export function normalizeContextWindow(value: unknown): number {
@@ -34,9 +34,13 @@ export function estimateTokensFromText(text: string): number {
 	return Math.ceil(cjk / 1.5 + other / 4);
 }
 
-/** Compact label: 128K, 12.4K, 850. */
+/** Compact label: 100M, 1.5M, 128K, 12.4K, 850. */
 export function formatTokenCount(tokens: number): string {
 	const n = Math.max(0, Math.round(tokens));
+	if (n >= 1_000_000) {
+		const m = n / 1_000_000;
+		return `${m >= 10 ? Math.round(m) : Math.round(m * 10) / 10}M`;
+	}
 	if (n >= 10_000) return `${Math.round(n / 1000)}K`;
 	if (n >= 1000) {
 		const k = n / 1000;

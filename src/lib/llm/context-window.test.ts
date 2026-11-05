@@ -17,7 +17,9 @@ describe('normalizeContextWindow', () => {
 
 	it('accepts numeric strings and clamps the upper bound', () => {
 		expect(normalizeContextWindow('200000')).toBe(200_000);
-		expect(normalizeContextWindow(9_999_999)).toBe(2_000_000);
+		expect(normalizeContextWindow(9_999_999)).toBe(9_999_999);
+		expect(normalizeContextWindow(100_000_000)).toBe(100_000_000);
+		expect(normalizeContextWindow(999_999_999)).toBe(100_000_000);
 	});
 });
 
@@ -37,6 +39,8 @@ describe('formatTokenCount', () => {
 		expect(formatTokenCount(850)).toBe('850');
 		expect(formatTokenCount(12_400)).toBe('12K');
 		expect(formatTokenCount(128_000)).toBe('128K');
+		expect(formatTokenCount(1_500_000)).toBe('1.5M');
+		expect(formatTokenCount(100_000_000)).toBe('100M');
 	});
 });
 

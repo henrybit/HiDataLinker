@@ -12,6 +12,7 @@
 	import { llmCatalog, llmSettingsDialog, replaceLlmCatalog } from '$lib/llm/catalog.svelte';
 	import {
 		DEFAULT_CONTEXT_WINDOW,
+		MAX_CONTEXT_WINDOW,
 		formatTokenCount,
 		normalizeContextWindow
 	} from '$lib/llm/context-window';
@@ -368,8 +369,8 @@
 								<input
 									type="number"
 									min="1024"
-									max="2000000"
-									step="1024"
+									max={MAX_CONTEXT_WINDOW}
+									step="1"
 									bind:value={draft.contextWindow}
 									autocomplete="off"
 								/>
