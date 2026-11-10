@@ -304,6 +304,21 @@ export const api = {
 
 	agentCancelRun: (runId: string) => call<void>('agent_cancel_run', { runId }),
 
+	insightsStartRun: (request: {
+		locale: 'zh' | 'en';
+		/** Empty = every saved connection. */
+		connectionIds?: string[];
+		llm: {
+			provider: string;
+			apiKey: string;
+			model: string;
+			baseUrl: string;
+		};
+	}) => call<{ runId: string }>('insights_start_run', { request }),
+
+	insightsReadLatest: () =>
+		call<import('./types').InsightsReport | null>('insights_read_latest'),
+
 	agentRunnerStatus: () =>
 		call<{
 			ready: boolean;

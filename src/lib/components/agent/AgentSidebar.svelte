@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { Database, History, Lightbulb, MessageSquare } from '@lucide/svelte';
+	import { Database, History, Lightbulb, LoaderCircle, MessageSquare } from '@lucide/svelte';
 	import Switch from '$lib/components/layout/Switch.svelte';
 	import { DEMO_FALLBACK_SOURCES } from '$lib/agent/demo';
 	import { engineLabel } from '$lib/engine';
 	import { t, type MessageKey } from '$lib/i18n/i18n.svelte';
 	import { appMode, type AgentNav } from '$lib/stores/app-mode.svelte';
+	import { insights } from '$lib/stores/insights.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
 	const navItems: { id: AgentNav; icon: typeof MessageSquare; labelKey: MessageKey }[] = [
@@ -52,6 +53,9 @@
 				>
 					<Icon size={15} />
 					<span>{t(item.labelKey)}</span>
+					{#if item.id === 'insights' && insights.running}
+						<LoaderCircle size={12} class="agent-spin agent-nav-busy" />
+					{/if}
 				</button>
 			{/each}
 		</nav>

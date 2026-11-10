@@ -1,7 +1,10 @@
 import * as readline from 'node:readline';
 import { emitRunDone, emitRunEvent, handleHostReply } from './host.js';
 import { runDataAnalyst } from './data-analyst/workflow.js';
+import { runInsights } from './insights/workflow.js';
 import type { Envelope, RunStartPayload } from './protocol.js';
+
+const INSIGHTS_AGENT_ID = 'insights';
 
 const MAX_CONCURRENT = Number(process.env.HIDATALINKER_AGENT_MAX_RUNS ?? 3);
 
@@ -30,6 +33,22 @@ async function startRun(payload: RunStartPayload) {
 	const controller = new AbortController();
 	const promise = (async () => {
 		try {
+			if (payload.agentId === INSIGHTS_AGENT_ID) {
+				const result = await runInsights({
+					runId,
+					locale: payload.locale,
+					schemaDigest: payload.schemaDigest,
+					llm: payload.llm,
+					signal: controller.signal,
+					onEvent: (event) => emitRunEvent(runId, event)
+				});
+				if (controller.signal.aborted) {
+					emitRunDone(runId, '', 'cancelled');
+				} else {
+					emitRunDone(runId, result.report ? JSON.stringify(result.report) : '', result.error);
+				}
+				return;
+			}
 			const result = await runDataAnalyst({
 				runId,
 				userQuery: payload.query,

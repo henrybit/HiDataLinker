@@ -1,97 +1,183 @@
 <script lang="ts">
-	import { ListTodo, Search } from '@lucide/svelte';
-	import { DEMO_INSIGHTS } from '$lib/agent/demo';
-	import { t, type MessageKey } from '$lib/i18n/i18n.svelte';
+	import { onMount } from 'svelte';
+	import { Check, LoaderCircle, MessageSquare, RefreshCw, Square } from '@lucide/svelte';
+	import type { InsightCategory, InsightSeverity } from '$lib/api/types';
+	import { localeTag, t, type MessageKey } from '$lib/i18n/i18n.svelte';
 	import { appMode } from '$lib/stores/app-mode.svelte';
+	import { insights } from '$lib/stores/insights.svelte';
+	import { workspace } from '$lib/stores/workspace.svelte';
 
-	const sevKey: Record<'high' | 'medium' | 'low', MessageKey> = {
+	const sevKey: Record<InsightSeverity, MessageKey> = {
 		high: 'agentMode.sev.high',
 		medium: 'agentMode.sev.medium',
 		low: 'agentMode.sev.low'
 	};
 
-	const stats = $derived.by(() => {
-		const high = DEMO_INSIGHTS.filter((i) => i.severity === 'high').length;
-		const medium = DEMO_INSIGHTS.filter((i) => i.severity === 'medium').length;
-		const low = DEMO_INSIGHTS.filter((i) => i.severity === 'low').length;
-		const processed = appMode.processedInsightIds.size;
-		const autoTasks = appMode.taskedInsightIds.size;
-		const pending = Math.max(0, DEMO_INSIGHTS.length - processed);
-		return { high, medium, low, processed: 7 + processed, pending, autoTasks: 3 + autoTasks };
+	const catKey: Record<InsightCategory, MessageKey> = {
+		business: 'agentMode.insights.cat.business',
+		quality: 'agentMode.insights.cat.quality',
+		performance: 'agentMode.insights.cat.performance',
+		governance: 'agentMode.insights.cat.governance',
+		integration: 'agentMode.insights.cat.integration'
+	};
+
+	onMount(() => {
+		void insights.init();
 	});
+
+	const items = $derived(insights.report?.items ?? []);
+
+	const stats = $derived.by(() => {
+		const count = (sev: InsightSeverity) => items.filter((i) => i.severity === sev).length;
+		const processed = items.filter((i) => appMode.processedInsightIds.has(i.id)).length;
+		return {
+			high: count('high'),
+			medium: count('medium'),
+			low: count('low'),
+			processed,
+			pending: items.length - processed
+		};
+	});
+
+	const generatedAt = $derived.by(() => {
+		const raw = insights.report?.generatedAt;
+		if (!raw) return null;
+		const at = new Date(raw);
+		return Number.isNaN(at.getTime()) ? null : at.toLocaleString(localeTag());
+	});
+
+	function connectionName(id: string): string {
+		return workspace.connections.find((conn) => conn.id === id)?.name ?? id;
+	}
 </script>
 
 <div class="agent-insights-page">
 	<div class="agent-insights-main">
-		<header class="agent-page-head">
-			<h2>{t('agentMode.insights.title')}</h2>
-			<p>{t('agentMode.insights.desc')}</p>
+		<header class="agent-page-head agent-insights-head">
+			<div>
+				<h2>{t('agentMode.insights.title')}</h2>
+				<p>{t('agentMode.insights.desc')}</p>
+			</div>
+			<div class="agent-insights-toolbar">
+				{#if generatedAt && !insights.running}
+					<span class="agent-insights-time">
+						{t('agentMode.insights.generatedAt', { time: generatedAt })}
+					</span>
+				{/if}
+				{#if insights.running}
+					<button type="button" class="agent-action-btn" onclick={() => insights.cancel()}>
+						<Square size={14} />
+						{t('agentMode.insights.cancel')}
+					</button>
+				{:else}
+					<button
+						type="button"
+						class="agent-action-btn primary"
+						disabled={workspace.connections.length === 0}
+						onclick={() => insights.run()}
+					>
+						<RefreshCw size={14} />
+						{t('agentMode.insights.refresh')}
+					</button>
+				{/if}
+			</div>
 		</header>
 
-		<ul class="agent-insight-list">
-			{#each DEMO_INSIGHTS as item (item.id)}
-				<li class="agent-insight-row">
-					<div class="agent-insight-body">
-						<div class="agent-insight-title-row">
-							<strong>{t(item.titleKey)}</strong>
-							<span
-								class="agent-sev"
-								class:high={item.severity === 'high'}
-								class:medium={item.severity === 'medium'}
-								class:low={item.severity === 'low'}
+		{#if insights.running}
+			<div class="agent-insights-status">
+				<LoaderCircle size={14} class="agent-spin" />
+				<span>{insights.statusMessage ?? t('agentMode.insights.starting')}</span>
+				<small>{t('agentMode.insights.runningHint')}</small>
+			</div>
+		{/if}
+
+		{#if insights.error}
+			<p class="agent-insights-error">{insights.error}</p>
+		{/if}
+
+		{#if items.length === 0}
+			{#if insights.loaded && !insights.running}
+				<p class="agent-insights-empty">
+					{workspace.connections.length === 0
+						? t('agentMode.insights.emptyNoConn')
+						: t('agentMode.insights.empty')}
+				</p>
+			{/if}
+		{:else}
+			<ul class="agent-insight-list">
+				{#each items as item (item.id)}
+					{@const handled = appMode.processedInsightIds.has(item.id)}
+					<li class="agent-insight-row" class:handled>
+						<div class="agent-insight-body">
+							<div class="agent-insight-title-row">
+								<strong>{item.title}</strong>
+								<span
+									class="agent-sev"
+									class:high={item.severity === 'high'}
+									class:medium={item.severity === 'medium'}
+									class:low={item.severity === 'low'}
+								>
+									{t(sevKey[item.severity])}
+								</span>
+								<span class="agent-insight-cat">{t(catKey[item.category])}</span>
+							</div>
+							<p>{item.body}</p>
+							<div class="agent-insight-tags">
+								{#each item.connectionIds as id (id)}
+									<span class="src">{connectionName(id)}</span>
+								{/each}
+								{#each item.tables as table (table)}
+									<span class="metric mono">{table}</span>
+								{/each}
+								{#each item.tags as tag (tag)}
+									<span class="metric">{tag}</span>
+								{/each}
+							</div>
+						</div>
+						<div class="agent-insight-actions">
+							<button
+								type="button"
+								class="agent-action-btn primary"
+								title={item.prompt}
+								onclick={() => insights.analyzeInChat(item)}
 							>
-								{t(sevKey[item.severity])}
-							</span>
+								<MessageSquare size={14} />
+								{t('agentMode.insights.analyzeInChat')}
+							</button>
+							<button
+								type="button"
+								class="agent-action-btn"
+								disabled={handled}
+								onclick={() => appMode.convertInsightToTask(item.id)}
+							>
+								<Check size={14} />
+								{handled ? t('agentMode.insights.handled') : t('agentMode.insights.markDone')}
+							</button>
 						</div>
-						<p>{t(item.bodyKey)}</p>
-						<div class="agent-insight-tags">
-							{#each item.sources as src}
-								<span class="src">{src}</span>
-							{/each}
-							{#each item.metrics as m}
-								<span class="metric">{m}</span>
-							{/each}
-						</div>
-					</div>
-					<div class="agent-insight-actions">
-						<button type="button" class="agent-action-btn" disabled>
-							<Search size={14} /> {t('agentMode.insights.evidence')}
-						</button>
-						<button
-							type="button"
-							class="agent-action-btn primary"
-							disabled={appMode.taskedInsightIds.has(item.id)}
-							onclick={() => appMode.convertInsightToTask(item.id)}
-						>
-							<ListTodo size={14} />
-							{appMode.taskedInsightIds.has(item.id)
-								? t('agentMode.insights.tasked')
-								: t('agentMode.insights.toTask')}
-						</button>
-					</div>
-				</li>
-			{/each}
-		</ul>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	</div>
 
 	<aside class="agent-insights-side">
 		<section class="agent-context-block">
-			<div class="agent-side-head">
-				<h3>{t('agentMode.insights.patrol')}</h3>
-				<button type="button" class="agent-link-btn" disabled
-					>+ {t('agentMode.insights.newPatrol')}</button
-				>
-			</div>
-			<ul class="agent-patrol-list">
-				<li>
-					<strong>{t('agentMode.insights.daily')}</strong>
-					<span>08:00</span>
-				</li>
-				<li>
-					<strong>{t('agentMode.insights.weekly')}</strong>
-					<span>{t('agentMode.insights.monday')} 09:00</span>
-				</li>
-			</ul>
+			<h3>{t('agentMode.insights.profile')}</h3>
+			{#if insights.report?.connections.length}
+				<ul class="agent-insights-profiles">
+					{#each insights.report.connections as conn (conn.id)}
+						<li>
+							<div>
+								<strong>{connectionName(conn.id)}</strong>
+								<span class="agent-insight-cat">{conn.domain}</span>
+							</div>
+							<p>{conn.summary}</p>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="agent-insights-muted">{t('agentMode.insights.profileEmpty')}</p>
+			{/if}
 		</section>
 
 		<section class="agent-context-block">
@@ -109,10 +195,6 @@
 				<div>
 					<dt>{t('agentMode.insights.pending')}</dt>
 					<dd>{stats.pending}</dd>
-				</div>
-				<div>
-					<dt>{t('agentMode.insights.autoTasks')}</dt>
-					<dd>{stats.autoTasks}</dd>
 				</div>
 			</dl>
 		</section>

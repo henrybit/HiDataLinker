@@ -407,3 +407,27 @@ export interface ContextMenuState {
 	objectName?: string;
 	actions: ContextMenuAction[];
 }
+
+export type InsightSeverity = 'high' | 'medium' | 'low';
+export type InsightCategory = 'business' | 'quality' | 'performance' | 'governance' | 'integration';
+
+export interface InsightItem {
+	id: string;
+	title: string;
+	body: string;
+	severity: InsightSeverity;
+	category: InsightCategory;
+	connectionIds: string[];
+	/** `schema.table` references. */
+	tables: string[];
+	tags: string[];
+	/** Ready-to-send prompt for the data-analyst agent. */
+	prompt: string;
+}
+
+export interface InsightsReport {
+	generatedAt: string;
+	locale: 'zh' | 'en';
+	connections: { id: string; domain: string; summary: string }[];
+	items: InsightItem[];
+}

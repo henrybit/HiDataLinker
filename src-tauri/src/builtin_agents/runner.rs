@@ -1,5 +1,6 @@
 use crate::agent::catalog::{self, ToolError};
 use crate::agent::policy::SqlAuthMode;
+use crate::builtin_agents::insights::{write_latest_report, INSIGHTS_AGENT_ID};
 use crate::builtin_agents::context::{
     context_event_payload, prepare_conversation_context, CompressLlm,
 };
@@ -66,6 +67,18 @@ fn default_locale() -> String {
     "en".into()
 }
 
+/// Background insights run: no chat session, always read-only tools.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsStartRunRequest {
+    #[serde(default = "default_locale")]
+    pub locale: String,
+    /// Empty/omitted = every saved connection.
+    #[serde(default)]
+    pub connection_ids: Vec<String>,
+    pub llm: AgentLlmConfig,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStartRunResponse {
@@ -81,8 +94,15 @@ pub struct AgentRunnerStatus {
     pub node_bin: Option<String>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RunKind {
+    Chat,
+    Insights,
+}
+
 #[derive(Clone)]
 struct RunCtx {
+    kind: RunKind,
     agent_id: String,
     session_id: String,
     llm: AgentLlmConfig,
@@ -463,6 +483,14 @@ impl AgentRunner {
         };
         drop(runs);
 
+        if ctx.kind == RunKind::Insights {
+            let _ = self.app.emit(
+                "insights-run-event",
+                json!({ "runId": run_id, "event": event }),
+            );
+            return Ok(());
+        }
+
         let _ = persist_event(&self.app_state(), &ctx, &event).await;
 
         let _ = self.app.emit(
@@ -501,6 +529,10 @@ impl AgentRunner {
         let Some(ctx) = ctx else {
             return Ok(());
         };
+
+        if ctx.kind == RunKind::Insights {
+            return self.finish_insights_run(&run_id, &ctx, &markdown, error).await;
+        }
 
         let chats_dir = self.app_state().chats_dir().clone();
         let agent_id = ctx.agent_id.clone();
@@ -599,6 +631,7 @@ impl AgentRunner {
         let run_id = Uuid::new_v4().to_string();
         let auth_mode = SqlAuthMode::parse(&request.auth_mode);
         let ctx = RunCtx {
+            kind: RunKind::Chat,
             agent_id: request.agent_id.clone(),
             session_id: request.session_id.clone(),
             llm: request.llm.clone(),
@@ -770,6 +803,172 @@ impl AgentRunner {
             );
             return Err(err);
         }
+        Ok(())
+    }
+
+    /// Starts (or joins) the background insights run and returns its id immediately.
+    pub async fn start_insights_run(
+        self: &Arc<Self>,
+        request: InsightsStartRunRequest,
+    ) -> AppResult<String> {
+        self.ensure_started().await?;
+        {
+            let runs = self.runs.read().await;
+            if let Some((run_id, _)) = runs
+                .iter()
+                .find(|(_, ctx)| ctx.kind == RunKind::Insights)
+            {
+                return Ok(run_id.clone());
+            }
+            if runs.len() >= MAX_CONCURRENT_RUNS {
+                return Err(AppError::msg(format!(
+                    "concurrency limit ({MAX_CONCURRENT_RUNS}) reached"
+                )));
+            }
+        }
+
+        let run_id = Uuid::new_v4().to_string();
+        let ctx = RunCtx {
+            kind: RunKind::Insights,
+            agent_id: INSIGHTS_AGENT_ID.into(),
+            session_id: INSIGHTS_AGENT_ID.into(),
+            llm: request.llm.clone(),
+            auth_mode: SqlAuthMode::ReadOnly,
+            cancelled: Arc::new(AtomicBool::new(false)),
+            started_at: Instant::now(),
+        };
+        self.runs.write().await.insert(run_id.clone(), ctx);
+
+        let runner = Arc::clone(self);
+        let run_id_bg = run_id.clone();
+        handle().spawn(async move {
+            if let Err(error) = runner.launch_insights_run(&run_id_bg, request).await {
+                log::warn!("insights run launch failed: {}", error.user_message());
+                let ctx = runner.runs.write().await.remove(&run_id_bg);
+                if let Some(ctx) = ctx {
+                    let _ = runner
+                        .finish_insights_run(&run_id_bg, &ctx, "", Some(error.user_message()))
+                        .await;
+                }
+            }
+        });
+        Ok(run_id)
+    }
+
+    async fn launch_insights_run(
+        self: &Arc<Self>,
+        run_id: &str,
+        request: InsightsStartRunRequest,
+    ) -> AppResult<()> {
+        let connection_ids = request
+            .connection_ids
+            .iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect::<Vec<_>>();
+        let connection_filter = if connection_ids.is_empty() {
+            None
+        } else {
+            Some(connection_ids.as_slice())
+        };
+        let schema_digest =
+            crate::schema_cache::ensure_and_digest(&self.app_state(), connection_filter)
+                .await
+                .unwrap_or_else(|error| {
+                    log::warn!(
+                        "schema cache ensure failed before insights: {}",
+                        error.user_message()
+                    );
+                    String::new()
+                });
+
+        let cancelled = self
+            .runs
+            .read()
+            .await
+            .get(run_id)
+            .map(|ctx| ctx.cancelled.load(Ordering::SeqCst))
+            .unwrap_or(true);
+        if cancelled {
+            let ctx = self.runs.write().await.remove(run_id);
+            if let Some(ctx) = ctx {
+                self.finish_insights_run(run_id, &ctx, "", Some("cancelled".into()))
+                    .await?;
+            }
+            return Ok(());
+        }
+
+        let locale = if request.locale.trim() == "zh" { "zh" } else { "en" };
+        self.send_json(json!({
+            "id": Uuid::new_v4().to_string(),
+            "type": "run.start",
+            "payload": {
+                "runId": run_id,
+                "agentId": INSIGHTS_AGENT_ID,
+                "sessionId": INSIGHTS_AGENT_ID,
+                "query": "",
+                "systemMd": "",
+                "locale": locale,
+                "schemaDigest": schema_digest,
+                "connectionIds": connection_ids,
+                "authMode": "readonly",
+                "llm": {
+                    "provider": request.llm.provider,
+                    "model": request.llm.model,
+                    "baseUrl": request.llm.base_url
+                }
+            }
+        }))
+        .await
+    }
+
+    async fn finish_insights_run(
+        &self,
+        run_id: &str,
+        ctx: &RunCtx,
+        report_json: &str,
+        error: Option<String>,
+    ) -> AppResult<()> {
+        let duration_ms = ctx.started_at.elapsed().as_millis() as u64;
+        let report = if report_json.trim().is_empty() {
+            None
+        } else {
+            match serde_json::from_str::<Value>(report_json) {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    log::warn!("insights report is not valid JSON: {err}");
+                    None
+                }
+            }
+        };
+        let error = error.or_else(|| report.is_none().then(|| "empty insights report".into()));
+        let status = if error.as_deref() == Some("cancelled") {
+            "cancelled"
+        } else if report.is_some() {
+            "done"
+        } else {
+            "error"
+        };
+
+        if let Some(report) = report.clone() {
+            let dir = self.app_state().insights_dir().clone();
+            if let Err(err) =
+                crate::runtime::run_blocking(move || write_latest_report(&dir, &report)).await
+            {
+                log::warn!("insights report save failed: {}", err.user_message());
+            }
+        }
+
+        let _ = self.app.emit(
+            "insights-run-done",
+            json!({
+                "runId": run_id,
+                "status": status,
+                "error": if report.is_some() { None } else { error },
+                "report": report,
+                "durationMs": duration_ms
+            }),
+        );
         Ok(())
     }
 

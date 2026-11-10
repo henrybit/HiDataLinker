@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 ///   db/index.json
 ///   db/schemas/<connectionId>/…
 ///   temp/scripts/<runId>/…     # agent-authored import/analysis scripts
+///   insights/latest.json         # last insights-agent report
 ///   runtime/YYYY-MM-DD.log
 ///   settings/runtime.json
 /// ```
@@ -43,6 +44,8 @@ pub struct AppPaths {
     pub db_schemas: PathBuf,
     /// Ephemeral agent workspace: `temp/scripts/<runId>/`.
     pub temp: PathBuf,
+    /// Insights agent reports: `insights/latest.json`.
+    pub insights: PathBuf,
     pub runtime: PathBuf,
     pub runtime_settings: PathBuf,
 }
@@ -69,6 +72,7 @@ impl AppPaths {
             db_schemas: db.join("schemas"),
             db,
             temp: root.join("temp"),
+            insights: root.join("insights"),
             runtime: root.join("runtime"),
             runtime_settings: root.join("settings").join("runtime.json"),
             root,
@@ -89,6 +93,7 @@ impl AppPaths {
             Some(self.db.as_path()),
             Some(self.db_schemas.as_path()),
             Some(self.temp.as_path()),
+            Some(self.insights.as_path()),
             Some(self.runtime.as_path()),
             self.runtime_settings.parent(),
         ] {
