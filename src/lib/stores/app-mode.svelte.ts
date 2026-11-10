@@ -23,6 +23,8 @@ export type AgentBehaviorPrefs = {
 	chartEngine: ChartEngine;
 	/** Conversation session rail expanded (true) or collapsed (false). */
 	sessionRailExpanded: boolean;
+	/** Left workspace sidebar expanded (true) or collapsed to icons (false). */
+	sidebarExpanded: boolean;
 	sourceAutoConnect: Record<string, boolean>;
 };
 
@@ -40,6 +42,7 @@ function defaultPrefs(): AgentBehaviorPrefs {
 		authMode: 'readonly',
 		chartEngine: 'echarts',
 		sessionRailExpanded: true,
+		sidebarExpanded: true,
 		sourceAutoConnect: {}
 	};
 }

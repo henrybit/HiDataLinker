@@ -2204,23 +2204,88 @@ button.query-exec-log-title:hover {
 }
 
 .agent-shell {
+	--agent-sidebar-width: 240px;
 	display: grid;
-	grid-template-columns: 240px 1fr;
+	grid-template-columns: var(--agent-sidebar-width) 1fr;
 	min-height: 0;
 	height: 100%;
 	background: #f7f8fb;
+	transition: grid-template-columns 0.18s ease;
 }
 
 .agent-shell.with-context {
-	grid-template-columns: 240px 1fr 280px;
+	grid-template-columns: var(--agent-sidebar-width) 1fr 280px;
+}
+
+.agent-shell.sidebar-collapsed {
+	--agent-sidebar-width: 56px;
 }
 
 .agent-sidebar {
 	display: flex;
 	flex-direction: column;
+	min-width: 0;
 	min-height: 0;
+	overflow: hidden;
 	border-right: 1px solid var(--border);
 	background: white;
+}
+
+.agent-sidebar-label-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.agent-sidebar-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	margin-left: auto;
+	padding: 0;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	flex: none;
+}
+
+.agent-sidebar-toggle:hover {
+	background: var(--bg-hover);
+	color: var(--text);
+}
+
+.agent-sidebar.collapsed .agent-sidebar-section {
+	padding: 12px 8px 8px;
+}
+
+.agent-sidebar.collapsed .agent-sidebar-label {
+	justify-content: center;
+}
+
+.agent-sidebar.collapsed .agent-sidebar-toggle {
+	margin-left: 0;
+	width: 32px;
+	height: 28px;
+}
+
+.agent-sidebar.collapsed .agent-nav-item {
+	position: relative;
+	justify-content: center;
+	padding: 0;
+}
+
+.agent-sidebar.collapsed .agent-nav-item .agent-nav-busy {
+	position: absolute;
+	top: 3px;
+	right: 3px;
+}
+
+.agent-sidebar.collapsed .agent-source-row {
+	justify-content: center;
+	padding: 6px 0;
 }
 
 .agent-sidebar-section {
@@ -4448,7 +4513,10 @@ button.query-exec-log-title:hover {
 
 @media (max-width: 1100px) {
 	.agent-shell.with-context {
-		grid-template-columns: 220px 1fr;
+		grid-template-columns: var(--agent-sidebar-width) 1fr;
+	}
+	.agent-shell.with-context:not(.sidebar-collapsed) {
+		--agent-sidebar-width: 220px;
 	}
 	.agent-shell.with-context .agent-context {
 		display: none;

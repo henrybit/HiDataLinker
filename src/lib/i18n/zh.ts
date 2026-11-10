@@ -738,6 +738,8 @@ export const zh: Record<MessageKey, string> = {
 	'agentMode.chart.exportEmpty': '图表尚未渲染完成',
 	'agentMode.chart.exportFailed': '导出失败',
 	'agentMode.sessions.title': '会话',
+	'agentMode.sidebar.expand': '展开侧边栏',
+	'agentMode.sidebar.collapse': '收起侧边栏',
 	'agentMode.sessions.expand': '展开会话列表',
 	'agentMode.sessions.collapse': '收起会话列表',
 	'agentMode.sessions.empty': '暂无会话',

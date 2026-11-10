@@ -15,7 +15,11 @@
 	);
 </script>
 
-<div class="agent-shell" class:with-context={showDemoContext}>
+<div
+	class="agent-shell"
+	class:with-context={showDemoContext}
+	class:sidebar-collapsed={!appMode.prefs.sidebarExpanded}
+>
 	<AgentSidebar />
 	<div class="agent-main">
 		{#if appMode.agentNav === 'sources'}

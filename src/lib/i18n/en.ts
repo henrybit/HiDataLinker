@@ -758,6 +758,8 @@ export const en = {
 	'agentMode.chart.exportEmpty': 'Chart has not finished rendering',
 	'agentMode.chart.exportFailed': 'Export failed',
 	'agentMode.sessions.title': 'Sessions',
+	'agentMode.sidebar.expand': 'Expand sidebar',
+	'agentMode.sidebar.collapse': 'Collapse sidebar',
 	'agentMode.sessions.expand': 'Expand sessions',
 	'agentMode.sessions.collapse': 'Collapse sessions',
 	'agentMode.sessions.empty': 'No sessions yet',
