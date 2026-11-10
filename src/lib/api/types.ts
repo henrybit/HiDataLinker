@@ -173,6 +173,74 @@ export interface QueryResult {
 	messages?: QueryLogEntry[];
 }
 
+export type SqlAuditClientSource = 'editor' | 'table_edit' | 'structure' | 'analysis';
+
+export type SqlAuditSource =
+	| SqlAuditClientSource
+	| 'table_browse'
+	| 'schema'
+	| 'export'
+	| 'migration'
+	| 'import'
+	| 'agent'
+	| 'app';
+
+export interface SqlAuditEntry {
+	id: string;
+	at: string;
+	osUser: string;
+	connectionId: string;
+	connectionName: string;
+	engine: string;
+	host: string;
+	port: number;
+	username: string;
+	schema: string | null;
+	source: SqlAuditSource;
+	sourceDetail: string | null;
+	operation: string;
+	sql: string;
+	sqlLength: number;
+	sqlTruncated: boolean;
+	statementKind: string | null;
+	success: boolean;
+	affectedRows: number | null;
+	rowCount: number | null;
+	durationMs: number;
+	error: string | null;
+}
+
+export interface SqlAuditSettings {
+	enabled: boolean;
+	retainDays: number;
+}
+
+export interface SqlAuditInfo {
+	settings: SqlAuditSettings;
+	dir: string;
+}
+
+export interface SqlAuditQuery {
+	date?: string | null;
+	connectionId?: string | null;
+	source?: string | null;
+	status?: 'ok' | 'error' | null;
+	keyword?: string | null;
+	limit?: number;
+	offset?: number;
+}
+
+export interface SqlAuditPage {
+	date: string;
+	total: number;
+	entries: SqlAuditEntry[];
+}
+
+export interface SqlAuditDay {
+	date: string;
+	sizeBytes: number;
+}
+
 export type TabKind = 'objects' | 'table' | 'view' | 'ddl' | 'query';
 
 export interface Tab {

@@ -3,6 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{ConnectResult, ConnectionProfile};
 use crate::paths::{migrate_analysis, migrate_file, AppPaths};
 use crate::runtime::{run_blocking, run_db};
+use crate::sql_audit::{AuditConnection, AuditScope, SqlAuditLog};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -29,6 +30,7 @@ pub struct AppState {
     insights_dir: PathBuf,
     schema_index_path: PathBuf,
     schema_cache_dir: PathBuf,
+    sql_audit: SqlAuditLog,
     profiles: RwLock<Vec<ConnectionProfile>>,
     sessions: DashMap<String, LiveEngine>,
     session_order: Mutex<Vec<String>>,
@@ -56,6 +58,7 @@ impl AppState {
         let insights_dir = paths.insights;
         let schema_index_path = paths.db_index;
         let schema_cache_dir = paths.db_schemas;
+        let sql_audit = SqlAuditLog::open(paths.audit, paths.audit_settings)?;
         let profiles = if data_file.exists() {
             let raw = std::fs::read_to_string(&data_file)?;
             serde_json::from_str::<StoredProfiles>(&raw)?.connections
@@ -76,6 +79,7 @@ impl AppState {
             insights_dir,
             schema_index_path,
             schema_cache_dir,
+            sql_audit,
             profiles: RwLock::new(profiles),
             sessions: DashMap::new(),
             session_order: Mutex::new(Vec::new()),
@@ -165,8 +169,9 @@ impl AppState {
         if let Some(password) = password_override {
             profile.password = Some(password);
         }
+        let audit = AuditScope::new(self.sql_audit.clone(), AuditConnection::from(&profile));
         let engine = run_db(async move {
-            let engine = LiveEngine::from_profile(&profile)?;
+            let engine = LiveEngine::from_profile(&profile)?.with_audit(audit);
             match engine.ping().await {
                 Ok(()) => Ok(engine),
                 Err(error) => {
@@ -224,6 +229,10 @@ impl AppState {
             .get(id)
             .map(|entry| entry.clone())
             .ok_or_else(|| AppError::NotConnected(id.to_string()))
+    }
+
+    pub fn sql_audit(&self) -> &SqlAuditLog {
+        &self.sql_audit
     }
 
     pub fn query_cache_dir(&self) -> &PathBuf {

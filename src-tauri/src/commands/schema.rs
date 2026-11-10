@@ -1,4 +1,4 @@
-use super::with_engine;
+use super::{with_engine, with_engine_as};
 use crate::db::DatabaseEngine;
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -6,6 +6,7 @@ use crate::models::{
     TableInfo, TriggerInfo, ViewInfo,
 };
 use crate::runtime::run_db;
+use crate::sql_audit::AuditSource;
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
@@ -28,7 +29,7 @@ pub async fn create_database(
     charset: Option<String>,
     collation: Option<String>,
 ) -> AppResult<()> {
-    with_engine(&state, connection_id, move |engine| async move {
+    with_engine_as(&state, connection_id, AuditSource::Schema, move |engine| async move {
         engine
             .create_database(&name, charset.as_deref(), collation.as_deref())
             .await
@@ -42,7 +43,7 @@ pub async fn drop_database(
     connection_id: String,
     name: String,
 ) -> AppResult<()> {
-    with_engine(&state, connection_id, move |engine| async move {
+    with_engine_as(&state, connection_id, AuditSource::Schema, move |engine| async move {
         engine.drop_database(&name).await
     })
     .await
@@ -56,7 +57,7 @@ pub async fn dump_database(
     include_schema: bool,
     include_data: bool,
 ) -> AppResult<String> {
-    with_engine(&state, connection_id, move |engine| async move {
+    with_engine_as(&state, connection_id, AuditSource::Export, move |engine| async move {
         engine
             .dump_database(&name, include_schema, include_data)
             .await
@@ -71,7 +72,7 @@ pub async fn dump_table(
     schema: String,
     table: String,
 ) -> AppResult<String> {
-    with_engine(&state, connection_id, move |engine| async move {
+    with_engine_as(&state, connection_id, AuditSource::Export, move |engine| async move {
         engine.dump_table(&schema, &table).await
     })
     .await
@@ -121,8 +122,13 @@ pub async fn migrate_database(
         ));
     }
 
-    let source = state.engine(&source_connection_id)?;
-    let target = state.engine(&target_connection_id)?;
+    let detail = Some(format!("{source_name} -> {target_name}"));
+    let source = state
+        .engine(&source_connection_id)?
+        .with_source(AuditSource::Migration, detail.clone());
+    let target = state
+        .engine(&target_connection_id)?
+        .with_source(AuditSource::Migration, detail);
     let same_connection = source_connection_id == target_connection_id;
     run_db(async move {
         crate::db::migrate::migrate_database(

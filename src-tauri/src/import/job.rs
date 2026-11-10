@@ -245,7 +245,10 @@ async fn run_import_job(
     emit_progress("prepare", 0, total_rows, "Preparing import");
 
     let state = app.state::<AppState>();
-    let db_engine = state.engine(&connection_id)?;
+    let db_engine = state.engine(&connection_id)?.with_source(
+        crate::sql_audit::AuditSource::Import,
+        Some(format!("{schema}.{table}")),
+    );
 
     let qualified = qualify_table(&engine, &schema, &table);
 

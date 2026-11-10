@@ -12,6 +12,7 @@ mod paths;
 mod runtime;
 mod runtime_log;
 mod schema_cache;
+mod sql_audit;
 mod state;
 
 use agent::{agent_status, list_agent_audit, set_agent_enabled};
@@ -29,7 +30,8 @@ use commands::{
     read_locale, read_migration_history, read_query_cache, read_runtime_settings,
     save_analysis_history, save_migration_history, start_llm, table_row_count, test_connection,
     upsert_connection, write_llm_catalog, write_locale, write_query_cache, write_runtime_settings,
-    write_binary_file, write_text_file,
+    write_binary_file, write_text_file, list_sql_audit, list_sql_audit_days, read_sql_audit_settings,
+    write_sql_audit_settings,
 };
 use state::AppState;
 use tauri::Manager;
@@ -99,6 +101,10 @@ pub fn run() {
             write_locale,
             read_runtime_settings,
             write_runtime_settings,
+            read_sql_audit_settings,
+            write_sql_audit_settings,
+            list_sql_audit,
+            list_sql_audit_days,
             save_analysis_history,
             delete_analysis_history,
             save_migration_history,

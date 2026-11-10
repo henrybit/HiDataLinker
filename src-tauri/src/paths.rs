@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 ///   insights/latest.json         # last insights-agent report
 ///   runtime/YYYY-MM-DD.log
 ///   settings/runtime.json
+///   audit/YYYY-MM-DD.jsonl       # SQL execution audit log
+///   settings/audit.json
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppPaths {
@@ -48,6 +50,8 @@ pub struct AppPaths {
     pub insights: PathBuf,
     pub runtime: PathBuf,
     pub runtime_settings: PathBuf,
+    pub audit: PathBuf,
+    pub audit_settings: PathBuf,
 }
 
 impl AppPaths {
@@ -75,6 +79,8 @@ impl AppPaths {
             insights: root.join("insights"),
             runtime: root.join("runtime"),
             runtime_settings: root.join("settings").join("runtime.json"),
+            audit: root.join("audit"),
+            audit_settings: root.join("settings").join("audit.json"),
             root,
         }
     }
@@ -96,6 +102,7 @@ impl AppPaths {
             Some(self.insights.as_path()),
             Some(self.runtime.as_path()),
             self.runtime_settings.parent(),
+            Some(self.audit.as_path()),
         ] {
             if let Some(dir) = dir {
                 std::fs::create_dir_all(dir)?;
@@ -279,6 +286,14 @@ mod tests {
         assert_eq!(
             paths.runtime_settings,
             PathBuf::from("/Users/ada/.hidatalinker/settings/runtime.json")
+        );
+        assert_eq!(
+            paths.audit,
+            PathBuf::from("/Users/ada/.hidatalinker/audit")
+        );
+        assert_eq!(
+            paths.audit_settings,
+            PathBuf::from("/Users/ada/.hidatalinker/settings/audit.json")
         );
     }
 

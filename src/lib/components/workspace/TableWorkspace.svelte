@@ -213,7 +213,7 @@
 			}
 			await afterPaint();
 			await runSqlStatements(
-				(sql) => api.executeSql(connectionId, sql, schema),
+				(sql) => api.executeSql(connectionId, sql, schema, 'structure'),
 				statements
 			);
 			const message =
@@ -236,7 +236,7 @@
 		try {
 			const sql = buildDropColumnSql(engine, schema, name, selectedColumnInfo.name);
 			await afterPaint();
-			await api.executeSql(connectionId, sql, schema);
+			await api.executeSql(connectionId, sql, schema, 'structure');
 			await afterSchemaChange();
 			showSuccess(t('structure.dropped'));
 		} catch (err) {
@@ -265,7 +265,7 @@
 							editorValues
 						);
 			await afterPaint();
-			await api.executeSql(connectionId, sql, schema);
+			await api.executeSql(connectionId, sql, schema, 'table_edit');
 			closeEditor();
 			await loadData();
 		} catch (err) {
@@ -329,7 +329,7 @@
 			const row = result.rows[selectedRow];
 			const sql = buildDeleteSql(engine, schema, name, columns, result.columns, row);
 			await afterPaint();
-			await api.executeSql(connectionId, sql, schema);
+			await api.executeSql(connectionId, sql, schema, 'table_edit');
 			await loadData();
 		} catch (err) {
 			error = errorMessage(err);

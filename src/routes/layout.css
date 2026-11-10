@@ -1371,6 +1371,10 @@ button.query-exec-log-title:hover {
 	width: min(720px, calc(100vw - 32px));
 }
 
+.settings-dialog.wide {
+	width: min(1080px, calc(100vw - 32px));
+}
+
 .settings-tabs {
 	display: flex;
 	gap: 4px;

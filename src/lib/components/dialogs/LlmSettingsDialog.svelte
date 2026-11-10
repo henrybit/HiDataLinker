@@ -8,6 +8,7 @@
 	} from '$lib/agent/gateway.svelte';
 	import { api, isTauriRuntime } from '$lib/api/tauri';
 	import Switch from '$lib/components/layout/Switch.svelte';
+	import SqlAuditPanel from './SqlAuditPanel.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { llmCatalog, llmSettingsDialog, replaceLlmCatalog } from '$lib/llm/catalog.svelte';
 	import {
@@ -31,7 +32,7 @@
 		type LlmProviderProfile
 	} from '$lib/llm/providers';
 
-	type SettingsTab = 'basic' | 'llm';
+	type SettingsTab = 'basic' | 'llm' | 'audit';
 
 	function blankProvider(): LlmProviderProfile {
 		const model = DEFAULT_MODELS.openai;
@@ -202,6 +203,7 @@
 <div class="modal-backdrop">
 	<div
 		class="modal settings-dialog"
+		class:wide={tab === 'audit'}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="settings-title"
@@ -236,6 +238,16 @@
 					onclick={() => (tab = 'llm')}
 				>
 					{t('settings.tab.llm')}
+				</button>
+				<button
+					class="settings-tab"
+					class:active={tab === 'audit'}
+					type="button"
+					role="tab"
+					aria-selected={tab === 'audit'}
+					onclick={() => (tab = 'audit')}
+				>
+					{t('settings.tab.audit')}
 				</button>
 			</div>
 			<div class="body">
@@ -285,6 +297,8 @@
 							onToggle={toggleRuntimeLog}
 						/>
 					</section>
+				{:else if tab === 'audit'}
+					<SqlAuditPanel />
 				{:else}
 					<p class="hint">{t('settings.hint')}</p>
 					<div class="settings-layout">

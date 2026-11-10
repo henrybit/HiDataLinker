@@ -484,7 +484,7 @@
 				documents: files,
 				locale: getLocale(),
 				caller: createAnalysisCaller(toLlmSettings(provider)),
-				runQuery: (scope, sql) => api.executeSql(scope.connectionId, sql, scope.schema),
+				runQuery: (scope, sql) => api.executeSql(scope.connectionId, sql, scope.schema, 'analysis'),
 				onLog: record
 			});
 			const summary = t('analysis.summary', {

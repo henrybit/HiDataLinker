@@ -1,8 +1,9 @@
-use crate::commands::with_engine;
 use crate::db::ident::validate_ident;
 use crate::db::DatabaseEngine;
 use crate::error::{AppError, AppResult};
 use crate::models::ObjectKind;
+use crate::runtime::run_db;
+use crate::sql_audit::AuditSource;
 use crate::state::AppState;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -252,42 +253,42 @@ pub async fn invoke_with_context(
         "list_connections" => list_connections(state).await,
         "connect" => connect(state, args).await,
         "list_databases" => {
-            engine_call(state, args, |engine| async move {
+            engine_call(state, &ctx, args, |engine| async move {
                 engine.list_databases().await
             })
             .await
         }
         "list_tables" => {
             let schema = schema_name(args)?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.list_tables(&schema).await
             })
             .await
         }
         "list_views" => {
             let schema = schema_name(args)?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.list_views(&schema).await
             })
             .await
         }
         "list_indexes" => {
             let schema = schema_name(args)?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.list_indexes(&schema).await
             })
             .await
         }
         "list_triggers" => {
             let schema = schema_name(args)?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.list_triggers(&schema).await
             })
             .await
         }
         "list_routines" => {
             let schema = schema_name(args)?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.list_routines(&schema).await
             })
             .await
@@ -295,7 +296,7 @@ pub async fn invoke_with_context(
         "get_columns" => {
             let schema = schema_name(args)?;
             let table = ident_arg(args, "table")?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.get_columns(&schema, &table).await
             })
             .await
@@ -304,13 +305,13 @@ pub async fn invoke_with_context(
             let schema = schema_name(args)?;
             let name = ident_arg(args, "name")?;
             let kind = object_kind(args)?;
-            engine_call(state, args, move |engine| async move {
+            engine_call(state, &ctx, args, move |engine| async move {
                 engine.get_ddl(&schema, kind, &name).await
             })
             .await
         }
-        "preview_table" => preview_table(state, args).await,
-        "query" => query(state, args, ctx.auth_mode).await,
+        "preview_table" => preview_table(state, &ctx, args).await,
+        "query" => query(state, &ctx, args).await,
         "write_script" => write_script_tool(state, args, &ctx),
         "run_script" => run_script_tool(state, args, &ctx).await,
         "list_scripts" => list_scripts_tool(state, &ctx),
@@ -431,7 +432,11 @@ async fn ensure_connected(
     Ok(Some(result))
 }
 
-async fn preview_table(state: &AppState, args: &Value) -> Result<Value, ToolError> {
+async fn preview_table(
+    state: &AppState,
+    ctx: &ToolContext,
+    args: &Value,
+) -> Result<Value, ToolError> {
     let schema = schema_name(args)?;
     let table = ident_arg(args, "table")?;
     let limit = match args.get("limit") {
@@ -443,30 +448,31 @@ async fn preview_table(state: &AppState, args: &Value) -> Result<Value, ToolErro
         None | Some(Value::Null) => 0,
         Some(value) => u64_arg(value, "offset")?,
     };
-    engine_call(state, args, move |engine| async move {
+    engine_call(state, &ctx, args, move |engine| async move {
         engine.preview_table(&schema, &table, limit, offset).await
     })
     .await
 }
 
-async fn query(
-    state: &AppState,
-    args: &Value,
-    auth_mode: policy::SqlAuthMode,
-) -> Result<Value, ToolError> {
+async fn query(state: &AppState, ctx: &ToolContext, args: &Value) -> Result<Value, ToolError> {
     let sql = required_str(args, "sql")?;
-    let sql = policy::assert_agent_sql(&sql, auth_mode).map_err(ToolError::BadRequest)?;
+    let sql = policy::assert_agent_sql(&sql, ctx.auth_mode).map_err(ToolError::BadRequest)?;
     let schema = optional_str(args, "schema")?;
     if let Some(schema) = &schema {
         validate_ident(schema).map_err(|error| ToolError::BadRequest(error.user_message()))?;
     }
-    engine_call(state, args, move |engine| async move {
+    engine_call(state, &ctx, args, move |engine| async move {
         engine.execute_sql(schema.as_deref(), &sql).await
     })
     .await
 }
 
-async fn engine_call<T, F, Fut>(state: &AppState, args: &Value, work: F) -> Result<Value, ToolError>
+async fn engine_call<T, F, Fut>(
+    state: &AppState,
+    ctx: &ToolContext,
+    args: &Value,
+    work: F,
+) -> Result<Value, ToolError>
 where
     T: Serialize + Send + 'static,
     F: FnOnce(crate::db::LiveEngine) -> Fut + Send + 'static,
@@ -475,9 +481,15 @@ where
     let connection_id = connection_id(args)?;
     // Agent tools auto-connect on demand so analysis does not require a prior UI connect.
     ensure_connected(state, &connection_id).await?;
-    let value = with_engine(state, connection_id, work)
-        .await
-        .map_err(tool_failed)?;
+    let detail = match &ctx.run_id {
+        Some(run_id) => format!("run:{run_id}"),
+        None => "mcp".to_string(),
+    };
+    let engine = state
+        .engine(&connection_id)
+        .map_err(tool_failed)?
+        .with_source(AuditSource::Agent, Some(detail));
+    let value = run_db(work(engine)).await.map_err(tool_failed)?;
     serde_json::to_value(value).map_err(|error| ToolError::Failed(error.to_string()))
 }
 

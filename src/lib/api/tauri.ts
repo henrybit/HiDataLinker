@@ -25,6 +25,12 @@ import type {
 	ObjectKind,
 	QueryResult,
 	RoutineInfo,
+	SqlAuditClientSource,
+	SqlAuditDay,
+	SqlAuditInfo,
+	SqlAuditPage,
+	SqlAuditQuery,
+	SqlAuditSettings,
 	TableInfo,
 	TestConnectionRequest,
 	TriggerInfo,
@@ -169,8 +175,12 @@ export const api = {
 	tableRowCount: (connectionId: string, schema: string, table: string) =>
 		call<number>('table_row_count', { connectionId, schema, table }),
 
-	executeSql: (connectionId: string, sql: string, schema?: string | null) =>
-		call<QueryResult>('execute_sql', { connectionId, schema: schema ?? null, sql }),
+	executeSql: (
+		connectionId: string,
+		sql: string,
+		schema?: string | null,
+		source: SqlAuditClientSource = 'editor'
+	) => call<QueryResult>('execute_sql', { connectionId, schema: schema ?? null, sql, source }),
 
 	readLlmCatalog: () => call<string>('read_llm_catalog'),
 
@@ -380,7 +390,16 @@ export const api = {
 		call<{ fileLoggingEnabled: boolean }>('read_runtime_settings'),
 
 	writeRuntimeSettings: (settings: { fileLoggingEnabled: boolean }) =>
-		call<{ fileLoggingEnabled: boolean }>('write_runtime_settings', { settings })
+		call<{ fileLoggingEnabled: boolean }>('write_runtime_settings', { settings }),
+
+	readSqlAuditSettings: () => call<SqlAuditInfo>('read_sql_audit_settings'),
+
+	writeSqlAuditSettings: (settings: SqlAuditSettings) =>
+		call<SqlAuditInfo>('write_sql_audit_settings', { settings }),
+
+	listSqlAudit: (query: SqlAuditQuery) => call<SqlAuditPage>('list_sql_audit', { query }),
+
+	listSqlAuditDays: () => call<SqlAuditDay[]>('list_sql_audit_days')
 };
 
 export function errorMessage(error: unknown): string {
