@@ -193,42 +193,50 @@
 	</section>
 
 	<div class="audit-filters">
-		<label>
-			<span>{t('settings.audit.date')}</span>
-			<select bind:value={date} onchange={() => load()}>
-				{#each dateOptions as day (day.date)}
-					<option value={day.date}>{day.date}</option>
-				{/each}
-			</select>
-		</label>
-		<label>
-			<span>{t('settings.audit.connection')}</span>
-			<select bind:value={connectionId} onchange={() => load()}>
-				<option value="">{t('settings.audit.all')}</option>
-				{#each connections as connection (connection.id)}
-					<option value={connection.id}>{connection.name}</option>
-				{/each}
-			</select>
-		</label>
-		<label>
-			<span>{t('settings.audit.source')}</span>
-			<select bind:value={source} onchange={() => load()}>
-				<option value="">{t('settings.audit.all')}</option>
-				{#each SOURCES as item (item)}
-					<option value={item}>{sourceLabel(item)}</option>
-				{/each}
-			</select>
-		</label>
-		<label>
-			<span>{t('settings.audit.status')}</span>
-			<select bind:value={status} onchange={() => load()}>
-				<option value="">{t('settings.audit.all')}</option>
-				<option value="ok">{t('settings.audit.ok')}</option>
-				<option value="error">{t('settings.audit.failed')}</option>
-			</select>
-		</label>
+		<select
+			class="audit-control"
+			aria-label={t('settings.audit.date')}
+			bind:value={date}
+			onchange={() => load()}
+		>
+			{#each dateOptions as day (day.date)}
+				<option value={day.date}>{day.date}</option>
+			{/each}
+		</select>
+		<select
+			class="audit-control"
+			aria-label={t('settings.audit.connection')}
+			bind:value={connectionId}
+			onchange={() => load()}
+		>
+			<option value="">{t('settings.audit.allConnections')}</option>
+			{#each connections as connection (connection.id)}
+				<option value={connection.id}>{connection.name}</option>
+			{/each}
+		</select>
+		<select
+			class="audit-control"
+			aria-label={t('settings.audit.source')}
+			bind:value={source}
+			onchange={() => load()}
+		>
+			<option value="">{t('settings.audit.allSources')}</option>
+			{#each SOURCES as item (item)}
+				<option value={item}>{sourceLabel(item)}</option>
+			{/each}
+		</select>
+		<select
+			class="audit-control"
+			aria-label={t('settings.audit.status')}
+			bind:value={status}
+			onchange={() => load()}
+		>
+			<option value="">{t('settings.audit.allStatus')}</option>
+			<option value="ok">{t('settings.audit.ok')}</option>
+			<option value="error">{t('settings.audit.failed')}</option>
+		</select>
 		<input
-			class="audit-keyword"
+			class="audit-control audit-keyword"
 			type="search"
 			placeholder={t('settings.audit.keyword')}
 			bind:value={keyword}
@@ -245,70 +253,84 @@
 	</div>
 
 	{#if loadError}<p class="settings-error">{loadError}</p>{/if}
-	<p class="hint audit-total">{t('settings.audit.total', { count: total })}</p>
 
-	<div class="audit-list">
-		{#each entries as entry (entry.id)}
-			<div class="audit-row" class:failed={!entry.success}>
-				<button
-					class="audit-summary"
-					type="button"
-					aria-expanded={expandedId === entry.id}
-					onclick={() => (expandedId = expandedId === entry.id ? null : entry.id)}
-				>
-					<span class="audit-time">{timeOf(entry.at)}</span>
-					<span class="audit-status" class:ok={entry.success}>
-						{entry.success ? t('settings.audit.ok') : t('settings.audit.failed')}
-					</span>
-					<span class="audit-source">{sourceLabel(entry.source)}</span>
-					<span class="audit-conn" title={`${entry.host}:${entry.port}`}>
-						{entry.connectionName}{entry.schema ? ` / ${entry.schema}` : ''}
-					</span>
-					<code class="audit-sql">{oneLine(entry.sql)}</code>
-					<span class="audit-duration">{entry.durationMs} ms</span>
-				</button>
-				{#if expandedId === entry.id}
-					<div class="audit-detail">
-						<dl>
-							<dt>{t('settings.audit.connection')}</dt>
-							<dd>
-								{entry.connectionName} ({entry.engine}) {entry.username}@{entry.host}:{entry.port}
-							</dd>
-							<dt>{t('settings.audit.source')}</dt>
-							<dd>
-								{sourceLabel(entry.source)}{entry.sourceDetail ? ` · ${entry.sourceDetail}` : ''}
-							</dd>
-							<dt>{t('settings.audit.operation')}</dt>
-							<dd>
-								{entry.operation}{entry.statementKind ? ` · ${entry.statementKind}` : ''}
-								{#if entry.rowCount != null}
-									· {t('settings.audit.rows', { count: entry.rowCount })}{/if}
-								{#if entry.affectedRows != null}
-									· {t('settings.audit.affected', { count: entry.affectedRows })}{/if}
-							</dd>
-							<dt>{t('settings.audit.user')}</dt>
-							<dd>{entry.osUser || '-'} · {entry.at}</dd>
-						</dl>
-						{#if entry.error}<p class="settings-error">{entry.error}</p>{/if}
-						<pre class="audit-sql-full">{entry.sql}</pre>
-						{#if entry.sqlTruncated}
-							<p class="hint">{t('settings.audit.truncated', { length: entry.sqlLength })}</p>
-						{/if}
-						<button class="btn" type="button" onclick={() => copySql(entry)}>
-							{copiedId === entry.id ? t('settings.audit.copied') : t('settings.audit.copy')}
-						</button>
-					</div>
-				{/if}
-			</div>
-		{:else}
-			{#if !loading}<p class="hint audit-empty">{t('settings.audit.empty')}</p>{/if}
-		{/each}
+	<div class="audit-table">
+		<div class="audit-grid audit-head">
+			<span>{t('settings.audit.col.time')}</span>
+			<span>{t('settings.audit.status')}</span>
+			<span>{t('settings.audit.source')}</span>
+			<span>{t('settings.audit.connection')}</span>
+			<span>SQL</span>
+			<span class="audit-num">{t('settings.audit.col.duration')}</span>
+		</div>
+		<div class="audit-list">
+			{#each entries as entry (entry.id)}
+				<div class="audit-row" class:failed={!entry.success}>
+					<button
+						class="audit-grid audit-summary"
+						type="button"
+						aria-expanded={expandedId === entry.id}
+						onclick={() => (expandedId = expandedId === entry.id ? null : entry.id)}
+					>
+						<span class="audit-mono">{timeOf(entry.at)}</span>
+						<span class="audit-status" class:ok={entry.success}>
+							{entry.success ? t('settings.audit.ok') : t('settings.audit.failed')}
+						</span>
+						<span>{sourceLabel(entry.source)}</span>
+						<span
+							title={`${entry.connectionName}${entry.schema ? ` / ${entry.schema}` : ''} (${entry.host}:${entry.port})`}
+						>
+							{entry.connectionName}{entry.schema ? ` / ${entry.schema}` : ''}
+						</span>
+						<code class="audit-mono">{oneLine(entry.sql)}</code>
+						<span class="audit-mono audit-num">{entry.durationMs} ms</span>
+					</button>
+					{#if expandedId === entry.id}
+						<div class="audit-detail">
+							<dl>
+								<dt>{t('settings.audit.connection')}</dt>
+								<dd>
+									{entry.connectionName} ({entry.engine}) {entry.username}@{entry.host}:{entry.port}
+								</dd>
+								<dt>{t('settings.audit.source')}</dt>
+								<dd>
+									{sourceLabel(entry.source)}{entry.sourceDetail ? ` · ${entry.sourceDetail}` : ''}
+								</dd>
+								<dt>{t('settings.audit.operation')}</dt>
+								<dd>
+									{entry.operation}{entry.statementKind ? ` · ${entry.statementKind}` : ''}
+									{#if entry.rowCount != null}
+										· {t('settings.audit.rows', { count: entry.rowCount })}{/if}
+									{#if entry.affectedRows != null}
+										· {t('settings.audit.affected', { count: entry.affectedRows })}{/if}
+								</dd>
+								<dt>{t('settings.audit.user')}</dt>
+								<dd>{entry.osUser || '-'} · {entry.at}</dd>
+							</dl>
+							{#if entry.error}<div class="audit-error">{entry.error}</div>{/if}
+							<pre class="audit-sql-full">{entry.sql}</pre>
+							{#if entry.sqlTruncated}
+								<p class="hint">{t('settings.audit.truncated', { length: entry.sqlLength })}</p>
+							{/if}
+							<button class="btn" type="button" onclick={() => copySql(entry)}>
+								{copiedId === entry.id ? t('settings.audit.copied') : t('settings.audit.copy')}
+							</button>
+						</div>
+					{/if}
+				</div>
+			{:else}
+				{#if !loading}<p class="hint audit-empty">{t('settings.audit.empty')}</p>{/if}
+			{/each}
+		</div>
 	</div>
-	{#if entries.length < total}
-		<button class="btn audit-more" type="button" disabled={loading} onclick={() => load(true)}>
-			{t('settings.audit.loadMore')}
-		</button>
-	{/if}
+	<div class="audit-footer">
+		<span class="hint">{t('settings.audit.total', { count: total })}</span>
+		{#if entries.length < total}
+			<button class="btn" type="button" disabled={loading} onclick={() => load(true)}>
+				{t('settings.audit.loadMore')}
+			</button>
+		{/if}
+	</div>
 {/if}
 
 <style>
@@ -325,41 +347,85 @@
 		gap: 6px;
 		color: var(--text-muted);
 		font-size: 12px;
+		white-space: nowrap;
+	}
+
+	.audit-retain input,
+	.audit-control {
+		height: 28px;
+		padding: 0 8px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: white;
+		color: var(--text);
+		font-size: 12px;
+		outline: none;
 	}
 
 	.audit-retain input {
-		width: 64px;
+		width: 72px;
+	}
+
+	.audit-retain input:focus,
+	.audit-control:focus {
+		border-color: #60a5fa;
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 	}
 
 	.audit-filters {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: end;
+		align-items: center;
 		gap: 8px;
 	}
 
-	.audit-filters label {
-		display: grid;
-		gap: 2px;
-		color: var(--text-muted);
-		font-size: 11px;
+	.audit-filters select {
+		flex: 0 1 150px;
+		min-width: 0;
 	}
 
 	.audit-keyword {
-		flex: 1;
-		min-width: 160px;
+		flex: 1 1 200px;
+		min-width: 120px;
 	}
 
-	.audit-total {
-		margin: 8px 0 4px;
+	.audit-filters .btn {
+		flex-shrink: 0;
 	}
 
-	.audit-list {
-		max-height: 360px;
-		overflow: auto;
+	.audit-table {
+		overflow: hidden;
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		background: var(--bg-panel);
+	}
+
+	.audit-grid {
+		display: grid;
+		grid-template-columns: 96px 72px 96px minmax(100px, 180px) minmax(0, 1fr) 72px;
+		align-items: center;
+		gap: 10px;
+		padding: 0 10px;
+	}
+
+	.audit-grid > * {
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.audit-head {
+		height: 30px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-muted);
+		color: var(--text-muted);
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	.audit-list {
+		max-height: 340px;
+		overflow: auto;
 		user-select: text;
 	}
 
@@ -368,40 +434,29 @@
 	}
 
 	.audit-summary {
-		display: grid;
-		grid-template-columns: 92px 52px 84px minmax(80px, 160px) minmax(0, 1fr) 64px;
-		align-items: center;
-		gap: 8px;
 		width: 100%;
-		padding: 6px 8px;
+		height: 32px;
 		border: 0;
 		background: transparent;
 		color: var(--text);
-		font: inherit;
 		font-size: 12px;
 		text-align: left;
-		cursor: pointer;
 	}
 
 	.audit-summary:hover {
 		background: var(--bg-hover);
 	}
 
-	.audit-summary > span,
-	.audit-sql {
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
+	.audit-row.failed .audit-summary {
+		background: #fef2f2;
 	}
 
-	.audit-time,
-	.audit-duration {
-		color: var(--text-muted);
+	.audit-mono {
 		font-family: var(--mono);
 		font-size: 11px;
 	}
 
-	.audit-duration {
+	.audit-num {
 		text-align: right;
 	}
 
@@ -414,26 +469,18 @@
 		color: var(--success);
 	}
 
-	.audit-sql {
-		font-family: var(--mono);
-		font-size: 11px;
-	}
-
-	.audit-row.failed .audit-summary {
-		background: #fef2f2;
-	}
-
 	.audit-detail {
 		display: grid;
-		gap: 6px;
-		padding: 8px 12px 12px;
+		gap: 8px;
+		padding: 10px 12px 12px;
+		border-top: 1px dashed var(--border);
 		background: var(--bg-muted);
 	}
 
 	.audit-detail dl {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);
-		gap: 2px 12px;
+		gap: 4px 12px;
 		margin: 0;
 		font-size: 12px;
 	}
@@ -461,17 +508,27 @@
 		word-break: break-word;
 	}
 
+	.audit-error {
+		color: var(--danger);
+		font-size: 12px;
+		word-break: break-word;
+	}
+
 	.audit-detail .btn {
 		justify-self: start;
 	}
 
 	.audit-empty {
 		margin: 0;
-		padding: 16px;
+		padding: 24px 16px;
 		text-align: center;
 	}
 
-	.audit-more {
-		margin-top: 8px;
+	.audit-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		min-height: 28px;
 	}
 </style>
