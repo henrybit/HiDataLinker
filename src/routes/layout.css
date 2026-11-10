@@ -3310,10 +3310,41 @@ button.query-exec-log-title:hover {
 }
 
 .agent-chart-engine {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
 	margin: 4px 0 0;
 	color: var(--text-muted);
 	font-size: 10px;
 	text-align: right;
+}
+
+.agent-chart-export {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	padding: 0 8px;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	background: white;
+	color: var(--text);
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.agent-chart-export:hover:not(:disabled) {
+	background: #f8fafc;
+}
+
+.agent-chart-export:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+.agent-chart-export-error {
+	color: #b91c1c;
 }
 
 .agent-chart-error {

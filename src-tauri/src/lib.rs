@@ -29,7 +29,7 @@ use commands::{
     read_locale, read_migration_history, read_query_cache, read_runtime_settings,
     save_analysis_history, save_migration_history, start_llm, table_row_count, test_connection,
     upsert_connection, write_llm_catalog, write_locale, write_query_cache, write_runtime_settings,
-    write_text_file,
+    write_binary_file, write_text_file,
 };
 use state::AppState;
 use tauri::Manager;
@@ -115,6 +115,7 @@ pub fn run() {
             dump_database,
             dump_table,
             write_text_file,
+            write_binary_file,
             write_query_cache,
             read_query_cache,
             delete_query_cache,

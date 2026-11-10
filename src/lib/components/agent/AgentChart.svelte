@@ -11,7 +11,10 @@
 		TooltipComponent
 	} from 'echarts/components';
 	import { CanvasRenderer } from 'echarts/renderers';
+	import { ImageDown } from '@lucide/svelte';
 	import type { AgentChartSpec, ChartEngine } from '$lib/agent/chart-spec';
+	import { api, isTauriRuntime } from '$lib/api/tauri';
+	import { downloadBlob } from '$lib/download';
 	import { t } from '$lib/i18n/i18n.svelte';
 
 	echarts.use([
@@ -37,6 +40,8 @@
 	let echart: EChartsType | null = null;
 	let g2: InstanceType<typeof G2Chart> | null = null;
 	let resizeObserver: ResizeObserver | null = null;
+	let exporting = $state(false);
+	let exportError = $state('');
 
 	function dispose() {
 		resizeObserver?.disconnect();
@@ -184,6 +189,63 @@
 		}
 	}
 
+	function exportFileName(): string {
+		const base = (spec.title ?? '').replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
+		return `${base || t('agentMode.chart.exportDefaultName')}.png`;
+	}
+
+	function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+		return new Promise((resolve, reject) => {
+			canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), 'image/png');
+		});
+	}
+
+	async function snapshotPng(): Promise<Blob> {
+		if (echart) {
+			const url = echart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
+			return (await fetch(url)).blob();
+		}
+		const sources = Array.from(host?.querySelectorAll('canvas') ?? []);
+		if (!sources.length) throw new Error(t('agentMode.chart.exportEmpty'));
+		const width = Math.max(...sources.map((c) => c.width));
+		const height = Math.max(...sources.map((c) => c.height));
+		const out = document.createElement('canvas');
+		out.width = width;
+		out.height = height;
+		const ctx = out.getContext('2d');
+		if (!ctx) throw new Error('canvas 2d context unavailable');
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, width, height);
+		for (const source of sources) ctx.drawImage(source, 0, 0);
+		return canvasToBlob(out);
+	}
+
+	async function exportImage() {
+		if (exporting) return;
+		exporting = true;
+		exportError = '';
+		try {
+			const blob = await snapshotPng();
+			const fileName = exportFileName();
+			if (!isTauriRuntime()) {
+				downloadBlob(fileName, blob);
+				return;
+			}
+			const { save } = await import('@tauri-apps/plugin-dialog');
+			const path = await save({
+				title: t('agentMode.chart.exportTitle'),
+				defaultPath: fileName,
+				filters: [{ name: 'PNG', extensions: ['png'] }]
+			});
+			if (!path) return;
+			await api.writeBinaryFile(path, new Uint8Array(await blob.arrayBuffer()));
+		} catch (error) {
+			exportError = error instanceof Error ? error.message : String(error);
+		} finally {
+			exporting = false;
+		}
+	}
+
 	$effect(() => {
 		spec;
 		engine;
@@ -198,6 +260,20 @@
 <figure class="agent-chart" data-engine={engine}>
 	<div class="agent-chart-host" bind:this={host}></div>
 	<figcaption class="agent-chart-engine">
-		{engine === 'antd' ? t('agentMode.chart.engineAntd') : t('agentMode.chart.engineEcharts')}
+		{#if exportError}
+			<span class="agent-chart-export-error" title={exportError}>{t('agentMode.chart.exportFailed')}</span>
+		{/if}
+		<button
+			class="agent-chart-export"
+			type="button"
+			disabled={exporting}
+			title={t('agentMode.chart.export')}
+			aria-label={t('agentMode.chart.export')}
+			onclick={exportImage}
+		>
+			<ImageDown size={13} />
+			<span>{t('agentMode.chart.export')}</span>
+		</button>
+		<span>{engine === 'antd' ? t('agentMode.chart.engineAntd') : t('agentMode.chart.engineEcharts')}</span>
 	</figcaption>
 </figure>

@@ -109,6 +109,9 @@ export const api = {
 	writeTextFile: (path: string, contents: string) =>
 		call<string>('write_text_file', { path, contents }),
 
+	writeBinaryFile: (path: string, contents: Uint8Array) =>
+		call<string>('write_binary_file', { path, contents: Array.from(contents) }),
+
 	writeQueryCache: (tabId: string, contents: string) =>
 		call<void>('write_query_cache', { tabId, contents }),
 

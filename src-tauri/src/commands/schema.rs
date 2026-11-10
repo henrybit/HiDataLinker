@@ -92,6 +92,20 @@ pub async fn write_text_file(path: String, contents: String) -> AppResult<String
 }
 
 #[tauri::command]
+pub async fn write_binary_file(path: String, contents: Vec<u8>) -> AppResult<String> {
+    let path = path.trim().to_string();
+    if path.is_empty() {
+        return Err(AppError::msg("save path is empty"));
+    }
+    tokio::task::spawn_blocking(move || -> AppResult<String> {
+        std::fs::write(&path, contents)?;
+        Ok(path)
+    })
+    .await
+    .map_err(|error| AppError::msg(format!("failed to save file: {error}")))?
+}
+
+#[tauri::command]
 pub async fn migrate_database(
     app: AppHandle,
     state: State<'_, AppState>,
