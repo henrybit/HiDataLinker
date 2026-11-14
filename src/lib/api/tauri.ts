@@ -83,6 +83,12 @@ export const api = {
 
 	disconnect: (id: string) => call<void>('disconnect_session', { id }),
 
+	listServerDatabases: (connectionId: string) =>
+		call<string[]>('list_server_databases', { connectionId }),
+
+	switchDatabase: (connectionId: string, database: string) =>
+		call<void>('switch_database', { connectionId, database }),
+
 	listDatabases: (connectionId: string) => call<DatabaseInfo[]>('list_databases', { connectionId }),
 
 	createDatabase: (

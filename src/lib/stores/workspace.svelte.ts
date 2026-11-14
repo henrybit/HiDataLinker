@@ -27,6 +27,7 @@ import type {
 	ObjectKind,
 	QueryResult,
 	RoutineInfo,
+	SwitchDatabasePrompt,
 	Tab,
 	TableInfo,
 	TreeSelection,
@@ -63,6 +64,7 @@ class WorkspaceStore {
 	confirmDelete = $state<{ id: string; name: string } | null>(null);
 	createDatabasePrompt = $state<CreateDatabasePrompt | null>(null);
 	dropDatabasePrompt = $state<DropDatabasePrompt | null>(null);
+	switchDatabasePrompt = $state<SwitchDatabasePrompt | null>(null);
 	migrateDatabasePrompt = $state<MigrateDatabasePrompt | null>(null);
 	contextMenu = $state<ContextMenuState | null>(null);
 	queryResults = $state<Record<string, QueryResult | null>>({});
@@ -307,6 +309,67 @@ class WorkspaceStore {
 			this.status = t('status.dropped', {
 				noun: schemaNounLabel(prompt.engine),
 				name: prompt.name
+			});
+		} catch (error) {
+			this.error = errorMessage(error);
+		} finally {
+			this.end(key);
+		}
+	}
+
+	async askSwitchDatabase(connectionId: string) {
+		const item = this.connections.find((c) => c.id === connectionId);
+		if (!item?.connected) return;
+		this.closeMenu();
+		this.error = null;
+		const key = `switch-db:${connectionId}`;
+		this.begin(key);
+		try {
+			const databases = await api.listServerDatabases(connectionId);
+			this.switchDatabasePrompt = {
+				connectionId,
+				connectionName: item.name,
+				current: item.activeDatabase ?? '',
+				databases
+			};
+		} catch (error) {
+			this.error = errorMessage(error);
+		} finally {
+			this.end(key);
+		}
+	}
+
+	async confirmSwitchDatabase(database: string) {
+		const prompt = this.switchDatabasePrompt;
+		if (!prompt || !database.trim()) return;
+		if (database === prompt.current) {
+			this.switchDatabasePrompt = null;
+			return;
+		}
+		const key = `switch-db:${prompt.connectionId}`;
+		this.begin(key);
+		this.error = null;
+		try {
+			await api.switchDatabase(prompt.connectionId, database);
+			this.switchDatabasePrompt = null;
+			// Object tabs point at the previous database; query tabs stay and run against the new one.
+			const remaining = this.tabs.filter(
+				(tab) => tab.connectionId !== prompt.connectionId || tab.kind === 'query'
+			);
+			if (!remaining.some((tab) => tab.id === this.activeTabId)) {
+				this.activeTabId = remaining[remaining.length - 1]?.id ?? null;
+			}
+			this.tabs = remaining;
+			if (this.selection?.connectionId === prompt.connectionId) {
+				this.selection = { connectionId: prompt.connectionId };
+			}
+			this.forgetSession(prompt.connectionId);
+			this.expanded = new Set([...this.expanded, `conn:${prompt.connectionId}`]);
+			await this.reloadConnections();
+			await this.loadDatabases(prompt.connectionId);
+			this.status = t('status.switchedDatabase', {
+				connection: prompt.connectionName,
+				name: database
 			});
 		} catch (error) {
 			this.error = errorMessage(error);

@@ -423,6 +423,17 @@ button {
 	flex: none;
 }
 
+.active-database {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.active-database::before {
+	content: '· ';
+}
+
 .engine-badge {
 	margin-left: auto;
 	flex: none;

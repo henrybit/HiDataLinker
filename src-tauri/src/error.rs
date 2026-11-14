@@ -89,7 +89,10 @@ fn format_postgres_error(error: &tokio_postgres::Error) -> String {
 
 impl From<deadpool_postgres::PoolError> for AppError {
     fn from(error: deadpool_postgres::PoolError) -> Self {
-        Self::PgPool(error.to_string())
+        match error {
+            deadpool_postgres::PoolError::Backend(error) => Self::Postgres(error),
+            other => Self::PgPool(other.to_string()),
+        }
     }
 }
 

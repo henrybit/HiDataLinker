@@ -95,6 +95,8 @@ pub struct ConnectionListItem {
     #[serde(flatten)]
     pub profile: ConnectionProfile,
     pub connected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_database: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -51,6 +51,11 @@ pub trait DatabaseEngine: Send + Sync {
     async fn dump_extras(&self, _schema: &str) -> AppResult<DumpExtras> {
         Ok(DumpExtras::default())
     }
+    /// Databases on the server this session could switch to. Empty when the
+    /// engine does not support switching within a connection.
+    async fn list_server_databases(&self) -> AppResult<Vec<String>> {
+        Ok(Vec::new())
+    }
     async fn close(self) -> AppResult<()>;
 }
 
@@ -347,6 +352,10 @@ impl DatabaseEngine for LiveEngine {
 
     async fn dump_extras(&self, schema: &str) -> AppResult<DumpExtras> {
         dispatch_engine!(self, dump_extras, schema)
+    }
+
+    async fn list_server_databases(&self) -> AppResult<Vec<String>> {
+        dispatch_engine!(self, list_server_databases)
     }
 
     async fn close(self) -> AppResult<()> {

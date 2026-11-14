@@ -12,6 +12,7 @@
 	import PasswordDialog from '$lib/components/dialogs/PasswordDialog.svelte';
 	import CreateDatabaseDialog from '$lib/components/dialogs/CreateDatabaseDialog.svelte';
 	import DropDatabaseDialog from '$lib/components/dialogs/DropDatabaseDialog.svelte';
+	import SwitchDatabaseDialog from '$lib/components/dialogs/SwitchDatabaseDialog.svelte';
 	import MigrateDatabaseDialog from '$lib/components/dialogs/MigrateDatabaseDialog.svelte';
 	import RelationshipAnalysis from '$lib/components/analysis/RelationshipAnalysis.svelte';
 	import MigrationCenter from '$lib/components/migration/MigrationCenter.svelte';
@@ -93,6 +94,9 @@
 {/if}
 {#if workspace.dropDatabasePrompt}
 	<DropDatabaseDialog />
+{/if}
+{#if workspace.switchDatabasePrompt}
+	<SwitchDatabaseDialog />
 {/if}
 {#if workspace.migrateDatabasePrompt}
 	<MigrateDatabaseDialog />

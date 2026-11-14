@@ -571,6 +571,22 @@ impl DatabaseEngine for PostgresEngine {
         dump_extras(&self.pool, schema).await
     }
 
+    async fn list_server_databases(&self) -> AppResult<Vec<String>> {
+        let client = self.pool.get().await?;
+        let rows = client
+            .query(
+                "SELECT datname
+                 FROM pg_database
+                 WHERE datallowconn
+                   AND NOT datistemplate
+                   AND has_database_privilege(datname, 'CONNECT')
+                 ORDER BY datname",
+                &[],
+            )
+            .await?;
+        Ok(rows.into_iter().map(|row| row.get(0)).collect())
+    }
+
     async fn close(self) -> AppResult<()> {
         self.pool.close();
         Ok(())

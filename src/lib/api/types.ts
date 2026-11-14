@@ -45,6 +45,8 @@ export interface ConnectionListItem {
 	oracleInstantClient?: string | null;
 	savePassword: boolean;
 	connected: boolean;
+	/** Database the live session uses; may differ from `database` after a switch. */
+	activeDatabase?: string | null;
 }
 
 export interface ConnectResult {
@@ -271,6 +273,7 @@ export type ContextMenuAction =
 	| 'delete-connection'
 	| 'connect'
 	| 'disconnect'
+	| 'switch-database'
 	| 'new-query'
 	| 'create-database'
 	| 'delete-database'
@@ -289,6 +292,13 @@ export interface CreateDatabasePrompt {
 	connectionName: string;
 	engine: string;
 	database?: string | null;
+}
+
+export interface SwitchDatabasePrompt {
+	connectionId: string;
+	connectionName: string;
+	current: string;
+	databases: string[];
 }
 
 export interface DropDatabasePrompt {

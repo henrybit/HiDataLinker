@@ -1,6 +1,6 @@
 use crate::db::{DatabaseEngine, LiveEngine};
 use crate::error::{AppError, AppResult};
-use crate::models::{ConnectResult, ConnectionProfile};
+use crate::models::{ConnectResult, ConnectionProfile, EngineKind};
 use crate::paths::{migrate_analysis, migrate_file, AppPaths};
 use crate::runtime::{run_blocking, run_db};
 use crate::sql_audit::{AuditConnection, AuditScope, SqlAuditLog};
@@ -33,6 +33,9 @@ pub struct AppState {
     sql_audit: SqlAuditLog,
     profiles: RwLock<Vec<ConnectionProfile>>,
     sessions: DashMap<String, LiveEngine>,
+    /// Profile each live session was opened with, including a prompted
+    /// password and a database switched to after connecting.
+    session_profiles: DashMap<String, ConnectionProfile>,
     session_order: Mutex<Vec<String>>,
     connect_lock: tokio::sync::Mutex<()>,
     schema_refresh_lock: tokio::sync::Mutex<()>,
@@ -82,6 +85,7 @@ impl AppState {
             sql_audit,
             profiles: RwLock::new(profiles),
             sessions: DashMap::new(),
+            session_profiles: DashMap::new(),
             session_order: Mutex::new(Vec::new()),
             connect_lock: tokio::sync::Mutex::new(()),
             schema_refresh_lock: tokio::sync::Mutex::new(()),
@@ -169,18 +173,7 @@ impl AppState {
         if let Some(password) = password_override {
             profile.password = Some(password);
         }
-        let audit = AuditScope::new(self.sql_audit.clone(), AuditConnection::from(&profile));
-        let engine = run_db(async move {
-            let engine = LiveEngine::from_profile(&profile)?.with_audit(audit);
-            match engine.ping().await {
-                Ok(()) => Ok(engine),
-                Err(error) => {
-                    let _ = engine.close().await;
-                    Err(error)
-                }
-            }
-        })
-        .await?;
+        let engine = self.open_engine(profile.clone()).await?;
 
         let mut closing = Vec::new();
         let evicted_ids = {
@@ -191,11 +184,13 @@ impl AppState {
             let evicted_ids = ids_to_evict(&order, id, MAX_OPEN_SESSIONS);
             for evict_id in &evicted_ids {
                 order.retain(|existing| existing != evict_id);
+                self.session_profiles.remove(evict_id);
                 if let Some((_, old)) = self.sessions.remove(evict_id) {
                     closing.push(old);
                 }
             }
             self.sessions.insert(id.to_string(), engine);
+            self.session_profiles.insert(id.to_string(), profile);
             order.push(id.to_string());
             evicted_ids
         };
@@ -213,11 +208,71 @@ impl AppState {
                 .unwrap_or_else(|error| error.into_inner());
             order.retain(|existing| existing != id);
         }
+        self.session_profiles.remove(id);
         let engine = self.sessions.remove(id).map(|(_, engine)| engine);
         if let Some(engine) = engine {
             run_db(async move { engine.close().await }).await?;
         }
         Ok(())
+    }
+
+    async fn open_engine(&self, profile: ConnectionProfile) -> AppResult<LiveEngine> {
+        let audit = AuditScope::new(self.sql_audit.clone(), AuditConnection::from(&profile));
+        run_db(async move {
+            let engine = LiveEngine::from_profile(&profile)?.with_audit(audit);
+            match engine.ping().await {
+                Ok(()) => Ok(engine),
+                Err(error) => {
+                    let _ = engine.close().await;
+                    Err(error)
+                }
+            }
+        })
+        .await
+    }
+
+    /// Reopen a live PostgreSQL session against another database on the same
+    /// server. The saved profile is left unchanged.
+    pub async fn switch_database(&self, id: &str, database: &str) -> AppResult<()> {
+        let database = database.trim();
+        if database.is_empty() {
+            return Err(AppError::msg("database name is required"));
+        }
+        let _guard = self.connect_lock.lock().await;
+        let mut profile = self
+            .session_profiles
+            .get(id)
+            .map(|entry| entry.clone())
+            .ok_or_else(|| AppError::NotConnected(id.to_string()))?;
+        if profile.engine_kind()? != EngineKind::Postgres {
+            return Err(AppError::msg(
+                "switching databases is only supported for PostgreSQL connections",
+            ));
+        }
+        profile.database = Some(database.to_string());
+        let engine = self.open_engine(profile.clone()).await?;
+        let previous = self.sessions.insert(id.to_string(), engine);
+        self.session_profiles.insert(id.to_string(), profile);
+        if let Some(previous) = previous {
+            let _ = run_db(async move { previous.close().await }).await;
+        }
+        let _ = crate::schema_cache::remove_connection(self, id).await;
+        Ok(())
+    }
+
+    /// Database the live session is using, when the engine connects to one.
+    pub fn active_database(&self, id: &str) -> Option<String> {
+        let profile = self.session_profiles.get(id)?;
+        let database = profile
+            .database
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        match (profile.engine_kind().ok()?, database) {
+            (_, Some(database)) => Some(database.to_string()),
+            (EngineKind::Postgres, None) => Some("postgres".to_string()),
+            _ => None,
+        }
     }
 
     pub fn is_connected(&self, id: &str) -> bool {

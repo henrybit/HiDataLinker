@@ -14,7 +14,7 @@
 		Zap
 	} from '@lucide/svelte';
 	import { workspace, folderLabel } from '$lib/stores/workspace.svelte';
-	import { engineLabel, isSchemaScoped } from '$lib/engine';
+	import { engineLabel, isPostgres, isSchemaScoped } from '$lib/engine';
 	import type { FolderKind } from '$lib/api/types';
 	import { t } from '$lib/i18n/i18n.svelte';
 
@@ -103,6 +103,7 @@
 					actions: connection.connected
 						? [
 								'new-query',
+								...(isPostgres(connection.engine) ? (['switch-database'] as const) : []),
 								'create-database',
 								'refresh',
 								'disconnect',
@@ -134,6 +135,11 @@
 				<Server size={14} />
 			</span>
 			<span class="truncate">{connection.name}</span>
+			{#if connection.connected && isPostgres(connection.engine) && connection.activeDatabase}
+				<span class="active-database truncate" title={t('tree.database')}
+					>{connection.activeDatabase}</span
+				>
+			{/if}
 			<span class="engine-badge">{engineLabel(connection.engine)}</span>
 		</div>
 		{#if connOpen && connection.connected}

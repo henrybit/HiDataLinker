@@ -24,6 +24,9 @@
 			case 'disconnect':
 				if (connectionId) void workspace.disconnect(connectionId);
 				break;
+			case 'switch-database':
+				if (connectionId) void workspace.askSwitchDatabase(connectionId);
+				break;
 			case 'new-query':
 				if (connectionId) workspace.openQuery(connectionId, schema);
 				break;
@@ -107,6 +110,7 @@
 			'delete-connection': 'menu.deleteConnection',
 			connect: 'menu.connect',
 			disconnect: 'menu.disconnect',
+			'switch-database': 'menu.switchDatabase',
 			'new-query': 'menu.newQuery',
 			'create-database': 'menu.createDatabase',
 			'delete-database': 'menu.deleteDatabase',

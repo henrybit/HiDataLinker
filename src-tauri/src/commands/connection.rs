@@ -1,4 +1,4 @@
-use crate::db::LiveEngine;
+use crate::db::{DatabaseEngine, LiveEngine};
 use crate::error::AppResult;
 use crate::models::{ConnectResult, ConnectionListItem, ConnectionProfile, TestConnectionRequest};
 use crate::runtime::run_db;
@@ -12,7 +12,12 @@ pub async fn list_connections(state: State<'_, AppState>) -> AppResult<Vec<Conne
         .into_iter()
         .map(|profile| {
             let connected = state.is_connected(&profile.id);
-            ConnectionListItem { profile, connected }
+            let active_database = state.active_database(&profile.id);
+            ConnectionListItem {
+                profile,
+                connected,
+                active_database,
+            }
         })
         .collect())
 }
@@ -47,4 +52,22 @@ pub async fn connect_session(
 #[tauri::command]
 pub async fn disconnect_session(state: State<'_, AppState>, id: String) -> AppResult<()> {
     state.disconnect(&id).await
+}
+
+#[tauri::command]
+pub async fn list_server_databases(
+    state: State<'_, AppState>,
+    connection_id: String,
+) -> AppResult<Vec<String>> {
+    let engine = state.engine(&connection_id)?;
+    run_db(async move { engine.list_server_databases().await }).await
+}
+
+#[tauri::command]
+pub async fn switch_database(
+    state: State<'_, AppState>,
+    connection_id: String,
+    database: String,
+) -> AppResult<()> {
+    state.switch_database(&connection_id, &database).await
 }
