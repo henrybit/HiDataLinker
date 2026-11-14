@@ -74,6 +74,17 @@
 			case 'schema-health':
 				if (connectionId && schema) workspace.openSchemaHealth(connectionId, schema);
 				break;
+			case 'ask-ai':
+				if (connectionId) {
+					workspace.openAssist(connectionId, schema, {
+						origin: 'tree',
+						object:
+							schema && objectName && (objectKind === 'table' || objectKind === 'view')
+								? { schema, name: objectName, kind: objectKind }
+								: null
+					});
+				}
+				break;
 			case 'refresh-matview':
 				if (connectionId && schema && objectName) {
 					void workspace.refreshMaterializedView(connectionId, schema, objectName);
@@ -132,7 +143,8 @@
 			'open-structure': 'menu.designTable',
 			'open-ddl': 'menu.viewDdl',
 			'refresh-matview': 'menu.refreshMatview',
-			'schema-health': 'menu.schemaHealth'
+			'schema-health': 'menu.schemaHealth',
+			'ask-ai': 'menu.askAi'
 		};
 		return t(keys[action]);
 	}

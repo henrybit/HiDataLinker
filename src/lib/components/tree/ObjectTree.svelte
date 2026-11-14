@@ -182,6 +182,7 @@
 					actions: connection.connected
 						? [
 								'new-query',
+								'ask-ai',
 								...(isPostgres(connection.engine) ? (['switch-database'] as const) : []),
 								'create-database',
 								'refresh',
@@ -239,6 +240,7 @@
 							actions: database.isSystem
 								? [
 										'new-query',
+										'ask-ai',
 										...(isPostgres(connection.engine) ? (['schema-health'] as const) : []),
 										'run-sql-file',
 										'create-database',
@@ -249,6 +251,7 @@
 									]
 								: [
 										'new-query',
+										'ask-ai',
 										...(isPostgres(connection.engine) ? (['schema-health'] as const) : []),
 										'run-sql-file',
 										'create-database',
@@ -352,11 +355,25 @@
 											objectName: display,
 											actions:
 												kind === 'table'
-													? ['open-data', 'open-ddl', 'dump-table-data', 'new-query', 'refresh']
+													? [
+															'open-data',
+															'open-ddl',
+															'dump-table-data',
+															'new-query',
+															'ask-ai',
+															'refresh'
+														]
 													: kind === 'view'
 														? object.materialized
-															? ['open-data', 'open-ddl', 'refresh-matview', 'new-query', 'refresh']
-															: ['open-data', 'open-ddl', 'new-query', 'refresh']
+															? [
+																	'open-data',
+																	'open-ddl',
+																	'refresh-matview',
+																	'new-query',
+																	'ask-ai',
+																	'refresh'
+																]
+															: ['open-data', 'open-ddl', 'new-query', 'ask-ai', 'refresh']
 														: ['open-ddl', 'refresh']
 										})}
 									role="button"

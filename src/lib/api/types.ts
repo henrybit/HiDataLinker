@@ -303,6 +303,8 @@ export interface Tab {
 	sql?: string;
 	sqlCached?: boolean;
 	autoRun?: boolean;
+	/** Open the drafting assistant when the query tab mounts. */
+	assist?: import('$lib/assist/context').AssistSeed;
 }
 
 export interface TreeSelection {
@@ -333,7 +335,8 @@ export type ContextMenuAction =
 	| 'open-structure'
 	| 'open-ddl'
 	| 'refresh-matview'
-	| 'schema-health';
+	| 'schema-health'
+	| 'ask-ai';
 
 export interface CreateDatabasePrompt {
 	connectionId: string;

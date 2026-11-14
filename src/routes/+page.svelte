@@ -61,6 +61,7 @@
 							sql={tab.sql ?? ''}
 							sqlCached={tab.sqlCached === true}
 							autoRun={tab.autoRun === true}
+							assist={tab.assist}
 							{active}
 						/>
 					{/if}

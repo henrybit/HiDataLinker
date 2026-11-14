@@ -403,6 +403,15 @@
 				<span>{formatDuration(result.durationMs)}</span>
 			{/if}
 			{#if loading}<span>{t('table.loading')}</span>{/if}
+			<button
+				class="btn"
+				type="button"
+				onclick={() =>
+					workspace.openAssist(connectionId, schema, {
+						origin: 'table',
+						object: { schema, name, kind: isView ? 'view' : 'table' }
+					})}>{t('assist.open')}</button
+			>
 			<div class="view-mode-switch" role="group" aria-label={t('table.viewMode')}>
 				<button
 					class="btn"

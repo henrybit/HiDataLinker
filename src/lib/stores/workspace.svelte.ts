@@ -10,6 +10,7 @@ import {
 	readQuerySqlCache,
 	writeQuerySqlCache
 } from '$lib/query-sql-cache';
+import type { AssistSeed } from '$lib/assist/context';
 import { pickSqlSavePath, sqlDumpFileName, writeSqlFile } from '$lib/save-sql-file';
 import { connectStatus, forgetExpandedKeys } from '$lib/sessions';
 import type {
@@ -768,7 +769,7 @@ class WorkspaceStore {
 		connectionId: string,
 		schema?: string,
 		seedSql?: string,
-		options?: { title?: string; autoRun?: boolean }
+		options?: { title?: string; autoRun?: boolean; assist?: AssistSeed }
 	) {
 		const id = uid('query');
 		const connection = this.connections.find((item) => item.id === connectionId);
@@ -798,15 +799,34 @@ class WorkspaceStore {
 				schema,
 				sql: sqlCached ? undefined : sql,
 				sqlCached,
-				autoRun: options?.autoRun === true
+				autoRun: options?.autoRun === true,
+				assist: options?.assist
 			}
 		];
 		this.activeTabId = id;
 		this.closeMenu();
 	}
 
+	/** New query tab with the drafting assistant open, scoped to a tree node or table. */
+	openAssist(connectionId: string, schema: string | undefined, seed: AssistSeed) {
+		const name = seed.object?.name ?? schema;
+		void this.openQuery(connectionId, schema, '', {
+			title: name ? t('assist.tabTitle', { name }) : undefined,
+			assist: seed
+		});
+	}
+
 	clearTabAutoRun(id: string) {
 		this.tabs = this.tabs.map((tab) => (tab.id === id ? { ...tab, autoRun: false } : tab));
+	}
+
+	clearTabAssist(id: string) {
+		if (!this.tabs.some((tab) => tab.id === id && tab.assist)) return;
+		this.tabs = this.tabs.map((tab) => (tab.id === id ? { ...tab, assist: undefined } : tab));
+	}
+
+	setTabSchema(id: string, schema: string) {
+		this.tabs = this.tabs.map((tab) => (tab.id === id ? { ...tab, schema } : tab));
 	}
 
 	async runSqlFile(connectionId: string, schema: string) {

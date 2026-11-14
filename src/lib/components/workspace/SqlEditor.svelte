@@ -23,20 +23,25 @@
 
 	let {
 		value = $bindable(''),
+		selection = $bindable(''),
 		engine = null,
 		placeholderText = '',
 		active = true,
 		onRun,
 		onFormat,
-		onExplain
+		onExplain,
+		onAssist
 	}: {
 		value?: string;
+		/** Text of the main selection; empty when the cursor has no range. */
+		selection?: string;
 		engine?: string | null;
 		placeholderText?: string;
 		active?: boolean;
 		onRun?: () => void;
 		onFormat?: () => void;
 		onExplain?: () => void;
+		onAssist?: () => void;
 	} = $props();
 
 	let host = $state<HTMLDivElement | undefined>();
@@ -45,11 +50,13 @@
 	let runCallback: (() => void) | undefined;
 	let formatCallback: (() => void) | undefined;
 	let explainCallback: (() => void) | undefined;
+	let assistCallback: (() => void) | undefined;
 
 	$effect.pre(() => {
 		runCallback = onRun;
 		formatCallback = onFormat;
 		explainCallback = onExplain;
+		assistCallback = onAssist;
 	});
 
 	function languageExtension(engineValue: string | null | undefined) {
@@ -105,6 +112,14 @@
 								explainCallback?.();
 								return true;
 							}
+						},
+						{
+							key: 'Mod-k',
+							run: () => {
+								if (!assistCallback) return false;
+								assistCallback();
+								return true;
+							}
 						}
 					]),
 					dialectCompartment.of(languageExtension(initialEngine)),
@@ -112,6 +127,10 @@
 					EditorView.updateListener.of((update: ViewUpdate) => {
 						if (update.docChanged) {
 							value = update.state.doc.toString();
+						}
+						if (update.docChanged || update.selectionSet) {
+							const range = update.state.selection.main;
+							selection = range.empty ? '' : update.state.sliceDoc(range.from, range.to);
 						}
 					}),
 					EditorView.theme({

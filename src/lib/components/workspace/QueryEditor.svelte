@@ -9,8 +9,17 @@
 	import { formatSql } from '$lib/sql/format';
 	import { parsePgPlan, type ParsedPlan } from '$lib/sql/pg-plan';
 	import { workspace } from '$lib/stores/workspace.svelte';
+	import {
+		gridContext,
+		type AssistContext,
+		type AssistObjectRef,
+		type AssistOrigin,
+		type AssistSeed
+	} from '$lib/assist/context';
+	import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 	import StackSplit from '$lib/components/layout/StackSplit.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
+	import AssistPanel from './AssistPanel.svelte';
 	import DataGrid from './DataGrid.svelte';
 	import PlanView from './PlanView.svelte';
 	import QueryExecLog from './QueryExecLog.svelte';
@@ -23,7 +32,8 @@
 		sql,
 		autoRun = false,
 		active = true,
-		sqlCached = false
+		sqlCached = false,
+		assist
 	}: {
 		tabId: string;
 		connectionId: string;
@@ -32,6 +42,7 @@
 		autoRun?: boolean;
 		active?: boolean;
 		sqlCached?: boolean;
+		assist?: AssistSeed;
 	} = $props();
 
 	let text = $state('');
@@ -63,6 +74,70 @@
 				: localLog
 	);
 	const canAct = $derived(!running && !loadingSql && Boolean(text.trim()));
+
+	let selectionText = $state('');
+	let lastRunSql = $state('');
+	let assistOpen = $state(false);
+	let assistOrigin = $state<AssistOrigin>('editor');
+	let assistObject = $state<AssistObjectRef | null>(null);
+	let assistQuestion = $state('');
+	let assistShowPayload = $state(false);
+	let assistPanel = $state<ReturnType<typeof AssistPanel> | undefined>();
+	const hasModel = $derived(selectedLlmProvider() != null);
+	const schemaChoices = $derived(
+		(workspace.schema[connectionId]?.databases ?? []).map((item) => item.name)
+	);
+	const treeObject = $derived.by<AssistObjectRef | null>(() => {
+		const selected = workspace.selection;
+		if (
+			!selected ||
+			selected.connectionId !== connectionId ||
+			!selected.schema ||
+			selected.schema !== schema ||
+			!selected.objectName ||
+			(selected.objectKind !== 'table' && selected.objectKind !== 'view')
+		) {
+			return null;
+		}
+		return { schema: selected.schema, name: selected.objectName, kind: selected.objectKind };
+	});
+	const assistContext = $derived<AssistContext>({
+		origin: assistOrigin,
+		connectionId,
+		connectionName: connection?.name ?? connectionId,
+		engine: connection?.engine ?? '',
+		connected: connection?.connected === true,
+		schema: schema ?? null,
+		object: assistObject ?? treeObject,
+		editor: { text, selection: selectionText.trim() ? selectionText : null },
+		grid: gridContext(lastRunSql || text, result, schema ?? null),
+		error: null
+	});
+
+	function openAssist(origin: AssistOrigin, object: AssistObjectRef | null = null) {
+		assistOrigin = origin;
+		assistObject = object;
+		assistOpen = true;
+		assistPanel?.focus();
+	}
+
+	function closeAssist() {
+		assistOpen = false;
+		assistShowPayload = false;
+	}
+
+	function submitAssist() {
+		assistShowPayload = true;
+	}
+
+	$effect(() => {
+		const seed = assist;
+		if (!seed) return;
+		untrack(() => {
+			openAssist(seed.origin, seed.object ?? null);
+			workspace.clearTabAssist(tabId);
+		});
+	});
 
 	$effect(() => {
 		const id = tabId;
@@ -129,6 +204,7 @@
 			}
 		];
 		workspace.setTabSql(tabId, text);
+		if (mode === 'run') lastRunSql = sqlText;
 		try {
 			await afterPaint();
 			const queryResult = await api.executeSql(connectionId, sqlText, schema);
@@ -229,6 +305,12 @@
 		>
 		<button class="btn" onclick={format} disabled={!canAct}>{t('query.format')}</button>
 		<button class="btn" onclick={explain} disabled={!canAct}>{t('query.explain')}</button>
+		<button
+			class="btn"
+			onclick={() => openAssist('editor')}
+			disabled={loadingSql}
+			title={t('assist.shortcut')}>{t('assist.open')}</button
+		>
 		{#if postgres}
 			<label class="explain-analyze" title={t('query.explainAnalyzeHint')}>
 				<input type="checkbox" bind:checked={analyze} disabled={running} />
@@ -241,6 +323,19 @@
 			)}</span
 		>
 	</div>
+	{#if assistOpen}
+		<AssistPanel
+			bind:this={assistPanel}
+			bind:question={assistQuestion}
+			bind:showPayload={assistShowPayload}
+			context={assistContext}
+			{hasModel}
+			schemas={schemaChoices}
+			onSubmit={submitAssist}
+			onClose={closeAssist}
+			onPickSchema={(next) => next && workspace.setTabSchema(tabId, next)}
+		/>
+	{/if}
 	<StackSplit>
 		{#snippet top()}
 			{#if loadingSql}
@@ -248,11 +343,13 @@
 			{:else}
 				<SqlEditor
 					bind:value={text}
+					bind:selection={selectionText}
 					engine={connection?.engine}
 					{active}
 					onRun={run}
 					onFormat={format}
 					onExplain={explain}
+					onAssist={() => openAssist('editor')}
 				/>
 			{/if}
 		{/snippet}
@@ -278,6 +375,11 @@
 						· {t('query.insertId', { id: formatNumber(result.lastInsertId) })}
 					{/if}
 					{#if result.truncated}· {t('query.truncated')}{/if}
+					{#if result.columns.length}
+						<button class="assist-inline" type="button" onclick={() => openAssist('grid')}
+							>{t('assist.askResult')}</button
+						>
+					{/if}
 				</div>
 			{/if}
 
@@ -297,3 +399,14 @@
 		{/snippet}
 	</StackSplit>
 </div>
+
+<style>
+	.assist-inline {
+		margin-left: 8px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--accent);
+		cursor: pointer;
+	}
+</style>

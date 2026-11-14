@@ -1072,6 +1072,42 @@ export const en = {
 	'health.rule.sql_ascii_encoding.title': 'SQL_ASCII database encoding',
 	'health.rule.sql_ascii_encoding.reason':
 		'SQL_ASCII does not validate encodings, so unconvertible data creeps in. Create a database with a proper encoding and migrate the data.',
+	'menu.askAi': 'Ask AI to draft SQL…',
+	'assist.title': 'SQL drafting assistant',
+	'assist.open': 'AI draft',
+	'assist.shortcut': 'Describe what you need and get a draft in the editor (⌘/Ctrl+K)',
+	'assist.tabTitle': 'AI · {name}',
+	'assist.askResult': 'Ask about this result',
+	'assist.placeholder.editor':
+		'Describe the query you need, e.g. order amount per customer in the last 7 days',
+	'assist.placeholder.tree': 'Ask about this object, e.g. which tables reference it',
+	'assist.placeholder.grid': 'Build on this result, e.g. group it by month',
+	'assist.placeholder.table': 'Ask about this table, e.g. rows added this week',
+	'assist.placeholder.error':
+		'Describe what the statement should do, or just press Enter to fix it',
+	'assist.submit': 'Draft',
+	'assist.cancel': 'Stop',
+	'assist.close': 'Close assistant',
+	'assist.chip.connection': 'Connection',
+	'assist.chip.schema': 'Schema / database',
+	'assist.chip.object': 'Selected object',
+	'assist.chip.table': 'Table',
+	'assist.chip.view': 'View',
+	'assist.chip.selection': 'Selection · {count} lines',
+	'assist.chip.editor': 'Editor content',
+	'assist.chip.grid': 'Result · {columns} columns, {rows} rows',
+	'assist.chip.error': 'Last error',
+	'assist.payload.show': 'What is sent to the model',
+	'assist.payload.hide': 'Hide',
+	'assist.payload.note':
+		'Only this context and the table/column metadata of the relevant tables are sent. Passwords, hosts and result rows are never sent.',
+	'assist.blocker.no-connection': 'Choose a connection first.',
+	'assist.blocker.not-connected': 'This connection is not open.',
+	'assist.blocker.no-schema':
+		'Choose a schema or database so the assistant knows which catalog to read.',
+	'assist.blocker.no-model': 'No model is configured.',
+	'assist.pickSchema': 'Choose…',
+	'assist.configureModel': 'Configure model'
 } as const;
 
 export type MessageKey = keyof typeof en;
