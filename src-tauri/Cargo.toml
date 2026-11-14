@@ -2,7 +2,7 @@
 name = "app"
 version = "1.1.0"
 description = "A modular desktop database manager"
-authors = ["you"]
+authors = ["onesolo.app"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.90"
