@@ -1158,7 +1158,17 @@ export const en = {
 		"This is what the editor's Explain sends. Nothing goes to the database until you run it.",
 	'assist.explainRun': 'Run Explain',
 	'assist.explainBlocked':
-		"SQL Server's Explain runs the statement itself, so it is not offered for writes. Review the statement and run it yourself."
+		"SQL Server's Explain runs the statement itself, so it is not offered for writes. Review the statement and run it yourself.",
+	'assist.confirm.title': 'Run SQL drafted by the assistant?',
+	'assist.confirm.body':
+		'This statement came from the SQL assistant and changes data or structure. Check it before running.',
+	'assist.confirm.explainBody':
+		'This statement came from the SQL assistant and changes data or structure. Getting its plan here executes it. Check it before continuing.',
+	'assist.confirm.target': 'Runs on: {target}',
+	'assist.confirm.run': 'Run it',
+	'settings.audit.op.draft': 'drafted, not run',
+	'settings.audit.op.draft_applied': 'written to the editor, not run',
+	'settings.audit.ranDraft': 'ran drafted SQL'
 } as const;
 
 export type MessageKey = keyof typeof en;

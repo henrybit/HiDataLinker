@@ -335,6 +335,40 @@ describe('draftSql', () => {
 		expect(outcome).toEqual({ kind: 'empty-catalog', schema: 'shop' });
 	});
 
+	it('sends no passwords, connection strings, hosts or gateway tokens to the model', async () => {
+		const sent: string[] = [];
+		const token = '5f0c9a1e-77aa-4b0c-9d2e-0123456789ab';
+		await draftSql({
+			question: "orders for bob, password='hunter2'",
+			context: {
+				...baseContext,
+				connectionName: 'prod-db (10.0.0.8)',
+				editor: {
+					text: [
+						'-- postgres://admin:s3cret@10.0.0.8:5432/shop',
+						`-- endpoint.json {"port": 4545, "token": "${token}"}`,
+						"ALTER USER app WITH PASSWORD 'p@ss'",
+						'SELECT o.id FROM orders o'
+					].join('\n'),
+					selection: null
+				},
+				error: `request failed: Authorization: Bearer ${token}`
+			},
+			locale: 'en',
+			loadCatalog,
+			caller: {
+				async complete<T>(schema: ZodType<T>, system: string, human: string): Promise<T> {
+					sent.push(system, human);
+					return schema.parse(response({ sql: 'SELECT o.id FROM orders o' }));
+				}
+			}
+		});
+		const request = sent.join('\n');
+		for (const secret of ['hunter2', 's3cret', token, 'p@ss', 'prod-db', '10.0.0.8:5432']) {
+			expect(request).not.toContain(secret);
+		}
+	});
+
 	it('labels catalog and model failures', async () => {
 		await expect(
 			draftSql({

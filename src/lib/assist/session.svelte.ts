@@ -1,4 +1,6 @@
 import { createAnalysisCaller } from '$lib/analysis/llm';
+import { api } from '$lib/api/tauri';
+import { draftDetail, newDraftId } from './audit';
 import { toLlmSettings, type LlmProviderProfile } from '$lib/llm/providers';
 import { loadAssistCatalog } from './catalog';
 import type { AssistContext } from './context';
@@ -29,6 +31,8 @@ export class AssistSession {
 	pinned = $state<string[]>([]);
 	/** Whether the current draft has been written into the editor. */
 	applied = $state(false);
+	/** Audit id of the current draft. */
+	draftId = $state<string | null>(null);
 	private generation = 0;
 
 	get busy(): boolean {
@@ -52,6 +56,7 @@ export class AssistSession {
 		this.steps = [];
 		this.cancelled = false;
 		this.applied = false;
+		this.draftId = null;
 		this.phase = 'catalog';
 		try {
 			const outcome = await draftSql({
@@ -73,6 +78,19 @@ export class AssistSession {
 			});
 			if (generation !== this.generation) return null;
 			this.outcome = outcome;
+			if (outcome.kind === 'draft') {
+				this.draftId = newDraftId();
+				const { connectionId, schema } = input.context;
+				void api
+					.recordAssistEvent(
+						connectionId,
+						schema,
+						'draft',
+						outcome.sql,
+						draftDetail(this.draftId, input.question)
+					)
+					.catch(() => {});
+			}
 			return outcome;
 		} catch (error) {
 			if (generation !== this.generation || error instanceof DraftCancelled) return null;
@@ -101,5 +119,6 @@ export class AssistSession {
 		this.steps = [];
 		this.cancelled = false;
 		this.applied = false;
+		this.draftId = null;
 	}
 }

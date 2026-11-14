@@ -55,9 +55,16 @@ describe('maskSecrets', () => {
 			'ALTER ROLE app WITH PASSWORD ***'
 		);
 		expect(maskSecrets('-- postgres://admin:topsecret@db.internal:5432/shop')).toBe(
-			'-- postgres://admin:***@db.internal:5432/shop'
+			'-- postgres://***'
 		);
 		expect(maskSecrets('api_key=abc123 token: xyz')).toBe('api_key=*** token: ***');
+		expect(maskSecrets(`secret = "a b c"`)).toBe('secret = ***');
+		expect(maskSecrets('{"port": 4545, "token": "5f0c-9a1e"}')).toBe(
+			'{"port": 4545, "token": "***"}'
+		);
+		expect(maskSecrets('Authorization: Bearer 5f0c9a1e-77aa-4b0c')).toBe(
+			'Authorization: Bearer ***'
+		);
 	});
 
 	it('leaves ordinary SQL alone', () => {

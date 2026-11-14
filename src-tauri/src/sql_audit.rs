@@ -19,6 +19,7 @@ pub const MAX_SQL_BYTES: usize = 256 * 1024;
 const DEFAULT_PAGE: usize = 200;
 const MAX_PAGE: usize = 2000;
 const MAX_ERROR_CHARS: usize = 4000;
+const MAX_DETAIL_CHARS: usize = 200;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +51,8 @@ pub enum AuditSource {
     Migration,
     Import,
     Agent,
-    /// Catalog reads made by the in-workspace SQL drafting assistant.
+    /// The in-workspace SQL drafting assistant: its catalog reads, and drafts it produced or
+    /// wrote into an editor (which never run on the database).
     Assist,
     App,
 }
@@ -430,8 +432,15 @@ impl AuditScope {
 
     pub fn with_source(mut self, source: AuditSource, detail: Option<String>) -> Self {
         self.source = source;
-        self.source_detail = detail.filter(|item| !item.trim().is_empty());
+        self.source_detail = detail
+            .filter(|item| !item.trim().is_empty())
+            .map(|item| mask_secrets(item.trim()).chars().take(MAX_DETAIL_CHARS).collect());
         self
+    }
+
+    /// Record something that did not run on the database, such as a drafted statement.
+    pub fn note(&self, operation: &str, schema: Option<&str>, sql: &str) {
+        self.record(operation, schema, sql, 0, Ok(AuditOutcome::default()));
     }
 
     pub fn record(
@@ -630,6 +639,36 @@ mod tests {
                 username: "root".into(),
             },
         )
+    }
+
+    #[test]
+    fn notes_assist_drafts_apart_from_executions() {
+        let (log, root) = temp_log();
+        let detail = format!("draft 1a2b · password='hunter2' {}", "x".repeat(400));
+        scope(&log)
+            .with_source(AuditSource::Assist, Some(detail))
+            .note("draft", Some("shop"), "select * from orders");
+        scope(&log)
+            .with_source(AuditSource::Editor, Some("assist:1a2b".into()))
+            .record(
+                "execute_sql",
+                Some("shop"),
+                "select * from orders",
+                2,
+                Ok(AuditOutcome::default()),
+            );
+
+        let page = log.query(&SqlAuditQuery::default()).unwrap();
+        let ran = &page.entries[0];
+        let drafted = &page.entries[1];
+        assert_eq!((ran.source.as_str(), ran.operation.as_str()), ("editor", "execute_sql"));
+        assert_eq!(ran.source_detail.as_deref(), Some("assist:1a2b"));
+        assert_eq!((drafted.source.as_str(), drafted.operation.as_str()), ("assist", "draft"));
+        assert_eq!(drafted.duration_ms, 0);
+        let detail = drafted.source_detail.as_deref().unwrap();
+        assert!(!detail.contains("hunter2"));
+        assert_eq!(detail.chars().count(), MAX_DETAIL_CHARS);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

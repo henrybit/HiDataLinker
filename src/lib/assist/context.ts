@@ -63,8 +63,13 @@ const MAX_GRID_COLUMNS = 80;
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
 	[/\b(IDENTIFIED\s+BY\s+)('[^']*'|"[^"]*"|\S+)/gi, '$1***'],
 	[/\b(PASSWORD\s*(?:=|\s)\s*)('[^']*'|"[^"]*")/gi, '$1***'],
-	[/\b((?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*)([^\s;,'"]+)/gi, '$1***'],
-	[/([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+@/gi, '$1***@']
+	[
+		/\b((?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*)('[^']*'|"[^"]*"|[^\s;,'"]+)/gi,
+		'$1***'
+	],
+	[/("(?:password|passwd|pwd|secret|token|api[_-]?key)"\s*:\s*)"[^"]*"/gi, '$1"***"'],
+	[/\b(Bearer\s+)[\w.~+/=-]{8,}/gi, '$1***'],
+	[/\b([a-z][a-z0-9+.-]*:\/\/)[^\s:/@]+:[^\s@/]+@[^\s'"`]*/gi, '$1***']
 ];
 
 /** Redact inline credentials (CREATE USER … IDENTIFIED BY, URLs with passwords, key=value). */

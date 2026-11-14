@@ -29,7 +29,7 @@ use commands::{
     list_databases, list_indexes, list_migration_history, list_routines, list_schema_objects,
     list_server_databases, schema_health,
     list_tables, list_triggers, list_views, migrate_database, switch_database, poll_llm, preview_table, read_analysis_history, read_llm_catalog,
-    read_locale, read_migration_history, read_query_cache, read_runtime_settings,
+    read_locale, read_migration_history, read_query_cache, read_runtime_settings, record_assist_event,
     save_analysis_history, save_migration_history, start_llm, table_row_count, test_connection,
     upsert_connection, write_llm_catalog, write_locale, write_query_cache, write_runtime_settings,
     write_binary_file, write_text_file, list_sql_audit, list_sql_audit_days, read_sql_audit_settings,
@@ -144,6 +144,7 @@ pub fn run() {
             table_row_count,
             execute_sql,
             explain_plan,
+            record_assist_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

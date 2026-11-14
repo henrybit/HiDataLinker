@@ -57,6 +57,17 @@
 		return t(`settings.audit.source.${value}` as MessageKey);
 	}
 
+	/** Source plus whether an assistant draft was only drafted, only written, or actually run. */
+	function sourceText(entry: SqlAuditEntry): string {
+		const label = sourceLabel(entry.source);
+		if (entry.operation === 'draft' || entry.operation === 'draft_applied') {
+			return `${label} · ${t(`settings.audit.op.${entry.operation}`)}`;
+		}
+		if (entry.sourceDetail?.startsWith('assist:'))
+			return `${label} · ${t('settings.audit.ranDraft')}`;
+		return label;
+	}
+
 	function timeOf(at: string): string {
 		const match = /T(\d{2}:\d{2}:\d{2}(?:\.\d+)?)/.exec(at);
 		return match ? match[1] : at;
@@ -277,7 +288,7 @@
 						<span class="audit-status" class:ok={entry.success}>
 							{entry.success ? t('settings.audit.ok') : t('settings.audit.failed')}
 						</span>
-						<span>{sourceLabel(entry.source)}</span>
+						<span>{sourceText(entry)}</span>
 						<span
 							title={`${entry.connectionName}${entry.schema ? ` / ${entry.schema}` : ''} (${entry.host}:${entry.port})`}
 						>

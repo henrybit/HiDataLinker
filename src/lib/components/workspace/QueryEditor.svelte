@@ -16,6 +16,13 @@
 		type AssistOrigin,
 		type AssistSeed
 	} from '$lib/assist/context';
+	import {
+		draftDetail,
+		findAppliedDraft,
+		needsDraftConfirm,
+		runDetail,
+		type AppliedDraft
+	} from '$lib/assist/audit';
 	import { AssistSession } from '$lib/assist/session.svelte';
 	import { getLocale } from '$lib/i18n/i18n.svelte';
 	import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
@@ -24,6 +31,7 @@
 	import AssistPanel from './AssistPanel.svelte';
 	import AssistResult from './AssistResult.svelte';
 	import DataGrid from './DataGrid.svelte';
+	import DraftRunConfirm from './DraftRunConfirm.svelte';
 	import PlanView from './PlanView.svelte';
 	import QueryExecLog from './QueryExecLog.svelte';
 	import SqlEditor from './SqlEditor.svelte';
@@ -88,6 +96,12 @@
 	let assistPanel = $state<ReturnType<typeof AssistPanel> | undefined>();
 	let sqlEditor = $state<ReturnType<typeof SqlEditor> | undefined>();
 	const assistSession = new AssistSession();
+	let appliedDrafts = $state<AppliedDraft[]>([]);
+	let pendingRun = $state<{
+		statement: string;
+		mode: 'run' | 'explain';
+		proceed: () => Promise<void>;
+	} | null>(null);
 	const hasModel = $derived(selectedLlmProvider() != null);
 	const schemaChoices = $derived(
 		(workspace.schema[connectionId]?.databases ?? []).map((item) => item.name)
@@ -157,6 +171,39 @@
 		}
 		assistSession.applied = true;
 		assistQuestion = '';
+		const id = assistSession.draftId;
+		if (id) {
+			appliedDrafts = [...appliedDrafts.slice(-19), { id, sql: outcome.sql }];
+			void api
+				.recordAssistEvent(
+					connectionId,
+					schema ?? null,
+					'draft_applied',
+					outcome.sql,
+					draftDetail(id, assistSession.question)
+				)
+				.catch(() => {});
+		}
+	}
+
+	/** Run `action` now, or after the stronger confirmation when it would execute drafted writes. */
+	async function guarded(
+		sqlText: string,
+		mode: 'run' | 'explain',
+		action: (detail: string | null) => Promise<void>
+	) {
+		const current = assistSession.outcome;
+		const known =
+			current?.kind === 'draft' && assistSession.draftId
+				? [...appliedDrafts, { id: assistSession.draftId, sql: current.sql }]
+				: appliedDrafts;
+		const draft = findAppliedDraft(sqlText, known);
+		const detail = runDetail(draft);
+		if (!needsDraftConfirm(sqlText, connection?.engine, mode, draft)) {
+			await action(detail);
+			return;
+		}
+		pendingRun = { statement: sqlText.trim(), mode, proceed: () => action(detail) };
 	}
 
 	$effect(() => {
@@ -222,7 +269,7 @@
 		}
 	}
 
-	async function execute(sqlText: string, mode: 'run' | 'explain') {
+	async function execute(sqlText: string, mode: 'run' | 'explain', detail: string | null) {
 		running = true;
 		error = null;
 		plan = null;
@@ -236,7 +283,7 @@
 		if (mode === 'run') lastRunSql = sqlText;
 		try {
 			await afterPaint();
-			const queryResult = await api.executeSql(connectionId, sqlText, schema);
+			const queryResult = await api.executeSql(connectionId, sqlText, schema, 'editor', detail);
 			localLog = [];
 			const summary = queryResult.columns.length
 				? t('query.summaryRows', {
@@ -263,7 +310,8 @@
 	}
 
 	async function run() {
-		await execute(text, 'run');
+		const sqlText = text;
+		await guarded(sqlText, 'run', (detail) => execute(sqlText, 'run', detail));
 	}
 
 	async function explain() {
@@ -271,16 +319,18 @@
 	}
 
 	async function explainStatement(sqlText: string, withAnalyze: boolean) {
-		if (postgres) {
-			await explainPostgres(sqlText, withAnalyze);
-			return;
-		}
-		const explainSql = buildExplainSql(sqlText, connection?.engine);
-		if (!explainSql) return;
-		await execute(explainSql, 'explain');
+		await guarded(sqlText, withAnalyze ? 'run' : 'explain', async (detail) => {
+			if (postgres) {
+				await explainPostgres(sqlText, withAnalyze, detail);
+				return;
+			}
+			const explainSql = buildExplainSql(sqlText, connection?.engine);
+			if (!explainSql) return;
+			await execute(explainSql, 'explain', detail);
+		});
 	}
 
-	async function explainPostgres(sqlText: string, withAnalyze: boolean) {
+	async function explainPostgres(sqlText: string, withAnalyze: boolean, detail: string | null) {
 		const target = explainTarget(sqlText);
 		if (!target) return;
 		running = true;
@@ -296,7 +346,14 @@
 		workspace.setQueryResult(tabId, null);
 		try {
 			await afterPaint();
-			const response = await api.explainPlan(connectionId, target, schema, withAnalyze);
+			const response = await api.explainPlan(
+				connectionId,
+				target,
+				schema,
+				withAnalyze,
+				'editor',
+				detail
+			);
 			const parsed = parsePgPlan(response.plan);
 			plan = { parsed, raw: response.plan };
 			const summary = parsed.analyzed
@@ -381,6 +438,19 @@
 				onExplain={(draft) => void explainStatement(draft, false)}
 			/>
 		</AssistPanel>
+	{/if}
+	{#if pendingRun}
+		<DraftRunConfirm
+			statement={pendingRun.statement}
+			target={`${connection?.name ?? connectionId}${schema ? ` / ${schema}` : ''}`}
+			mode={pendingRun.mode}
+			onConfirm={() => {
+				const pending = pendingRun;
+				pendingRun = null;
+				void pending?.proceed();
+			}}
+			onCancel={() => (pendingRun = null)}
+		/>
 	{/if}
 	<StackSplit>
 		{#snippet top()}

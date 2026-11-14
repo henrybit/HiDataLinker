@@ -55,6 +55,22 @@ where
     Fut: Future<Output = AppResult<T>> + Send + 'static,
     T: Send + 'static,
 {
-    let engine = state.engine(&connection_id)?.with_source(source, None);
+    with_engine_tagged(state, connection_id, source, None, work).await
+}
+
+/// Like [`with_engine_as`], with a free-form detail stored next to the source.
+pub async fn with_engine_tagged<T, F, Fut>(
+    state: &AppState,
+    connection_id: String,
+    source: AuditSource,
+    detail: Option<String>,
+    work: F,
+) -> AppResult<T>
+where
+    F: FnOnce(LiveEngine) -> Fut + Send + 'static,
+    Fut: Future<Output = AppResult<T>> + Send + 'static,
+    T: Send + 'static,
+{
+    let engine = state.engine(&connection_id)?.with_source(source, detail);
     run_db(work(engine)).await
 }

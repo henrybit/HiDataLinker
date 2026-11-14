@@ -1127,5 +1127,14 @@ export const zh: Record<MessageKey, string> = {
 	'assist.explainNote': '这是编辑器的 Explain 会发送的语句。点击执行之前不会发往数据库。',
 	'assist.explainRun': '执行 Explain',
 	'assist.explainBlocked':
-		'SQL Server 的 Explain 会真正执行语句，因此不对写操作提供。请核对语句后自行运行。'
+		'SQL Server 的 Explain 会真正执行语句，因此不对写操作提供。请核对语句后自行运行。',
+	'assist.confirm.title': '执行由起草助手生成的语句？',
+	'assist.confirm.body': '这条语句来自 SQL 起草助手，会修改数据或结构。请核对后再执行。',
+	'assist.confirm.explainBody':
+		'这条语句来自 SQL 起草助手，会修改数据或结构。在这里获取执行计划会真正执行它。请核对后再继续。',
+	'assist.confirm.target': '执行位置：{target}',
+	'assist.confirm.run': '确认执行',
+	'settings.audit.op.draft': '只起草，未执行',
+	'settings.audit.op.draft_applied': '已写入编辑器，未执行',
+	'settings.audit.ranDraft': '执行了起草的 SQL'
 };

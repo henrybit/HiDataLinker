@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CatalogObject } from '$lib/analysis/types';
 import type { IndexInfo } from '$lib/api/types';
 import { engineLabel, normalizeEngine } from '$lib/engine';
+import { maskSecrets } from './context';
 import type { DraftScope } from './select';
 
 export const draftResponseSchema = z.object({
@@ -132,14 +133,21 @@ export function draftHumanPrompt(input: {
 	pinned?: string[];
 	feedback?: string;
 }): string {
-	const parts = [`Question: ${input.question}`, '', 'Workspace:', input.context, '', input.catalog];
+	const parts = [
+		`Question: ${maskSecrets(input.question)}`,
+		'',
+		'Workspace:',
+		input.context,
+		'',
+		input.catalog
+	];
 	if (input.pinned?.length) {
 		parts.push(
 			'',
 			`The user confirmed the question is about these tables: ${input.pinned.join(', ')}. Read the question in terms of them (for example, which amount is meant) and draft now unless something essential is still missing.`
 		);
 	}
-	if (input.followUp) parts.push('', 'Earlier in this session:', input.followUp);
+	if (input.followUp) parts.push('', 'Earlier in this session:', maskSecrets(input.followUp));
 	if (input.feedback) parts.push('', input.feedback);
 	return parts.join('\n');
 }

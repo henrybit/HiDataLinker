@@ -194,23 +194,42 @@ export const api = {
 		connectionId: string,
 		sql: string,
 		schema?: string | null,
-		source: SqlAuditClientSource = 'editor'
-	) => call<QueryResult>('execute_sql', { connectionId, schema: schema ?? null, sql, source }),
+		source: SqlAuditClientSource = 'editor',
+		sourceDetail: string | null = null
+	) =>
+		call<QueryResult>('execute_sql', {
+			connectionId,
+			schema: schema ?? null,
+			sql,
+			source,
+			sourceDetail
+		}),
 
 	explainPlan: (
 		connectionId: string,
 		sql: string,
 		schema: string | null | undefined,
 		analyze: boolean,
-		source: SqlAuditClientSource = 'editor'
+		source: SqlAuditClientSource = 'editor',
+		sourceDetail: string | null = null
 	) =>
 		call<ExplainPlan>('explain_plan', {
 			connectionId,
 			schema: schema ?? null,
 			sql,
 			analyze,
-			source
+			source,
+			sourceDetail
 		}),
+
+	/** Audit a draft the assistant produced or the user wrote into an editor. Never runs `sql`. */
+	recordAssistEvent: (
+		connectionId: string,
+		schema: string | null,
+		operation: 'draft' | 'draft_applied',
+		sql: string,
+		detail: string
+	) => call<void>('record_assist_event', { connectionId, schema, operation, sql, detail }),
 
 	readLlmCatalog: () => call<string>('read_llm_catalog'),
 

@@ -131,6 +131,13 @@ impl LiveEngine {
         self
     }
 
+    /// Audit an event that does not run on the database. No-op when auditing is off.
+    pub fn note(&self, operation: &str, schema: Option<&str>, sql: &str) {
+        if let Some(scope) = &self.audit {
+            scope.note(operation, schema, sql);
+        }
+    }
+
     pub fn kind(&self) -> EngineKind {
         match &self.driver {
             EngineDriver::MySql(_) => EngineKind::MySql,
