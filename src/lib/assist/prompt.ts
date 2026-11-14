@@ -5,20 +5,22 @@ import { engineLabel, normalizeEngine } from '$lib/engine';
 import { maskSecrets } from './context';
 import type { DraftScope } from './select';
 
+// Models often omit or null the fields that do not apply to their status.
+const text = () => z.string().catch('');
+const list = () => z.array(z.string()).catch([]);
+
 export const draftResponseSchema = z.object({
 	status: z
 		.enum(['draft', 'clarify'])
 		.describe('draft: SQL is ready. clarify: the catalog is not enough to write it safely.'),
-	sql: z.string().describe('One SQL statement, empty when status is clarify'),
-	summary: z.string().describe('One or two sentences on what the SQL does or what is missing'),
-	tables: z.array(z.string()).describe('Tables and views used, as listed in the catalog'),
-	columns: z.array(z.string()).describe('Columns used, as table.column'),
-	relations: z
-		.array(z.string())
-		.describe('Join conditions used, e.g. orders.customer_id = customers.id'),
-	assumptions: z.array(z.string()).describe('Assumptions the user should check'),
-	candidates: z.array(z.string()).describe('When clarifying: table names that might be meant'),
-	missing: z.string().describe('When clarifying: what information is missing')
+	sql: text().describe('One SQL statement, empty when status is clarify'),
+	summary: text().describe('One or two sentences on what the SQL does or what is missing'),
+	tables: list().describe('Tables and views used, as listed in the catalog'),
+	columns: list().describe('Columns used, as table.column'),
+	relations: list().describe('Join conditions used, e.g. orders.customer_id = customers.id'),
+	assumptions: list().describe('Assumptions the user should check'),
+	candidates: list().describe('When clarifying: table names that might be meant'),
+	missing: text().describe('When clarifying: what information is missing')
 });
 
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
