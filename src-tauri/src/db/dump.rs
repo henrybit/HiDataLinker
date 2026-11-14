@@ -1,7 +1,8 @@
 use super::engine::DatabaseEngine;
 use super::ident::{qualify_mssql, quote_ident, quote_ident_mssql, quote_ident_pg, validate_ident};
 use crate::error::{AppError, AppResult};
-use crate::models::ObjectKind;
+use crate::models::{ColumnInfo, ObjectKind};
+use std::collections::HashSet;
 
 #[derive(Clone, Copy)]
 pub enum DumpDialect {
@@ -26,6 +27,21 @@ pub struct DumpStatement {
     pub object_name: Option<String>,
     pub label: String,
     pub sql: String,
+}
+
+/// Statements an engine adds around the generic table/view DDL of a dump.
+#[derive(Debug, Clone, Default)]
+pub struct DumpExtras {
+    /// Extensions, types and sequences that tables depend on (schema dumps).
+    pub prelude: Vec<DumpStatement>,
+    /// Statements that reference tables, e.g. sequence ownership (schema dumps).
+    pub postlude: Vec<DumpStatement>,
+    /// Sequence positions to restore after rows are inserted (data dumps).
+    pub sequence_values: Vec<DumpStatement>,
+    /// Tables and views created by extensions; `CREATE EXTENSION` recreates them.
+    pub extension_relations: HashSet<String>,
+    /// Partitioned parents: their rows are dumped through the partitions.
+    pub partitioned_tables: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,9 +159,24 @@ where
 
     push_database_preamble(&mut script, schema, include_schema, dialect);
 
-    let tables = engine.list_tables(schema).await?;
-    let views = if include_schema {
-        engine.list_views(schema).await?
+    let extras = engine.dump_extras(schema).await?;
+    if include_schema {
+        script.statements.extend(extras.prelude.iter().cloned());
+    }
+
+    let tables: Vec<_> = engine
+        .list_tables(schema)
+        .await?
+        .into_iter()
+        .filter(|table| !extras.extension_relations.contains(&table.name))
+        .collect();
+    let views: Vec<_> = if include_schema {
+        engine
+            .list_views(schema)
+            .await?
+            .into_iter()
+            .filter(|view| !extras.extension_relations.contains(&view.name))
+            .collect()
     } else {
         Vec::new()
     };
@@ -198,7 +229,7 @@ where
             }
         }
 
-        if include_data {
+        if include_data && !extras.partitioned_tables.contains(&table.name) {
             append_table_data_statements(
                 &mut script,
                 engine,
@@ -211,6 +242,15 @@ where
             )
             .await?;
         }
+    }
+
+    if include_schema {
+        script.statements.extend(extras.postlude.iter().cloned());
+    }
+    if include_data {
+        script
+            .statements
+            .extend(extras.sequence_values.iter().cloned());
     }
 
     for view in &views {
@@ -454,6 +494,10 @@ where
         }
         DumpDialect::Mssql => qualify_mssql(schema, table),
     };
+    let insert_plan = match dialect {
+        DumpDialect::Postgres => postgres_insert_plan(&engine.get_columns(schema, table).await?),
+        _ => InsertPlan::default(),
+    };
 
     let mut offset = 0_u64;
     let mut total = 0_u64;
@@ -481,22 +525,39 @@ where
             )));
         }
 
-        let columns = result
+        let kept: Vec<usize> = result
             .columns
             .iter()
-            .map(|column| match dialect {
-                DumpDialect::Mysql => quote_ident(&column.name),
-                DumpDialect::Postgres | DumpDialect::Oracle => quote_ident_pg(&column.name),
-                DumpDialect::Mssql => quote_ident_mssql(&column.name),
+            .enumerate()
+            .filter(|(_, column)| !insert_plan.skip_columns.contains(&column.name))
+            .map(|(index, _)| index)
+            .collect();
+        if kept.is_empty() {
+            break;
+        }
+        let columns = kept
+            .iter()
+            .map(|&index| {
+                let name = &result.columns[index].name;
+                match dialect {
+                    DumpDialect::Mysql => quote_ident(name),
+                    DumpDialect::Postgres | DumpDialect::Oracle => quote_ident_pg(name),
+                    DumpDialect::Mssql => quote_ident_mssql(name),
+                }
             })
             .collect::<Vec<_>>()
             .join(", ");
 
-        let mut sql = format!("INSERT INTO {target} ({columns}) VALUES\n");
+        let overriding = if insert_plan.overriding_system_value {
+            " OVERRIDING SYSTEM VALUE"
+        } else {
+            ""
+        };
+        let mut sql = format!("INSERT INTO {target} ({columns}){overriding} VALUES\n");
         for (row_index, row) in result.rows.iter().enumerate() {
-            let values = row
+            let values = kept
                 .iter()
-                .map(|value| sql_literal(value.as_deref()))
+                .map(|&index| sql_literal(row.get(index).and_then(|value| value.as_deref())))
                 .collect::<Vec<_>>()
                 .join(", ");
             sql.push_str("  (");
@@ -558,6 +619,27 @@ where
         );
     }
     Ok(())
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct InsertPlan {
+    skip_columns: HashSet<String>,
+    overriding_system_value: bool,
+}
+
+/// PostgreSQL rejects explicit values for generated columns, and for
+/// `GENERATED ALWAYS AS IDENTITY` unless `OVERRIDING SYSTEM VALUE` is given.
+fn postgres_insert_plan(columns: &[ColumnInfo]) -> InsertPlan {
+    let mut plan = InsertPlan::default();
+    for column in columns {
+        let extra = column.extra.to_ascii_uppercase();
+        if extra == "GENERATED ALWAYS AS IDENTITY" {
+            plan.overriding_system_value = true;
+        } else if extra.starts_with("GENERATED ALWAYS AS ") {
+            plan.skip_columns.insert(column.name.clone());
+        }
+    }
+    plan
 }
 
 fn notify<F>(
@@ -622,6 +704,42 @@ mod tests {
         assert_eq!(dump_mode_label(true, true), "schema + data");
         assert_eq!(dump_mode_label(true, false), "schema only");
         assert_eq!(dump_mode_label(false, true), "data only");
+    }
+
+    fn column(name: &str, extra: &str) -> ColumnInfo {
+        ColumnInfo {
+            name: name.into(),
+            data_type: "integer".into(),
+            column_type: "integer".into(),
+            nullable: true,
+            key: String::new(),
+            default_value: None,
+            extra: extra.into(),
+            comment: String::new(),
+            ordinal: 1,
+        }
+    }
+
+    #[test]
+    fn postgres_inserts_skip_generated_columns() {
+        let plan = postgres_insert_plan(&[
+            column("id", "GENERATED BY DEFAULT AS IDENTITY"),
+            column("total", "GENERATED ALWAYS AS STORED"),
+            column("label", "GENERATED ALWAYS AS VIRTUAL"),
+            column("qty", ""),
+        ]);
+        assert!(!plan.overriding_system_value);
+        assert_eq!(
+            plan.skip_columns,
+            HashSet::from(["total".to_string(), "label".to_string()])
+        );
+    }
+
+    #[test]
+    fn postgres_inserts_override_always_identity() {
+        let plan = postgres_insert_plan(&[column("id", "GENERATED ALWAYS AS IDENTITY")]);
+        assert!(plan.overriding_system_value);
+        assert!(plan.skip_columns.is_empty());
     }
 
     #[test]

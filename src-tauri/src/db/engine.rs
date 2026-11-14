@@ -1,3 +1,4 @@
+use super::dump::DumpExtras;
 use super::mssql::SqlServerEngine;
 use super::mysql::MySqlEngine;
 use super::oracle::OracleEngine;
@@ -46,6 +47,10 @@ pub trait DatabaseEngine: Send + Sync {
     ) -> AppResult<QueryResult>;
     async fn table_row_count(&self, schema: &str, table: &str) -> AppResult<u64>;
     async fn execute_sql(&self, schema: Option<&str>, sql: &str) -> AppResult<QueryResult>;
+    /// Engine-specific statements a dump needs around the table/view DDL.
+    async fn dump_extras(&self, _schema: &str) -> AppResult<DumpExtras> {
+        Ok(DumpExtras::default())
+    }
     async fn close(self) -> AppResult<()>;
 }
 
@@ -338,6 +343,10 @@ impl DatabaseEngine for LiveEngine {
             query_outcome,
         );
         result
+    }
+
+    async fn dump_extras(&self, schema: &str) -> AppResult<DumpExtras> {
+        dispatch_engine!(self, dump_extras, schema)
     }
 
     async fn close(self) -> AppResult<()> {
