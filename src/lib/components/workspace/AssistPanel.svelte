@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { Sparkles, X } from '@lucide/svelte';
-	import { assistBlocker, describeContext, type AssistContext } from '$lib/assist/context';
+	import {
+		assistBlocker,
+		describeContext,
+		maskSecrets,
+		type AssistContext
+	} from '$lib/assist/context';
 	import { engineLabel } from '$lib/engine';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
@@ -14,10 +19,13 @@
 		busy = false,
 		question = $bindable(''),
 		showPayload = $bindable(false),
+		turns = 0,
+		followUp = '',
 		onSubmit,
 		onCancel,
 		onClose,
 		onPickSchema,
+		onForgetTurns,
 		children
 	}: {
 		context: AssistContext;
@@ -26,16 +34,24 @@
 		busy?: boolean;
 		question?: string;
 		showPayload?: boolean;
+		/** Earlier questions in this editor that are sent along. */
+		turns?: number;
+		followUp?: string;
 		onSubmit: (question: string) => void;
 		onCancel?: () => void;
 		onClose: () => void;
 		onPickSchema?: (schema: string) => void;
+		onForgetTurns?: () => void;
 		children?: Snippet;
 	} = $props();
 
 	let input = $state<HTMLTextAreaElement | undefined>();
 	const blocker = $derived(assistBlocker(context, hasModel));
-	const payload = $derived(describeContext(context));
+	const payload = $derived(
+		followUp
+			? `${describeContext(context)}\n\nEarlier in this session:\n${maskSecrets(followUp)}`
+			: describeContext(context)
+	);
 	const selectionLines = $derived(
 		context.editor?.selection?.trim() ? context.editor.selection.split('\n').length : 0
 	);
@@ -117,6 +133,20 @@
 		{/if}
 		{#if context.error}
 			<span class="assist-chip error">{t('assist.chip.error')}</span>
+		{/if}
+		{#if turns}
+			<span class="assist-chip" title={t('assist.chip.turnsHint')}
+				>{t('assist.chip.turns', { count: turns })}
+				{#if onForgetTurns && !busy}
+					<button
+						class="assist-chip-clear"
+						type="button"
+						onclick={onForgetTurns}
+						aria-label={t('assist.forgetTurns')}
+						title={t('assist.forgetTurns')}><X size={10} /></button
+					>
+				{/if}
+			</span>
 		{/if}
 		<button class="assist-link" type="button" onclick={() => (showPayload = !showPayload)}
 			>{showPayload ? t('assist.payload.hide') : t('assist.payload.show')}</button
@@ -241,6 +271,17 @@
 	.assist-chip.error {
 		border-color: #fecaca;
 		color: var(--danger);
+	}
+
+	.assist-chip-clear {
+		display: inline-flex;
+		margin-left: 2px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: inherit;
+		vertical-align: middle;
+		cursor: pointer;
 	}
 
 	.assist-link {

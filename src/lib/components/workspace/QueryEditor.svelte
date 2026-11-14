@@ -23,7 +23,10 @@
 		runDetail,
 		type AppliedDraft
 	} from '$lib/assist/audit';
+	import { followUpText, turnOf, type AssistTurn } from '$lib/assist/followup';
 	import { AssistSession } from '$lib/assist/session.svelte';
+	import { pickSavePath, writeSqlFile } from '$lib/save-sql-file';
+	import { csvFileName, resultToCsv } from '$lib/sql/result-csv';
 	import { getLocale } from '$lib/i18n/i18n.svelte';
 	import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 	import StackSplit from '$lib/components/layout/StackSplit.svelte';
@@ -97,6 +100,9 @@
 	let sqlEditor = $state<ReturnType<typeof SqlEditor> | undefined>();
 	const assistSession = new AssistSession();
 	let appliedDrafts = $state<AppliedDraft[]>([]);
+	let assistTurns = $state<AssistTurn[]>([]);
+	const followUp = $derived(followUpText(assistTurns));
+	let exporting = $state(false);
 	let pendingRun = $state<{
 		statement: string;
 		mode: 'run' | 'explain';
@@ -155,8 +161,11 @@
 			provider,
 			locale: getLocale(),
 			oracleVersion: connection?.oracleVersion,
-			pinned
+			pinned,
+			followUp: followUp || undefined
 		});
+		const turn = turnOf(question, outcome);
+		if (turn) assistTurns = [...assistTurns.slice(-5), turn];
 		if (outcome?.kind === 'draft' && !text.trim()) applyDraft('replace');
 	}
 
@@ -309,6 +318,30 @@
 		}
 	}
 
+	/** Save the current grid as CSV. The user picks the path; cancelling writes nothing. */
+	async function exportResult() {
+		const current = result;
+		if (!current?.columns.length || exporting) return;
+		const fileName = csvFileName(`${schema ?? connection?.name ?? 'result'}_query`);
+		const path = await pickSavePath(fileName, t('query.exportTitle'), {
+			name: 'CSV',
+			extensions: ['csv']
+		});
+		if (!path) return;
+		exporting = true;
+		try {
+			const saved = await writeSqlFile(path, resultToCsv(current), fileName, 'text/csv');
+			workspace.lastMessage = t(current.truncated ? 'query.exportedTruncated' : 'query.exported', {
+				count: formatNumber(current.rows.length),
+				path: saved
+			});
+		} catch (err) {
+			workspace.lastMessage = errorMessage(err);
+		} finally {
+			exporting = false;
+		}
+	}
+
 	async function run() {
 		const sqlText = text;
 		await guarded(sqlText, 'run', (detail) => execute(sqlText, 'run', detail));
@@ -421,6 +454,9 @@
 			{hasModel}
 			schemas={schemaChoices}
 			busy={assistSession.busy}
+			turns={Math.min(assistTurns.length, 3)}
+			{followUp}
+			onForgetTurns={() => (assistTurns = [])}
 			onSubmit={(question) => void submitAssist(question)}
 			onCancel={() => assistSession.cancel()}
 			onClose={closeAssist}
@@ -495,6 +531,12 @@
 					{#if result.columns.length}
 						<button class="assist-inline" type="button" onclick={() => openAssist('grid')}
 							>{t('assist.askResult')}</button
+						>
+						<button
+							class="assist-inline"
+							type="button"
+							disabled={exporting}
+							onclick={() => void exportResult()}>{t('query.exportCsv')}</button
 						>
 					{/if}
 				</div>

@@ -1168,7 +1168,16 @@ export const en = {
 	'assist.confirm.run': 'Run it',
 	'settings.audit.op.draft': 'drafted, not run',
 	'settings.audit.op.draft_applied': 'written to the editor, not run',
-	'settings.audit.ranDraft': 'ran drafted SQL'
+	'settings.audit.ranDraft': 'ran drafted SQL',
+	'query.exportCsv': 'Export CSV',
+	'query.exportTitle': 'Export query result',
+	'query.exported': 'Exported {count} rows to {path}',
+	'query.exportedTruncated':
+		'Exported {count} rows to {path}. The result was truncated, so only the rows in the grid were saved.',
+	'assist.chip.turns': 'Continues {count} earlier questions',
+	'assist.chip.turnsHint':
+		'Earlier questions and drafts in this editor are sent too, so you can build on them.',
+	'assist.forgetTurns': 'Forget earlier questions and start over'
 } as const;
 
 export type MessageKey = keyof typeof en;

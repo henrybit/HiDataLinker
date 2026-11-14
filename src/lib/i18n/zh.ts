@@ -1136,5 +1136,12 @@ export const zh: Record<MessageKey, string> = {
 	'assist.confirm.run': '确认执行',
 	'settings.audit.op.draft': '只起草，未执行',
 	'settings.audit.op.draft_applied': '已写入编辑器，未执行',
-	'settings.audit.ranDraft': '执行了起草的 SQL'
+	'settings.audit.ranDraft': '执行了起草的 SQL',
+	'query.exportCsv': '导出 CSV',
+	'query.exportTitle': '导出查询结果',
+	'query.exported': '已导出 {count} 行到 {path}',
+	'query.exportedTruncated': '已导出 {count} 行到 {path}。结果已截断，只保存了网格中的行。',
+	'assist.chip.turns': '延续前 {count} 轮',
+	'assist.chip.turnsHint': '这个编辑器里之前的提问和草案会一起发给模型，方便接着问。',
+	'assist.forgetTurns': '清空之前的提问，重新开始'
 };
