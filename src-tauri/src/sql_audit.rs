@@ -50,6 +50,8 @@ pub enum AuditSource {
     Migration,
     Import,
     Agent,
+    /// Catalog reads made by the in-workspace SQL drafting assistant.
+    Assist,
     App,
 }
 
@@ -66,6 +68,7 @@ impl AuditSource {
             Self::Migration => "migration",
             Self::Import => "import",
             Self::Agent => "agent",
+            Self::Assist => "assist",
             Self::App => "app",
         }
     }
@@ -76,6 +79,7 @@ impl AuditSource {
             Some("table_edit") => Self::TableEdit,
             Some("structure") => Self::Structure,
             Some("analysis") => Self::Analysis,
+            Some("assist") => Self::Assist,
             _ => Self::Editor,
         }
     }
@@ -747,6 +751,7 @@ mod tests {
             AuditSource::TableEdit
         );
         assert_eq!(AuditSource::from_client(Some("agent")), AuditSource::Editor);
+        assert_eq!(AuditSource::from_client(Some("assist")), AuditSource::Assist);
         assert_eq!(AuditSource::from_client(None), AuditSource::Editor);
     }
 }

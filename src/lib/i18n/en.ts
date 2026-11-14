@@ -671,6 +671,7 @@ export const en = {
 	'settings.audit.source.migration': 'Migration',
 	'settings.audit.source.import': 'Import',
 	'settings.audit.source.agent': 'Agent',
+	'settings.audit.source.assist': 'SQL assistant',
 	'settings.audit.source.app': 'App',
 
 	'agent.enable': 'MCP service',
@@ -1107,7 +1108,29 @@ export const en = {
 		'Choose a schema or database so the assistant knows which catalog to read.',
 	'assist.blocker.no-model': 'No model is configured.',
 	'assist.pickSchema': 'Choose…',
-	'assist.configureModel': 'Configure model'
+	'assist.configureModel': 'Configure model',
+	'assist.phase.catalog': 'Reading the catalog…',
+	'assist.phase.drafting': 'Drafting SQL…',
+	'assist.phase.checking': 'Checking tables and columns against the catalog…',
+	'assist.phase.repairing': 'The draft used names not in the catalog; asking for a fix…',
+	'assist.failure.catalog': 'Could not read the catalog: {message}',
+	'assist.failure.model': 'The model request failed: {message}',
+	'assist.retry': 'Retry',
+	'assist.emptyCatalog': '{schema} has no tables or views, so there is nothing to draft from.',
+	'assist.clarify': 'The catalog does not have enough to write this safely.',
+	'assist.candidates': 'Possible tables:',
+	'assist.notWritten': 'Nothing was written to the editor.',
+	'assist.rejected':
+		'The draft kept using tables or columns that are not in the catalog, so it was not written:',
+	'assist.usedTables': 'Tables:',
+	'assist.usedRelations': 'Joins:',
+	'assist.applied': 'Written to the editor. Review it, then press Run.',
+	'assist.chooseApply': 'The editor already has SQL. Replace it or insert the draft?',
+	'assist.write': 'Write to editor',
+	'assist.replace': 'Replace editor content',
+	'assist.insert': 'Insert at cursor',
+	'assist.replaceSelection': 'Replace selection',
+	'assist.discard': 'Discard'
 } as const;
 
 export type MessageKey = keyof typeof en;

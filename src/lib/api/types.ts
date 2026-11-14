@@ -221,7 +221,7 @@ export interface QueryResult {
 	messages?: QueryLogEntry[];
 }
 
-export type SqlAuditClientSource = 'editor' | 'table_edit' | 'structure' | 'analysis';
+export type SqlAuditClientSource = 'editor' | 'table_edit' | 'structure' | 'analysis' | 'assist';
 
 export type SqlAuditSource =
 	| SqlAuditClientSource

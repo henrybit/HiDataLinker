@@ -59,6 +59,26 @@
 		assistCallback = onAssist;
 	});
 
+	/** Replace the selection, or insert at the cursor on lines of its own, then focus. */
+	export function insertText(text: string) {
+		const editor = view;
+		if (!editor) return;
+		const range = editor.state.selection.main;
+		let insert = text;
+		if (range.empty) {
+			const doc = editor.state.doc;
+			const before = range.from > 0 ? doc.sliceString(range.from - 1, range.from) : '\n';
+			const after = range.to < doc.length ? doc.sliceString(range.to, range.to + 1) : '\n';
+			insert = `${before === '\n' ? '' : '\n'}${text}${after === '\n' ? '' : '\n'}`;
+		}
+		editor.dispatch({
+			changes: { from: range.from, to: range.to, insert },
+			selection: { anchor: range.from + insert.length },
+			scrollIntoView: true
+		});
+		editor.focus();
+	}
+
 	function languageExtension(engineValue: string | null | undefined) {
 		return sql({
 			dialect: sqlDialectFor(engineValue),

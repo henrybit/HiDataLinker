@@ -16,10 +16,13 @@
 		type AssistOrigin,
 		type AssistSeed
 	} from '$lib/assist/context';
+	import { AssistSession } from '$lib/assist/session.svelte';
+	import { getLocale } from '$lib/i18n/i18n.svelte';
 	import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 	import StackSplit from '$lib/components/layout/StackSplit.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import AssistPanel from './AssistPanel.svelte';
+	import AssistResult from './AssistResult.svelte';
 	import DataGrid from './DataGrid.svelte';
 	import PlanView from './PlanView.svelte';
 	import QueryExecLog from './QueryExecLog.svelte';
@@ -83,6 +86,8 @@
 	let assistQuestion = $state('');
 	let assistShowPayload = $state(false);
 	let assistPanel = $state<ReturnType<typeof AssistPanel> | undefined>();
+	let sqlEditor = $state<ReturnType<typeof SqlEditor> | undefined>();
+	const assistSession = new AssistSession();
 	const hasModel = $derived(selectedLlmProvider() != null);
 	const schemaChoices = $derived(
 		(workspace.schema[connectionId]?.databases ?? []).map((item) => item.name)
@@ -122,12 +127,35 @@
 	}
 
 	function closeAssist() {
+		assistSession.dismiss();
 		assistOpen = false;
 		assistShowPayload = false;
 	}
 
-	function submitAssist() {
-		assistShowPayload = true;
+	async function submitAssist(question: string) {
+		const provider = selectedLlmProvider();
+		if (!provider) return;
+		const outcome = await assistSession.ask({
+			question,
+			context: $state.snapshot(assistContext),
+			provider,
+			locale: getLocale(),
+			oracleVersion: connection?.oracleVersion
+		});
+		if (outcome?.kind === 'draft' && !text.trim()) applyDraft('replace');
+	}
+
+	function applyDraft(mode: 'replace' | 'insert') {
+		const outcome = assistSession.outcome;
+		if (outcome?.kind !== 'draft') return;
+		if (mode === 'replace' || !sqlEditor) {
+			text = outcome.sql;
+			workspace.setTabSql(tabId, text);
+		} else {
+			sqlEditor.insertText(outcome.sql);
+		}
+		assistSession.applied = true;
+		assistQuestion = '';
 	}
 
 	$effect(() => {
@@ -331,10 +359,20 @@
 			context={assistContext}
 			{hasModel}
 			schemas={schemaChoices}
-			onSubmit={submitAssist}
+			busy={assistSession.busy}
+			onSubmit={(question) => void submitAssist(question)}
+			onCancel={() => assistSession.cancel()}
 			onClose={closeAssist}
 			onPickSchema={(next) => next && workspace.setTabSchema(tabId, next)}
-		/>
+		>
+			<AssistResult
+				session={assistSession}
+				editorHasText={Boolean(text.trim())}
+				hasSelection={Boolean(selectionText.trim())}
+				onApply={applyDraft}
+				onRetry={() => void submitAssist(assistSession.question)}
+			/>
+		</AssistPanel>
 	{/if}
 	<StackSplit>
 		{#snippet top()}
@@ -342,6 +380,7 @@
 				<div class="empty">{t('query.loadingSql')}</div>
 			{:else}
 				<SqlEditor
+					bind:this={sqlEditor}
 					bind:value={text}
 					bind:selection={selectionText}
 					engine={connection?.engine}

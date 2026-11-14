@@ -22,6 +22,7 @@
 		'migration',
 		'import',
 		'agent',
+		'assist',
 		'app'
 	];
 
