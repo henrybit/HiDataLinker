@@ -18,6 +18,7 @@
 	} from '$lib/analysis/history';
 	import { edgeVisible } from '$lib/analysis/layout';
 	import { renderRelationshipMarkdown } from '$lib/analysis/markdown';
+	import { buildPropertyGraph, propertyGraphConnections } from '$lib/analysis/property-graph';
 	import { createAnalysisCaller } from '$lib/analysis/llm';
 	import {
 		analysisLogLevel,
@@ -77,6 +78,7 @@
 
 	const elapsedLabel = $derived(elapsedMs == null ? '' : formatElapsed(elapsedMs));
 	const visibleEdges = $derived(graph?.edges.filter((edge) => edgeVisible(edge, filters)) ?? []);
+	const graphConnections = $derived(graph ? propertyGraphConnections(graph) : []);
 	const selectedNode = $derived(graph?.nodes.find((node) => node.id === selectedId) ?? null);
 	const providers = $derived(llmCatalog.providers);
 	const provider = $derived(providers.find((item) => item.id === llmCatalog.selectedId) ?? null);
@@ -658,6 +660,67 @@
 		}
 	}
 
+	async function generatePropertyGraph() {
+		if (!graph || running) return;
+		const [connectionId, ...others] = graphConnections;
+		const plan = connectionId ? buildPropertyGraph(graph, connectionId, filters) : null;
+		if (!plan) {
+			error = t('analysis.graph.none');
+			return;
+		}
+		const connection = workspace.connections.find((item) => item.id === connectionId);
+		if (!connection) return;
+		if (!connection.connected && !(await workspace.connectAsync(connectionId))) {
+			error = t('analysis.graph.connectFirst', { name: connection.name });
+			return;
+		}
+		let version: { num: number; text: string } | null = null;
+		try {
+			const result = await api.executeSql(
+				connectionId,
+				"SELECT current_setting('server_version_num'), current_setting('server_version')",
+				null,
+				'analysis'
+			);
+			const [num, text] = result.rows[0] ?? [];
+			if (num && text) version = { num: Number(num), text };
+		} catch {
+			version = null;
+		}
+		const tooOld = version != null && version.num < 190000;
+		const notes = [
+			t('analysis.graph.header'),
+			t('analysis.graph.counts', {
+				vertices: plan.vertexCount,
+				edges: plan.edgeCount,
+				inferred: plan.inferredCount
+			}),
+			...(plan.skippedTables.length
+				? [t('analysis.graph.skippedTables', { names: plan.skippedTables.join(', ') })]
+				: []),
+			...(plan.skippedEdges
+				? [t('analysis.graph.skippedEdges', { count: plan.skippedEdges })]
+				: []),
+			...(others.length ? [t('analysis.graph.otherConnections', { name: connection.name })] : []),
+			...(tooOld && version ? [t('analysis.graph.versionWarning', { version: version.text })] : [])
+		];
+		const sql = [
+			...notes.map((note) => `-- ${note}`),
+			`${plan.createSql};`,
+			'',
+			`-- ${t('analysis.graph.example')}`,
+			`${plan.exampleSql};`,
+			''
+		].join('\n');
+		await workspace.openQuery(connectionId, plan.schema, sql, {
+			title: t('analysis.graph.tabTitle', { name: plan.graphName })
+		});
+		if (tooOld && version) {
+			workspace.error = t('analysis.graph.versionWarning', { version: version.text });
+		}
+		analysisPanel.open = false;
+	}
+
 	function cardinalityText(value: Cardinality): string {
 		if (value === 'one_to_one') return t('analysis.cardinality.one_to_one');
 		if (value === 'one_to_many') return t('analysis.cardinality.one_to_many');
@@ -1076,6 +1139,17 @@
 			<button class="btn" type="button" disabled={!graph || running} onclick={exportMarkdown}>
 				{t('analysis.export')}
 			</button>
+			{#if graphConnections.length}
+				<button
+					class="btn"
+					type="button"
+					disabled={running}
+					title={t('analysis.graph.hint')}
+					onclick={generatePropertyGraph}
+				>
+					{t('analysis.graph.generate')}
+				</button>
+			{/if}
 			<button class="btn primary" type="button" disabled={running} onclick={analyze}>
 				{running ? t('analysis.running') : t('analysis.run')}
 			</button>

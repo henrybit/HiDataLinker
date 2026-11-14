@@ -457,6 +457,25 @@ export const en = {
 	'analysis.export': 'Export Markdown',
 	'analysis.exportTitle': 'Export relationship description',
 	'analysis.exportFile': 'relationship-network.md',
+	'analysis.graph.generate': 'Generate property graph',
+	'analysis.graph.hint':
+		'Turn the PostgreSQL tables and relations into CREATE PROPERTY GRAPH (PostgreSQL 19+) and open it in the query editor',
+	'analysis.graph.tabTitle': 'Graph {name}',
+	'analysis.graph.header':
+		'Property graph generated from the relationship analysis. Requires PostgreSQL 19 or later. Review it before running.',
+	'analysis.graph.counts':
+		'{vertices} vertices, {edges} edges ({inferred} from inferred relations).',
+	'analysis.graph.skippedTables': 'Left out because they have no primary key: {names}',
+	'analysis.graph.skippedEdges':
+		'{count} relations could not be expressed as edges (many-to-many without a junction table, or missing columns) and were skipped.',
+	'analysis.graph.otherConnections':
+		'A property graph can only contain tables from one database. Using connection "{name}"; tables from other connections are ignored.',
+	'analysis.graph.versionWarning':
+		'This server runs PostgreSQL {version}. CREATE PROPERTY GRAPH needs PostgreSQL 19 or later.',
+	'analysis.graph.example': 'Example: a multi-hop query with GRAPH_TABLE',
+	'analysis.graph.none':
+		'The relationship graph has no PostgreSQL tables to build a property graph from.',
+	'analysis.graph.connectFirst': 'Connect to "{name}" first, then generate the property graph.',
 	'analysis.history': 'History',
 	'analysis.historyEmpty': 'No saved analyses yet',
 	'analysis.historyDelete': 'Delete this record',

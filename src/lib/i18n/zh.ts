@@ -447,6 +447,23 @@ export const zh: Record<MessageKey, string> = {
 	'analysis.export': '导出 Markdown',
 	'analysis.exportTitle': '导出关系网说明',
 	'analysis.exportFile': 'relationship-network.md',
+	'analysis.graph.generate': '生成属性图',
+	'analysis.graph.hint':
+		'把 PostgreSQL 表和关系转换为 CREATE PROPERTY GRAPH（需要 PostgreSQL 19+），在查询编辑器中打开',
+	'analysis.graph.tabTitle': '属性图 {name}',
+	'analysis.graph.header':
+		'由关系网分析生成的属性图，需要 PostgreSQL 19 或更高版本。请确认无误后再执行。',
+	'analysis.graph.counts': '顶点 {vertices} 个，边 {edges} 条（其中推断关系 {inferred} 条）。',
+	'analysis.graph.skippedTables': '以下表没有主键，未加入属性图：{names}',
+	'analysis.graph.skippedEdges':
+		'有 {count} 条关系无法表示为边（没有中间表的多对多，或缺少列信息），已跳过。',
+	'analysis.graph.otherConnections':
+		'属性图只能包含同一个数据库中的表，这里使用连接「{name}」，其他连接的表已忽略。',
+	'analysis.graph.versionWarning':
+		'当前服务器是 PostgreSQL {version}，执行 CREATE PROPERTY GRAPH 需要 PostgreSQL 19 或更高版本。',
+	'analysis.graph.example': '示例：用 GRAPH_TABLE 做多跳查询',
+	'analysis.graph.none': '关系网中没有可用于属性图的 PostgreSQL 表。',
+	'analysis.graph.connectFirst': '请先连接「{name}」，再生成属性图。',
 	'analysis.history': '历史记录',
 	'analysis.historyEmpty': '还没有分析记录',
 	'analysis.historyDelete': '删除这条记录',
