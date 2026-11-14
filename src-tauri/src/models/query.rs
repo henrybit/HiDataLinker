@@ -61,6 +61,15 @@ impl QueryLogEntry {
     }
 }
 
+/// A PostgreSQL `EXPLAIN (FORMAT JSON)` document plus how it was produced.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplainPlan {
+    pub plan: String,
+    pub analyzed: bool,
+    pub duration_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {

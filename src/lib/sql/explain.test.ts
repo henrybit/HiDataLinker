@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildExplainSql, normalizeExplainTarget } from './explain';
+import { buildExplainSql, explainTarget, normalizeExplainTarget } from './explain';
 
 describe('explain sql helpers', () => {
 	it('normalizes trailing semicolons', () => {
@@ -28,6 +28,11 @@ describe('explain sql helpers', () => {
 			'SET STATISTICS PROFILE ON;\nSELECT id FROM t'
 		);
 		expect(buildExplainSql('SELECT id FROM t', 'oracle')).toBe('EXPLAIN PLAN FOR\nSELECT id FROM t');
+	});
+
+	it('extracts the statement to explain', () => {
+		expect(explainTarget('EXPLAIN (ANALYZE, BUFFERS) SELECT 1;')).toBe('SELECT 1');
+		expect(explainTarget('  DELETE FROM t ;; ')).toBe('DELETE FROM t');
 	});
 
 	it('returns empty for blank input', () => {

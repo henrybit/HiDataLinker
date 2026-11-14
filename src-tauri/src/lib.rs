@@ -22,7 +22,8 @@ use commands::{
     agent_runner_status, agent_save_checkpoint, agent_stage_attachments, agent_start_run,
     agent_tool_call, agents_list, complete_llm, connect_session, create_database,
     delete_analysis_history, delete_connection, delete_migration_history, delete_query_cache,
-    disconnect_session, drop_database, dump_database, dump_table, execute_sql, get_columns, get_ddl,
+    disconnect_session, drop_database, dump_database, dump_table, execute_sql, explain_plan,
+    get_columns, get_ddl,
     import_cancel, import_infer_schema, import_parse_sample, import_prepare, import_read_text_file,
     import_start, import_status, insights_read_latest, insights_start_run, list_analysis_history, list_charset_catalog, list_connections,
     list_databases, list_indexes, list_migration_history, list_routines, list_server_databases,
@@ -139,6 +140,7 @@ pub fn run() {
             preview_table,
             table_row_count,
             execute_sql,
+            explain_plan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

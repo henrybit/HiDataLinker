@@ -164,6 +164,13 @@ export interface QueryLogEntry {
 	text: string;
 }
 
+/** Raw `EXPLAIN (FORMAT JSON)` document from PostgreSQL. */
+export interface ExplainPlan {
+	plan: string;
+	analyzed: boolean;
+	durationMs: number;
+}
+
 export interface QueryResult {
 	columns: ColumnMeta[];
 	rows: Array<Array<string | null>>;

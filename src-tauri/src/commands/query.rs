@@ -1,7 +1,7 @@
 use super::with_engine_as;
 use crate::db::DatabaseEngine;
 use crate::error::AppResult;
-use crate::models::QueryResult;
+use crate::models::{ExplainPlan, QueryResult};
 use crate::sql_audit::AuditSource;
 use crate::state::AppState;
 use tauri::State;
@@ -30,6 +30,22 @@ pub async fn table_row_count(
 ) -> AppResult<u64> {
     with_engine_as(&state, connection_id, AuditSource::TableBrowse, move |engine| async move {
         engine.table_row_count(&schema, &table).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn explain_plan(
+    state: State<'_, AppState>,
+    connection_id: String,
+    schema: Option<String>,
+    sql: String,
+    analyze: bool,
+    source: Option<String>,
+) -> AppResult<ExplainPlan> {
+    let source = AuditSource::from_client(source.as_deref());
+    with_engine_as(&state, connection_id, source, move |engine| async move {
+        engine.explain_plan(schema.as_deref(), &sql, analyze).await
     })
     .await
 }

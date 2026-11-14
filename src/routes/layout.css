@@ -1233,6 +1233,14 @@ button {
 	background: #f0fdf4;
 }
 
+.explain-analyze {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
 .query-results-area {
 	display: flex;
 	flex: 1 1 0;

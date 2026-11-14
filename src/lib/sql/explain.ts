@@ -5,16 +5,19 @@ export function normalizeExplainTarget(sql: string): string {
 	return sql.trim().replace(/;+\s*$/g, '').trim();
 }
 
+/** The statement to explain, without trailing semicolons or an existing EXPLAIN wrapper. */
+export function explainTarget(sql: string): string {
+	return normalizeExplainTarget(sql)
+		.replace(/^\s*EXPLAIN\s*(?:\([^)]*\))?\s*/i, '')
+		.trim();
+}
+
 /**
  * Wrap SQL with a dialect-appropriate EXPLAIN that does not execute side effects
  * (no ANALYZE), so it stays safe for DML plans.
  */
 export function buildExplainSql(sql: string, engine?: string | null): string {
-	let target = normalizeExplainTarget(sql);
-	if (!target) return '';
-
-	// Drop an existing EXPLAIN / EXPLAIN (...) wrapper to avoid nesting.
-	target = target.replace(/^\s*EXPLAIN\s*(?:\([^)]*\))?\s*/i, '').trim();
+	const target = explainTarget(sql);
 	if (!target) return '';
 
 	if (isPostgres(engine)) {

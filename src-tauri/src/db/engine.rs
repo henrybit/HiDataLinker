@@ -3,10 +3,10 @@ use super::mssql::SqlServerEngine;
 use super::mysql::MySqlEngine;
 use super::oracle::OracleEngine;
 use super::postgres::PostgresEngine;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::{
-    CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, EngineKind, IndexInfo, ObjectKind,
-    QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
+    CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, EngineKind, ExplainPlan,
+    IndexInfo, ObjectKind, QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use crate::sql_audit::{AuditOutcome, AuditScope, AuditSource};
 use async_trait::async_trait;
@@ -55,6 +55,18 @@ pub trait DatabaseEngine: Send + Sync {
     /// engine does not support switching within a connection.
     async fn list_server_databases(&self) -> AppResult<Vec<String>> {
         Ok(Vec::new())
+    }
+    /// Structured plan for one statement. With `analyze`, the statement really
+    /// runs, so engines must undo its effects before returning.
+    async fn explain_plan(
+        &self,
+        _schema: Option<&str>,
+        _sql: &str,
+        _analyze: bool,
+    ) -> AppResult<ExplainPlan> {
+        Err(AppError::msg(
+            "structured execution plans are only supported for PostgreSQL",
+        ))
     }
     async fn close(self) -> AppResult<()>;
 }
@@ -356,6 +368,29 @@ impl DatabaseEngine for LiveEngine {
 
     async fn list_server_databases(&self) -> AppResult<Vec<String>> {
         dispatch_engine!(self, list_server_databases)
+    }
+
+    async fn explain_plan(
+        &self,
+        schema: Option<&str>,
+        sql: &str,
+        analyze: bool,
+    ) -> AppResult<ExplainPlan> {
+        let started = Instant::now();
+        let result = dispatch_engine!(self, explain_plan, schema, sql, analyze);
+        self.audit(
+            if analyze { "explain_analyze" } else { "explain" },
+            schema,
+            || sql.to_string(),
+            started,
+            &result,
+            |_| AuditOutcome {
+                statement_kind: Some("explain".into()),
+                affected_rows: None,
+                row_count: None,
+            },
+        );
+        result
     }
 
     async fn close(self) -> AppResult<()> {

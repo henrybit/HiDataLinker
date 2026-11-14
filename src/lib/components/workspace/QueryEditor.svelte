@@ -5,12 +5,14 @@
 	import { formatDuration, formatNumber } from '$lib/format';
 	import { afterPaint } from '$lib/runtime/jobs';
 	import { isOracle, isPostgres } from '$lib/engine';
-	import { buildExplainSql } from '$lib/sql/explain';
+	import { buildExplainSql, explainTarget } from '$lib/sql/explain';
 	import { formatSql } from '$lib/sql/format';
+	import { parsePgPlan, type ParsedPlan } from '$lib/sql/pg-plan';
 	import { workspace } from '$lib/stores/workspace.svelte';
 	import StackSplit from '$lib/components/layout/StackSplit.svelte';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import DataGrid from './DataGrid.svelte';
+	import PlanView from './PlanView.svelte';
 	import QueryExecLog from './QueryExecLog.svelte';
 	import SqlEditor from './SqlEditor.svelte';
 
@@ -39,8 +41,11 @@
 	let error = $state<string | null>(null);
 	let localLog = $state<QueryLogEntry[]>([]);
 	let didAutoRun = $state(false);
+	let analyze = $state(false);
+	let plan = $state<{ parsed: ParsedPlan; raw: string } | null>(null);
 	const result = $derived(workspace.queryResults[tabId] ?? null);
 	const connection = $derived(workspace.connections.find((item) => item.id === connectionId));
+	const postgres = $derived(isPostgres(connection?.engine));
 	const schemaHint = $derived(
 		schema
 			? isOracle(connection?.engine)
@@ -116,6 +121,7 @@
 	async function execute(sqlText: string, mode: 'run' | 'explain') {
 		running = true;
 		error = null;
+		plan = null;
 		localLog = [
 			{
 				level: 'info',
@@ -156,9 +162,56 @@
 	}
 
 	async function explain() {
+		if (postgres) {
+			await explainPostgres();
+			return;
+		}
 		const explainSql = buildExplainSql(text, connection?.engine);
 		if (!explainSql) return;
 		await execute(explainSql, 'explain');
+	}
+
+	async function explainPostgres() {
+		const target = explainTarget(text);
+		if (!target) return;
+		const withAnalyze = analyze;
+		running = true;
+		error = null;
+		plan = null;
+		localLog = [
+			{
+				level: 'info',
+				text: withAnalyze ? t('query.log.explainingAnalyze') : t('query.log.explaining')
+			}
+		];
+		workspace.setTabSql(tabId, text);
+		workspace.setQueryResult(tabId, null);
+		try {
+			await afterPaint();
+			const response = await api.explainPlan(connectionId, target, schema, withAnalyze);
+			const parsed = parsePgPlan(response.plan);
+			plan = { parsed, raw: response.plan };
+			const summary = parsed.analyzed
+				? t('plan.summaryAnalyzed', {
+						count: parsed.nodes.length,
+						duration: formatDuration(Math.round(parsed.executionTime ?? response.durationMs))
+					})
+				: t('plan.summaryEstimate', {
+						count: parsed.nodes.length,
+						cost: parsed.root.totalCost.toFixed(2)
+					});
+			localLog = [
+				...localLog,
+				{ level: 'success', text: summary },
+				...(parsed.analyzed ? [{ level: 'notice' as const, text: t('plan.rolledBack') }] : [])
+			];
+			workspace.lastMessage = t('query.summaryExplain', { summary });
+		} catch (err) {
+			error = errorMessage(err);
+			localLog = [...localLog, { level: 'info', text: t('query.log.failed') }];
+		} finally {
+			running = false;
+		}
 	}
 
 	$effect(() => {
@@ -176,6 +229,12 @@
 		>
 		<button class="btn" onclick={format} disabled={!canAct}>{t('query.format')}</button>
 		<button class="btn" onclick={explain} disabled={!canAct}>{t('query.explain')}</button>
+		{#if postgres}
+			<label class="explain-analyze" title={t('query.explainAnalyzeHint')}>
+				<input type="checkbox" bind:checked={analyze} disabled={running} />
+				{t('query.explainAnalyze')}
+			</label>
+		{/if}
 		<span style="color:var(--text-muted)"
 			>{schemaHint} · {t('query.shortcut')} · {t('query.formatShortcut')} · {t(
 				'query.explainShortcut'
@@ -200,6 +259,12 @@
 		{#snippet bottom()}
 			{#if error}
 				<div class="message error">{error}</div>
+			{:else if plan}
+				<div class="message">
+					{plan.parsed.analyzed ? 'EXPLAIN ANALYZE' : 'EXPLAIN'} · {t('plan.nodes', {
+						count: plan.parsed.nodes.length
+					})}
+				</div>
 			{:else if result}
 				<div class="message">
 					{result.statementKind}
@@ -217,7 +282,9 @@
 			{/if}
 
 			<div class="query-results-area">
-				{#if result?.columns.length}
+				{#if plan && !error}
+					<PlanView plan={plan.parsed} raw={plan.raw} />
+				{:else if result?.columns.length}
 					<DataGrid {result} />
 				{:else if !error && !result && !running}
 					<div class="empty">{t('query.empty')}</div>

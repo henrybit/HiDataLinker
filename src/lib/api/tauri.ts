@@ -20,6 +20,7 @@ import type {
 	ConnectionListItem,
 	ConnectionProfile,
 	DatabaseInfo,
+	ExplainPlan,
 	IndexInfo,
 	MigrateResult,
 	ObjectKind,
@@ -187,6 +188,21 @@ export const api = {
 		schema?: string | null,
 		source: SqlAuditClientSource = 'editor'
 	) => call<QueryResult>('execute_sql', { connectionId, schema: schema ?? null, sql, source }),
+
+	explainPlan: (
+		connectionId: string,
+		sql: string,
+		schema: string | null | undefined,
+		analyze: boolean,
+		source: SqlAuditClientSource = 'editor'
+	) =>
+		call<ExplainPlan>('explain_plan', {
+			connectionId,
+			schema: schema ?? null,
+			sql,
+			analyze,
+			source
+		}),
 
 	readLlmCatalog: () => call<string>('read_llm_catalog'),
 

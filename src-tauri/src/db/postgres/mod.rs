@@ -7,8 +7,8 @@ use super::ident::{
 use super::sql::{apply_default_query_limit, statement_kind, SqlDialect, DEFAULT_QUERY_ROW_LIMIT};
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, IndexInfo, ObjectKind,
-    QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
+    CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, ExplainPlan, IndexInfo,
+    ObjectKind, QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use async_trait::async_trait;
 use deadpool_postgres::{Config, Manager, Pool, PoolConfig, Runtime, SslMode};
@@ -610,6 +610,55 @@ impl DatabaseEngine for PostgresEngine {
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
+    async fn explain_plan(
+        &self,
+        schema: Option<&str>,
+        sql: &str,
+        analyze: bool,
+    ) -> AppResult<ExplainPlan> {
+        let target = sql
+            .trim()
+            .trim_end_matches(|c: char| c == ';' || c.is_whitespace());
+        if target.is_empty() {
+            return Err(AppError::msg("SQL is empty"));
+        }
+        if let Some(schema) = schema {
+            validate_ident(schema)?;
+        }
+        let mut client = self.pool.get().await?;
+        // ANALYZE executes the statement: keep it inside a transaction that is
+        // always rolled back. The extended protocol rejects a second statement,
+        // so nothing can COMMIT behind our back.
+        let tx = client.transaction().await?;
+        if let Some(schema) = schema {
+            tx.batch_execute(&format!(
+                "SET LOCAL search_path TO {}, pg_catalog",
+                quote_ident(schema)
+            ))
+            .await?;
+        }
+        let options = if analyze {
+            "ANALYZE, BUFFERS, VERBOSE, COSTS, FORMAT JSON"
+        } else {
+            "VERBOSE, COSTS, FORMAT JSON"
+        };
+        let started = Instant::now();
+        let rows = tx
+            .query(&format!("EXPLAIN ({options}) {target}"), &[])
+            .await;
+        let duration_ms = started.elapsed().as_millis() as u64;
+        tx.rollback().await?;
+        let plan = rows?
+            .first()
+            .map(|row| row.get::<_, JsonText>(0).0)
+            .ok_or_else(|| AppError::msg("EXPLAIN returned no plan"))?;
+        Ok(ExplainPlan {
+            plan,
+            analyzed: analyze,
+            duration_ms,
+        })
+    }
+
     async fn close(self) -> AppResult<()> {
         self.pool.close();
         Ok(())
@@ -668,6 +717,29 @@ fn create_pool(
         .runtime(Runtime::Tokio1)
         .build()
         .map_err(|error| AppError::PgPool(error.to_string()))
+}
+
+/// `json` / `jsonb` column read as text, without the serde_json driver feature.
+struct JsonText(String);
+
+impl<'a> tokio_postgres::types::FromSql<'a> for JsonText {
+    fn from_sql(
+        ty: &tokio_postgres::types::Type,
+        raw: &'a [u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        // Binary jsonb carries a one-byte version header before the text.
+        let text = if *ty == tokio_postgres::types::Type::JSONB {
+            raw.get(1..).unwrap_or_default()
+        } else {
+            raw
+        };
+        Ok(Self(std::str::from_utf8(text)?.to_string()))
+    }
+
+    fn accepts(ty: &tokio_postgres::types::Type) -> bool {
+        use tokio_postgres::types::Type;
+        matches!(*ty, Type::JSON | Type::JSONB | Type::TEXT)
+    }
 }
 
 #[derive(Clone, Copy)]
