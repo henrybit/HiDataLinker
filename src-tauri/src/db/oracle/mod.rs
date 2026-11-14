@@ -358,6 +358,7 @@ impl DatabaseEngine for OracleEngine {
                 comment: grid_text(&row, 3).unwrap_or_default(),
                 created_at: None,
                 updated_at: None,
+                parent: None,
             });
         }
         Ok(tables)
@@ -571,6 +572,13 @@ impl DatabaseEngine for OracleEngine {
             ObjectKind::Trigger => "TRIGGER",
             ObjectKind::Function => "FUNCTION",
             ObjectKind::Procedure => "PROCEDURE",
+            ObjectKind::Sequence => "SEQUENCE",
+            ObjectKind::Type => "TYPE",
+            ObjectKind::Extension | ObjectKind::Policy => {
+                return Err(AppError::msg(
+                    "this object type is not available for Oracle",
+                ));
+            }
         };
         let session = self.session().await?;
         let result = session

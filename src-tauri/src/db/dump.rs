@@ -38,6 +38,9 @@ pub struct DumpExtras {
     pub postlude: Vec<DumpStatement>,
     /// Sequence positions to restore after rows are inserted (data dumps).
     pub sequence_values: Vec<DumpStatement>,
+    /// Statements that may call functions or views, e.g. row-level security
+    /// policies; emitted after every other object (schema dumps).
+    pub finale: Vec<DumpStatement>,
     /// Tables and views created by extensions; `CREATE EXTENSION` recreates them.
     pub extension_relations: HashSet<String>,
     /// Partitioned parents: their rows are dumped through the partitions.
@@ -366,6 +369,10 @@ where
                 );
             }
         }
+    }
+
+    if include_schema {
+        script.statements.extend(extras.finale.iter().cloned());
     }
 
     notify(

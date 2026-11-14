@@ -6,7 +6,8 @@ use super::postgres::PostgresEngine;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, EngineKind, ExplainPlan,
-    IndexInfo, ObjectKind, QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
+    IndexInfo, ObjectKind, QueryResult, RoutineInfo, SchemaObjectInfo, TableInfo,
+    TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use crate::sql_audit::{AuditOutcome, AuditScope, AuditSource};
 use async_trait::async_trait;
@@ -54,6 +55,14 @@ pub trait DatabaseEngine: Send + Sync {
     /// Databases on the server this session could switch to. Empty when the
     /// engine does not support switching within a connection.
     async fn list_server_databases(&self) -> AppResult<Vec<String>> {
+        Ok(Vec::new())
+    }
+    /// Objects of an engine-specific folder kind: sequences, types, extensions, policies.
+    async fn list_schema_objects(
+        &self,
+        _schema: &str,
+        _kind: ObjectKind,
+    ) -> AppResult<Vec<SchemaObjectInfo>> {
         Ok(Vec::new())
     }
     /// Structured plan for one statement. With `analyze`, the statement really
@@ -370,6 +379,14 @@ impl DatabaseEngine for LiveEngine {
         dispatch_engine!(self, list_server_databases)
     }
 
+    async fn list_schema_objects(
+        &self,
+        schema: &str,
+        kind: ObjectKind,
+    ) -> AppResult<Vec<SchemaObjectInfo>> {
+        dispatch_engine!(self, list_schema_objects, schema, kind)
+    }
+
     async fn explain_plan(
         &self,
         schema: Option<&str>,
@@ -379,7 +396,11 @@ impl DatabaseEngine for LiveEngine {
         let started = Instant::now();
         let result = dispatch_engine!(self, explain_plan, schema, sql, analyze);
         self.audit(
-            if analyze { "explain_analyze" } else { "explain" },
+            if analyze {
+                "explain_analyze"
+            } else {
+                "explain"
+            },
             schema,
             || sql.to_string(),
             started,

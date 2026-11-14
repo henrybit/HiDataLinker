@@ -27,6 +27,8 @@ import type {
 	ObjectKind,
 	QueryResult,
 	RoutineInfo,
+	SchemaObjectFolder,
+	SchemaObjectInfo,
 	SwitchDatabasePrompt,
 	Tab,
 	TableInfo,
@@ -42,10 +44,35 @@ export interface SchemaCache {
 	indexes: Record<string, IndexInfo[]>;
 	triggers: Record<string, TriggerInfo[]>;
 	routines: Record<string, RoutineInfo[]>;
+	/** PostgreSQL folders, keyed by `schemaObjectsKey(schema, folder)`. */
+	objects: Record<string, SchemaObjectInfo[]>;
 }
 
 function emptyCache(): SchemaCache {
-	return { databases: [], tables: {}, views: {}, indexes: {}, triggers: {}, routines: {} };
+	return {
+		databases: [],
+		tables: {},
+		views: {},
+		indexes: {},
+		triggers: {},
+		routines: {},
+		objects: {}
+	};
+}
+
+export const schemaObjectFolders: SchemaObjectFolder[] = [
+	'sequences',
+	'types',
+	'extensions',
+	'policies'
+];
+
+export function isSchemaObjectFolder(folder: FolderKind): folder is SchemaObjectFolder {
+	return (schemaObjectFolders as FolderKind[]).includes(folder);
+}
+
+export function schemaObjectsKey(schema: string, folder: SchemaObjectFolder) {
+	return `${schema}:${folder}`;
 }
 
 class WorkspaceStore {
@@ -303,6 +330,9 @@ class WorkspaceStore {
 				delete next.indexes[prompt.name];
 				delete next.triggers[prompt.name];
 				delete next.routines[prompt.name];
+				for (const folder of schemaObjectFolders) {
+					delete next.objects[schemaObjectsKey(prompt.name, folder)];
+				}
 				this.schema = { ...this.schema, [prompt.connectionId]: next };
 			}
 			await this.loadDatabases(prompt.connectionId);
@@ -417,6 +447,32 @@ class WorkspaceStore {
 			const sql = await api.dumpTable(connectionId, schema, table);
 			const saved = await writeSqlFile(path, sql, fileName);
 			this.status = t('status.exportedTo', { name: table, path: saved });
+		} catch (error) {
+			this.error = errorMessage(error);
+		} finally {
+			this.end(key);
+		}
+	}
+
+	async refreshMaterializedView(connectionId: string, schema: string, view: string) {
+		const item = this.connections.find((c) => c.id === connectionId);
+		if (!item?.connected || !schema || !view) return;
+		this.closeMenu();
+		const key = `refresh-matview:${connectionId}:${schema}:${view}`;
+		this.begin(key);
+		this.error = null;
+		this.status = t('status.refreshingMatview', { name: view });
+		try {
+			await afterPaint();
+			const target = qualifyIdent(item.engine, schema, view);
+			await api.executeSql(
+				connectionId,
+				`REFRESH MATERIALIZED VIEW ${target}`,
+				schema,
+				'structure'
+			);
+			this.bumpTableData(connectionId, schema, view);
+			this.status = t('status.refreshedMatview', { name: view });
 		} catch (error) {
 			this.error = errorMessage(error);
 		} finally {
@@ -899,7 +955,8 @@ class WorkspaceStore {
 				(folder === 'views' && cached?.views[schema]) ||
 				(folder === 'indexes' && cached?.indexes[schema]) ||
 				(folder === 'triggers' && cached?.triggers[schema]) ||
-				(folder === 'functions' && cached?.routines[schema]))
+				(folder === 'functions' && cached?.routines[schema]) ||
+				(isSchemaObjectFolder(folder) && cached?.objects[schemaObjectsKey(schema, folder)]))
 		) {
 			return;
 		}
@@ -926,6 +983,12 @@ class WorkspaceStore {
 							kind: 'functions' as const,
 							items: await api.listRoutines(connectionId, schema)
 						};
+					default:
+						return {
+							kind: 'objects' as const,
+							folder,
+							items: await api.listSchemaObjects(connectionId, schema, folderToKind(folder))
+						};
 				}
 			});
 			if (!result) return;
@@ -938,6 +1001,11 @@ class WorkspaceStore {
 				next.triggers = { ...current.triggers, [schema]: result.items };
 			if (result.kind === 'functions')
 				next.routines = { ...current.routines, [schema]: result.items };
+			if (result.kind === 'objects')
+				next.objects = {
+					...current.objects,
+					[schemaObjectsKey(schema, result.folder)]: result.items
+				};
 			this.schema = { ...this.schema, [connectionId]: next };
 		} catch (error) {
 			this.error = errorMessage(error);
@@ -994,14 +1062,27 @@ class WorkspaceStore {
 			await this.loadDatabases(connectionId);
 			if (this.error) return;
 			if (schema) {
-				const [tables, views, indexes, triggers, routines] = await Promise.all([
+				const loadedObjects = schemaObjectFolders.filter(
+					(folder) =>
+						this.schema[connectionId]?.objects[schemaObjectsKey(schema, folder)] !== undefined
+				);
+				const [tables, views, indexes, triggers, routines, objectLists] = await Promise.all([
 					api.listTables(connectionId, schema),
 					api.listViews(connectionId, schema),
 					api.listIndexes(connectionId, schema),
 					api.listTriggers(connectionId, schema),
-					api.listRoutines(connectionId, schema)
+					api.listRoutines(connectionId, schema),
+					Promise.all(
+						loadedObjects.map((folder) =>
+							api.listSchemaObjects(connectionId, schema, folderToKind(folder))
+						)
+					)
 				]);
 				const current = this.schema[connectionId] ?? emptyCache();
+				const objects = { ...current.objects };
+				loadedObjects.forEach((folder, index) => {
+					objects[schemaObjectsKey(schema, folder)] = objectLists[index];
+				});
 				this.schema = {
 					...this.schema,
 					[connectionId]: {
@@ -1010,7 +1091,8 @@ class WorkspaceStore {
 						views: { ...current.views, [schema]: views },
 						indexes: { ...current.indexes, [schema]: indexes },
 						triggers: { ...current.triggers, [schema]: triggers },
-						routines: { ...current.routines, [schema]: routines }
+						routines: { ...current.routines, [schema]: routines },
+						objects
 					}
 				};
 			}
@@ -1057,6 +1139,14 @@ export function folderToKind(folder: FolderKind): ObjectKind {
 			return 'trigger';
 		case 'functions':
 			return 'function';
+		case 'sequences':
+			return 'sequence';
+		case 'types':
+			return 'type';
+		case 'extensions':
+			return 'extension';
+		case 'policies':
+			return 'policy';
 	}
 }
 

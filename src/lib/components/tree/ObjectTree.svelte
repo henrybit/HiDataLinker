@@ -1,5 +1,6 @@
 <script lang="ts">
 	import {
+		Blocks,
 		Braces,
 		ChevronDown,
 		ChevronRight,
@@ -7,18 +8,101 @@
 		Eye,
 		FolderClosed,
 		FolderOpen,
+		Hash,
+		ListOrdered,
+		Puzzle,
+		ShieldCheck,
 		SquareFunction,
 		KeyRound,
 		Server,
 		Table2,
 		Zap
 	} from '@lucide/svelte';
-	import { workspace, folderLabel } from '$lib/stores/workspace.svelte';
+	import {
+		workspace,
+		folderLabel,
+		folderToKind,
+		isSchemaObjectFolder,
+		schemaObjectFolders,
+		schemaObjectsKey
+	} from '$lib/stores/workspace.svelte';
 	import { engineLabel, isPostgres, isSchemaScoped } from '$lib/engine';
-	import type { FolderKind } from '$lib/api/types';
+	import type { FolderKind, ObjectKind, TableInfo } from '$lib/api/types';
 	import { t } from '$lib/i18n/i18n.svelte';
 
-	const folders: FolderKind[] = ['tables', 'views', 'indexes', 'triggers', 'functions'];
+	const baseFolders: FolderKind[] = ['tables', 'views', 'indexes', 'triggers', 'functions'];
+
+	function foldersFor(engine: string): FolderKind[] {
+		return isPostgres(engine) ? [...baseFolders, ...schemaObjectFolders] : baseFolders;
+	}
+
+	interface TreeObject {
+		key: string;
+		name: string;
+		kind: ObjectKind;
+		depth: number;
+		materialized?: boolean;
+	}
+
+	/** Lists partitions right after their parent, one level deeper. */
+	function nestPartitions(tables: TableInfo[]): TreeObject[] {
+		const names = new Set(tables.map((table) => table.name));
+		const children = new Map<string, TableInfo[]>();
+		const roots: TableInfo[] = [];
+		for (const table of tables) {
+			if (table.parent && names.has(table.parent) && table.parent !== table.name) {
+				children.set(table.parent, [...(children.get(table.parent) ?? []), table]);
+			} else {
+				roots.push(table);
+			}
+		}
+		const out: TreeObject[] = [];
+		const visit = (table: TableInfo, depth: number) => {
+			out.push({ key: table.name, name: table.name, kind: 'table', depth });
+			for (const child of children.get(table.name) ?? []) visit(child, depth + 1);
+		};
+		for (const table of roots) visit(table, 0);
+		return out;
+	}
+
+	function objectsFor(connectionId: string, schema: string, folder: FolderKind): TreeObject[] {
+		const cache = workspace.schema[connectionId];
+		if (!cache) return [];
+		const flat = (names: string[], kind: ObjectKind): TreeObject[] =>
+			names.map((name) => ({ key: name, name, kind, depth: 0 }));
+		switch (folder) {
+			case 'tables':
+				return nestPartitions(cache.tables[schema] ?? []);
+			case 'views':
+				return (cache.views[schema] ?? []).map((view) => ({
+					key: view.name,
+					name: view.name,
+					kind: 'view',
+					depth: 0,
+					materialized: view.checkOption === 'MATERIALIZED'
+				}));
+			case 'indexes':
+				return flat(
+					(cache.indexes[schema] ?? []).map((item) => `${item.tableName}.${item.name}`),
+					'index'
+				);
+			case 'triggers':
+				return flat(
+					(cache.triggers[schema] ?? []).map((item) => item.name),
+					'trigger'
+				);
+			case 'functions':
+				return (cache.routines[schema] ?? []).map((item) => {
+					const kind = item.routineType === 'PROCEDURE' ? 'procedure' : 'function';
+					return { key: `${kind}:${item.name}`, name: item.name, kind, depth: 0 };
+				});
+			default:
+				return flat(
+					(cache.objects[schemaObjectsKey(schema, folder)] ?? []).map((item) => item.name),
+					folderToKind(folder)
+				);
+		}
+	}
 
 	function isSelected(
 		connectionId: string,
@@ -48,22 +132,17 @@
 				return Zap;
 			case 'functions':
 				return SquareFunction;
+			case 'sequences':
+				return ListOrdered;
+			case 'types':
+				return Hash;
+			case 'extensions':
+				return Puzzle;
+			case 'policies':
+				return ShieldCheck;
 			default:
 				return FolderClosed;
 		}
-	}
-
-	function objectsFor(connectionId: string, schema: string, folder: FolderKind) {
-		const cache = workspace.schema[connectionId];
-		if (!cache) return [];
-		if (folder === 'tables') return (cache.tables[schema] ?? []).map((item) => item.name);
-		if (folder === 'views') return (cache.views[schema] ?? []).map((item) => item.name);
-		if (folder === 'indexes')
-			return (cache.indexes[schema] ?? []).map((item) => `${item.tableName}.${item.name}`);
-		if (folder === 'triggers') return (cache.triggers[schema] ?? []).map((item) => item.name);
-		return (cache.routines[schema] ?? []).map(
-			(item) => `${item.routineType === 'PROCEDURE' ? 'P' : 'F'}:${item.name}`
-		);
 	}
 
 	function onActivate(event: KeyboardEvent, action: () => void) {
@@ -200,7 +279,7 @@
 					>
 				</div>
 				{#if dbOpen}
-					{#each folders as folder (folder)}
+					{#each foldersFor(connection.engine) as folder (folder)}
 						{@const folderKey = `folder:${connection.id}:${database.name}:${folder}`}
 						{@const folderOpen = workspace.expanded.has(folderKey)}
 						{@const Icon = folderIcon(folder, folderOpen)}
@@ -240,24 +319,13 @@
 							<span class="truncate">{folderLabel(folder)}</span>
 						</div>
 						{#if folderOpen}
-							{#each objectsFor(connection.id, database.name, folder) as objectName (objectName)}
-								{@const kind =
-									folder === 'tables'
-										? 'table'
-										: folder === 'views'
-											? 'view'
-											: folder === 'indexes'
-												? 'index'
-												: folder === 'triggers'
-													? 'trigger'
-													: objectName.startsWith('P:')
-														? 'procedure'
-														: 'function'}
-								{@const display = objectName.replace(/^[FP]:/, '')}
+							{#each objectsFor(connection.id, database.name, folder) as object (object.key)}
+								{@const kind = object.kind}
+								{@const display = object.name}
 								<div
 									class="tree-node"
 									class:selected={isSelected(connection.id, database.name, folder, display)}
-									style="padding-left:54px"
+									style="padding-left:{54 + object.depth * 14}px"
 									onclick={() =>
 										workspace.selectObject(connection.id, database.name, folder, kind, display)}
 									onkeydown={(event) =>
@@ -284,7 +352,9 @@
 												kind === 'table'
 													? ['open-data', 'open-ddl', 'dump-table-data', 'new-query', 'refresh']
 													: kind === 'view'
-														? ['open-data', 'open-ddl', 'new-query', 'refresh']
+														? object.materialized
+															? ['open-data', 'open-ddl', 'refresh-matview', 'new-query', 'refresh']
+															: ['open-data', 'open-ddl', 'new-query', 'refresh']
 														: ['open-ddl', 'refresh']
 										})}
 									role="button"
@@ -297,9 +367,17 @@
 										{:else if kind === 'view'}<Eye size={13} />
 										{:else if kind === 'index'}<KeyRound size={13} />
 										{:else if kind === 'trigger'}<Zap size={13} />
+										{:else if isSchemaObjectFolder(folder)}
+											{@const Icon = folderIcon(folder, false)}
+											<Icon size={13} />
 										{:else}<Braces size={13} />{/if}
 									</span>
 									<span class="truncate">{display}</span>
+									{#if object.materialized}
+										<span class="object-tag" title={t('tree.materializedView')}
+											><Blocks size={11} /></span
+										>
+									{/if}
 								</div>
 							{/each}
 						{/if}

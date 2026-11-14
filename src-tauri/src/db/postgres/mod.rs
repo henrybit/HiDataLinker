@@ -8,7 +8,8 @@ use super::sql::{apply_default_query_limit, statement_kind, SqlDialect, DEFAULT_
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, ExplainPlan, IndexInfo,
-    ObjectKind, QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
+    ObjectKind, QueryResult, RoutineInfo, SchemaObjectInfo, TableInfo, TestConnectionRequest,
+    TriggerInfo, ViewInfo,
 };
 use async_trait::async_trait;
 use deadpool_postgres::{Config, Manager, Pool, PoolConfig, Runtime, SslMode};
@@ -206,10 +207,13 @@ impl DatabaseEngine for PostgresEngine {
                         END,
                         GREATEST(c.reltuples, 0)::bigint,
                         pg_total_relation_size(c.oid),
-                        COALESCE(obj_description(c.oid, 'pg_class'), '')
+                        COALESCE(obj_description(c.oid, 'pg_class'), ''),
+                        parent.relname
                  FROM pg_class c
                  JOIN pg_namespace n ON n.oid = c.relnamespace
                  LEFT JOIN pg_am am ON am.oid = c.relam
+                 LEFT JOIN pg_inherits inh ON c.relispartition AND inh.inhrelid = c.oid
+                 LEFT JOIN pg_class parent ON parent.oid = inh.inhparent
                  WHERE n.nspname = $1
                    AND c.relkind IN ('r', 'p', 'f')
                  ORDER BY c.relispartition, c.relkind <> 'p', c.relname",
@@ -233,6 +237,7 @@ impl DatabaseEngine for PostgresEngine {
                 comment: row.get(4),
                 created_at: None,
                 updated_at: None,
+                parent: row.get(5),
             })
             .collect())
     }
@@ -503,6 +508,10 @@ impl DatabaseEngine for PostgresEngine {
                 validate_ident(name)?;
                 index_ddl(&self.pool, schema, name).await
             }
+            ObjectKind::Sequence
+            | ObjectKind::Type
+            | ObjectKind::Extension
+            | ObjectKind::Policy => extra_object_ddl(&self.pool, schema, kind, name).await,
         }
     }
 
@@ -608,6 +617,78 @@ impl DatabaseEngine for PostgresEngine {
             )
             .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
+    }
+
+    async fn list_schema_objects(
+        &self,
+        schema: &str,
+        kind: ObjectKind,
+    ) -> AppResult<Vec<SchemaObjectInfo>> {
+        validate_ident(schema)?;
+        let sql = match kind {
+            ObjectKind::Sequence => {
+                "SELECT c.relname,
+                        pg_catalog.format_type(s.seqtypid, NULL)
+                        || COALESCE(' · ' || CASE dep.deptype WHEN 'i' THEN 'identity ' ELSE 'owned by ' END
+                                    || tc.relname || '.' || a.attname, '')
+                 FROM pg_sequence s
+                 JOIN pg_class c ON c.oid = s.seqrelid
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 LEFT JOIN pg_depend dep
+                   ON dep.classid = 'pg_class'::regclass AND dep.objid = c.oid
+                  AND dep.refclassid = 'pg_class'::regclass AND dep.deptype IN ('a', 'i')
+                 LEFT JOIN pg_class tc ON tc.oid = dep.refobjid
+                 LEFT JOIN pg_attribute a ON a.attrelid = dep.refobjid AND a.attnum = dep.refobjsubid
+                 WHERE n.nspname = $1
+                   AND NOT EXISTS (SELECT 1 FROM pg_depend e
+                                   WHERE e.classid = 'pg_class'::regclass AND e.objid = c.oid
+                                     AND e.deptype = 'e')
+                 ORDER BY c.relname"
+            }
+            ObjectKind::Type => {
+                "SELECT t.typname,
+                        CASE t.typtype
+                            WHEN 'e' THEN 'enum (' || (SELECT count(*) FROM pg_enum e WHERE e.enumtypid = t.oid) || ')'
+                            WHEN 'd' THEN 'domain · ' || pg_catalog.format_type(t.typbasetype, t.typtypmod)
+                            WHEN 'r' THEN 'range · ' || (SELECT pg_catalog.format_type(r.rngsubtype, NULL)
+                                                        FROM pg_range r WHERE r.rngtypid = t.oid)
+                            ELSE 'composite'
+                        END
+                 FROM pg_type t
+                 JOIN pg_namespace n ON n.oid = t.typnamespace
+                 LEFT JOIN pg_class c ON c.oid = t.typrelid
+                 WHERE n.nspname = $1
+                   AND (t.typtype IN ('e', 'd', 'r') OR (t.typtype = 'c' AND c.relkind = 'c'))
+                   AND NOT EXISTS (SELECT 1 FROM pg_depend e
+                                   WHERE e.classid = 'pg_type'::regclass AND e.objid = t.oid
+                                     AND e.deptype = 'e')
+                 ORDER BY t.typname"
+            }
+            ObjectKind::Extension => {
+                "SELECT e.extname, 'v' || e.extversion
+                 FROM pg_extension e
+                 JOIN pg_namespace n ON n.oid = e.extnamespace
+                 WHERE n.nspname = $1
+                 ORDER BY e.extname"
+            }
+            ObjectKind::Policy => {
+                "SELECT p.tablename || '.' || p.policyname,
+                        p.cmd || ' · ' || p.permissive || ' · ' || array_to_string(p.roles, ', ')
+                 FROM pg_policies p
+                 WHERE p.schemaname = $1
+                 ORDER BY p.tablename, p.policyname"
+            }
+            _ => return Ok(Vec::new()),
+        };
+        let client = self.pool.get().await?;
+        let rows = client.query(sql, &[&schema]).await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| SchemaObjectInfo {
+                name: row.get(0),
+                detail: row.get::<_, Option<String>>(1).unwrap_or_default(),
+            })
+            .collect())
     }
 
     async fn explain_plan(
@@ -1380,6 +1461,41 @@ async fn dump_extras(pool: &Pool, schema: &str) -> AppResult<DumpExtras> {
         ));
     }
 
+    let range_sql = format!(
+        "SELECT t.typname,
+                pg_catalog.format_type(r.rngsubtype, NULL),
+                CASE WHEN r.rngsubdiff <> 0 THEN r.rngsubdiff::regproc::text END,
+                CASE WHEN r.rngcollation NOT IN (0, 100)
+                     THEN (SELECT quote_ident(co.collname) FROM pg_collation co
+                           WHERE co.oid = r.rngcollation) END
+         FROM pg_type t
+         JOIN pg_namespace n ON n.oid = t.typnamespace
+         JOIN pg_range r ON r.rngtypid = t.oid
+         WHERE n.nspname = $1 AND {NOT_EXTENSION_MEMBER}
+         ORDER BY t.oid"
+    );
+    for row in tx.query(&range_sql, &[&schema, &"pg_type"]).await? {
+        let name: String = row.get(0);
+        let subtype: String = row.get(1);
+        let mut options = vec![format!("SUBTYPE = {subtype}")];
+        if let Some(collation) = row.get::<_, Option<String>>(3) {
+            options.push(format!("COLLATION = {collation}"));
+        }
+        if let Some(diff) = row.get::<_, Option<String>>(2) {
+            options.push(format!("SUBTYPE_DIFF = {diff}"));
+        }
+        extras.prelude.push(dump_statement(
+            "type",
+            &name,
+            format!("Create range type {name}"),
+            format!(
+                "CREATE TYPE {} AS RANGE ({})",
+                qualify(schema, &name),
+                options.join(", ")
+            ),
+        ));
+    }
+
     let composite_sql = format!(
         "SELECT t.typname,
                 string_agg(quote_ident(a.attname) || ' '
@@ -1483,8 +1599,169 @@ async fn dump_extras(pool: &Pool, schema: &str) -> AppResult<DumpExtras> {
         }
     }
 
+    for row in tx
+        .query(
+            "SELECT c.relname, c.relforcerowsecurity
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = $1 AND c.relrowsecurity AND c.relkind IN ('r', 'p')
+             ORDER BY c.relname",
+            &[&schema],
+        )
+        .await?
+    {
+        let table: String = row.get(0);
+        let force: bool = row.get(1);
+        let qualified = qualify(schema, &table);
+        extras.finale.push(dump_statement(
+            "row_security",
+            &table,
+            format!("Enable row level security on {table}"),
+            format!("ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY"),
+        ));
+        if force {
+            extras.finale.push(dump_statement(
+                "row_security",
+                &table,
+                format!("Force row level security on {table}"),
+                format!("ALTER TABLE {qualified} FORCE ROW LEVEL SECURITY"),
+            ));
+        }
+    }
+
+    for row in tx
+        .query(
+            "SELECT tablename::text, policyname::text, permissive, roles::text[], cmd, qual, with_check
+             FROM pg_policies
+             WHERE schemaname = $1
+             ORDER BY tablename, policyname",
+            &[&schema],
+        )
+        .await?
+    {
+        let table: String = row.get(0);
+        let policy: String = row.get(1);
+        let permissive: String = row.get(2);
+        let roles: Vec<String> = row.get(3);
+        let cmd: String = row.get(4);
+        let qual: Option<String> = row.get(5);
+        let with_check: Option<String> = row.get(6);
+        let roles = roles
+            .iter()
+            .map(|role| {
+                if role == "public" {
+                    "PUBLIC".to_string()
+                } else {
+                    quote_ident(role)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut sql = format!(
+            "CREATE POLICY {} ON {} AS {permissive} FOR {cmd} TO {roles}",
+            quote_ident(&policy),
+            qualify(schema, &table)
+        );
+        if let Some(qual) = qual {
+            sql.push_str(&format!(" USING ({qual})"));
+        }
+        if let Some(with_check) = with_check {
+            sql.push_str(&format!(" WITH CHECK ({with_check})"));
+        }
+        extras.finale.push(dump_statement(
+            "policy",
+            &format!("{table}.{policy}"),
+            format!("Create policy {policy} on {table}"),
+            sql,
+        ));
+    }
+
     tx.commit().await?;
     Ok(extras)
+}
+
+/// DDL of a sequence, type, extension or policy, assembled from the same
+/// statements a schema dump would emit for it.
+async fn extra_object_ddl(
+    pool: &Pool,
+    schema: &str,
+    kind: ObjectKind,
+    name: &str,
+) -> AppResult<String> {
+    let extras = dump_extras(pool, schema).await?;
+    let label = match kind {
+        ObjectKind::Sequence => "sequence",
+        ObjectKind::Type => "type",
+        ObjectKind::Extension => "extension",
+        _ => "policy",
+    };
+    let table = name.split_once('.').map(|(table, _)| table);
+    let statements: Vec<&DumpStatement> = extras
+        .prelude
+        .iter()
+        .chain(&extras.postlude)
+        .chain(&extras.finale)
+        .filter(|statement| match statement.object_kind {
+            Some(found) if found == label => statement.object_name.as_deref() == Some(name),
+            Some("row_security") if kind == ObjectKind::Policy => {
+                statement.object_name.as_deref() == table
+            }
+            _ => false,
+        })
+        .collect();
+    let current_value = (kind == ObjectKind::Sequence)
+        .then(|| {
+            extras
+                .sequence_values
+                .iter()
+                .find(|statement| statement.object_name.as_deref() == Some(name))
+        })
+        .flatten();
+    if !statements
+        .iter()
+        .any(|statement| statement.object_kind == Some(label))
+    {
+        if kind == ObjectKind::Sequence {
+            if let Some(column) = identity_column(pool, schema, name).await? {
+                let mut ddl = format!(
+                    "-- {name} belongs to the identity column {column} and is created by its \
+                     GENERATED ... AS IDENTITY clause."
+                );
+                if let Some(value) = current_value {
+                    ddl.push_str(&format!("\n{};", value.sql));
+                }
+                return Ok(ddl);
+            }
+        }
+        return Err(AppError::msg(format!("{label} was not found")));
+    }
+    let mut ddl = statements
+        .iter()
+        .map(|statement| format!("{};", statement.sql))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if let Some(value) = current_value {
+        ddl.push_str(&format!("\n\n-- current value\n{};", value.sql));
+    }
+    Ok(ddl)
+}
+
+async fn identity_column(pool: &Pool, schema: &str, sequence: &str) -> AppResult<Option<String>> {
+    let client = pool.get().await?;
+    let row = client
+        .query_opt(
+            "SELECT tc.relname || '.' || a.attname
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                             AND d.refclassid = 'pg_class'::regclass AND d.deptype = 'i'
+             JOIN pg_class tc ON tc.oid = d.refobjid
+             JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+             WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'S'",
+            &[&schema, &sequence],
+        )
+        .await?;
+    Ok(row.map(|row| row.get(0)))
 }
 
 async fn function_ddl(pool: &Pool, schema: &str, name: &str) -> AppResult<String> {

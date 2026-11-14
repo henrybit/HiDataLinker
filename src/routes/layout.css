@@ -434,6 +434,13 @@ button {
 	content: '· ';
 }
 
+.object-tag {
+	display: inline-flex;
+	flex: none;
+	margin-left: 4px;
+	color: var(--text-muted);
+}
+
 .engine-badge {
 	margin-left: auto;
 	flex: none;

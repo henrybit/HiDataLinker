@@ -202,6 +202,7 @@ impl DatabaseEngine for MySqlEngine {
                         comment: comment.unwrap_or_default(),
                         created_at,
                         updated_at,
+                        parent: None,
                     }
                 },
             )
@@ -427,6 +428,7 @@ impl DatabaseEngine for MySqlEngine {
                     "indexes do not have standalone CREATE statements; inspect the parent table DDL",
                 ));
             }
+            _ => return Err(AppError::msg("this object type is not available for MySQL")),
         };
 
         let row: Option<Row> = conn.query_first(sql).await?;

@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { workspace, folderLabel } from '$lib/stores/workspace.svelte';
+	import {
+		workspace,
+		folderLabel,
+		folderToKind,
+		isSchemaObjectFolder,
+		schemaObjectsKey
+	} from '$lib/stores/workspace.svelte';
 	import { formatBytes, formatNumber } from '$lib/format';
 	import type { FolderKind } from '$lib/api/types';
 	import { t, type MessageKey } from '$lib/i18n/i18n.svelte';
@@ -67,6 +73,11 @@
 					]
 				}));
 		}
+		if (isSchemaObjectFolder(folder)) {
+			return (cache?.objects[schemaObjectsKey(schema, folder)] ?? [])
+				.filter((item) => item.name.toLowerCase().includes(q))
+				.map((item) => ({ key: item.name, cells: [item.name, item.detail || '—'] }));
+		}
 		if (folder === 'triggers') {
 			return (cache?.triggers[schema] ?? [])
 				.filter((item) => item.name.toLowerCase().includes(q))
@@ -117,6 +128,7 @@
 				'objects.col.columns'
 			];
 		}
+		if (isSchemaObjectFolder(folder)) return ['objects.col.name', 'objects.col.detail'];
 		if (folder === 'triggers') {
 			return [
 				'objects.col.name',
@@ -139,6 +151,8 @@
 		if (folder === 'tables') workspace.openTable(connectionId, schema, name, false);
 		else if (folder === 'views') workspace.openTable(connectionId, schema, name, true);
 		else if (folder === 'indexes') return;
+		else if (isSchemaObjectFolder(folder))
+			workspace.openDdl(connectionId, schema, folderToKind(folder), name);
 		else if (folder === 'functions') {
 			const routine = cache?.routines[schema]?.find((item) => item.name === name);
 			workspace.openDdl(

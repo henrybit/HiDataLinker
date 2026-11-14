@@ -1,8 +1,22 @@
 export type EngineKind = 'mysql' | 'postgres' | 'mssql' | 'oracle';
 
-export type ObjectKind = 'table' | 'view' | 'index' | 'trigger' | 'function' | 'procedure';
+export type ObjectKind =
+	| 'table'
+	| 'view'
+	| 'index'
+	| 'trigger'
+	| 'function'
+	| 'procedure'
+	| 'sequence'
+	| 'type'
+	| 'extension'
+	| 'policy';
 
-export type FolderKind = 'tables' | 'views' | 'indexes' | 'triggers' | 'functions';
+/** PostgreSQL-only folders listed through `listSchemaObjects`. */
+export type SchemaObjectFolder = 'sequences' | 'types' | 'extensions' | 'policies';
+
+export type FolderKind =
+	'tables' | 'views' | 'indexes' | 'triggers' | 'functions' | SchemaObjectFolder;
 
 export interface ConnectionProfile {
 	id: string;
@@ -101,6 +115,14 @@ export interface TableInfo {
 	comment: string;
 	createdAt?: string | null;
 	updatedAt?: string | null;
+	/** Parent table when this table is a partition (PostgreSQL). */
+	parent?: string | null;
+}
+
+/** Entry of a PostgreSQL sequences / types / extensions / policies folder. */
+export interface SchemaObjectInfo {
+	name: string;
+	detail: string;
 }
 
 export interface ViewInfo {
@@ -292,7 +314,8 @@ export type ContextMenuAction =
 	| 'refresh'
 	| 'open-data'
 	| 'open-structure'
-	| 'open-ddl';
+	| 'open-ddl'
+	| 'refresh-matview';
 
 export interface CreateDatabasePrompt {
 	connectionId: string;

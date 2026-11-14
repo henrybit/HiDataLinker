@@ -93,6 +93,14 @@ export function folderMessageKey(folder: FolderKind): MessageKey {
 			return 'folder.triggers';
 		case 'functions':
 			return 'folder.functions';
+		case 'sequences':
+			return 'folder.sequences';
+		case 'types':
+			return 'folder.types';
+		case 'extensions':
+			return 'folder.extensions';
+		case 'policies':
+			return 'folder.policies';
 	}
 }
 

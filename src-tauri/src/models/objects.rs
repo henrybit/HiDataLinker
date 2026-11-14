@@ -42,6 +42,9 @@ pub struct TableInfo {
     pub comment: String,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// Parent table when this table is a partition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,4 +115,17 @@ pub enum ObjectKind {
     Trigger,
     Function,
     Procedure,
+    Sequence,
+    Type,
+    Extension,
+    /// Row-level security policy, named `table.policy`.
+    Policy,
+}
+
+/// Entry of an engine-specific object folder (PostgreSQL sequences, types, …).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaObjectInfo {
+    pub name: String,
+    pub detail: String,
 }

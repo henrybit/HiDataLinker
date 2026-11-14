@@ -71,6 +71,11 @@
 					workspace.openDdl(connectionId, schema, objectKind, objectName);
 				}
 				break;
+			case 'refresh-matview':
+				if (connectionId && schema && objectName) {
+					void workspace.refreshMaterializedView(connectionId, schema, objectName);
+				}
+				break;
 		}
 		workspace.closeMenu();
 	}
@@ -122,7 +127,8 @@
 			refresh: 'menu.refresh',
 			'open-data': 'menu.openTable',
 			'open-structure': 'menu.designTable',
-			'open-ddl': 'menu.viewDdl'
+			'open-ddl': 'menu.viewDdl',
+			'refresh-matview': 'menu.refreshMatview'
 		};
 		return t(keys[action]);
 	}

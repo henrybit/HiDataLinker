@@ -3,7 +3,7 @@ use crate::db::DatabaseEngine;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, ColumnInfo, DatabaseInfo, IndexInfo, MigrateResult, ObjectKind, RoutineInfo,
-    TableInfo, TriggerInfo, ViewInfo,
+    SchemaObjectInfo, TableInfo, TriggerInfo, ViewInfo,
 };
 use crate::runtime::run_db;
 use crate::sql_audit::AuditSource;
@@ -239,6 +239,19 @@ pub async fn get_ddl(
 ) -> AppResult<String> {
     with_engine(&state, connection_id, move |engine| async move {
         engine.get_ddl(&schema, kind, &name).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_schema_objects(
+    state: State<'_, AppState>,
+    connection_id: String,
+    schema: String,
+    kind: ObjectKind,
+) -> AppResult<Vec<SchemaObjectInfo>> {
+    with_engine(&state, connection_id, move |engine| async move {
+        engine.list_schema_objects(&schema, kind).await
     })
     .await
 }

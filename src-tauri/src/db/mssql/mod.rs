@@ -277,6 +277,7 @@ impl DatabaseEngine for SqlServerEngine {
                     table_rows: parse_u64(cell_to_string(&row, 4)),
                     data_length: parse_u64(cell_to_string(&row, 5)),
                     comment: cell_to_string(&row, 6).unwrap_or_default(),
+                    parent: None,
                 })
             })
             .collect())
@@ -513,6 +514,9 @@ impl DatabaseEngine for SqlServerEngine {
             | ObjectKind::Trigger
             | ObjectKind::Function
             | ObjectKind::Procedure => module_ddl(self, &database, name).await,
+            _ => Err(AppError::msg(
+                "this object type is not available for SQL Server",
+            )),
         }
     }
 
