@@ -1143,5 +1143,7 @@ export const zh: Record<MessageKey, string> = {
 	'query.exportedTruncated': '已导出 {count} 行到 {path}。结果已截断，只保存了网格中的行。',
 	'assist.chip.turns': '延续前 {count} 轮',
 	'assist.chip.turnsHint': '这个编辑器里之前的提问和草案会一起发给模型，方便接着问。',
-	'assist.forgetTurns': '清空之前的提问，重新开始'
+	'assist.forgetTurns': '清空之前的提问，重新开始',
+	'assist.fix': 'AI 修复',
+	'assist.fixQuestion': '修复这条 SQL 的报错'
 };

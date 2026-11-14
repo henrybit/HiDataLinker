@@ -66,6 +66,7 @@ export function draftSystemPrompt(engine: string, locale: 'en' | 'zh'): string {
 		'- Add a row limit of 100 to queries that return detail rows; aggregates need none.',
 		'- Tables in the current schema may be used without a schema prefix unless the dialect rules say otherwise.',
 		'- When the editor already has SQL and the question asks to change it, rewrite that SQL instead of starting over.',
+		'- When the workspace shows that the last run failed, fix that SQL: keep its intent, columns and structure, change only what the error and the catalog require, and say in summary what was wrong.',
 		'- Do not put explanations inside the SQL.',
 		...dialectRules(engine).map((rule) => `- ${rule}`),
 		'',

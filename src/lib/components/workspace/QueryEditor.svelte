@@ -10,6 +10,7 @@
 	import { parsePgPlan, type ParsedPlan } from '$lib/sql/pg-plan';
 	import { workspace } from '$lib/stores/workspace.svelte';
 	import {
+		assistBlocker,
 		gridContext,
 		type AssistContext,
 		type AssistObjectRef,
@@ -91,6 +92,8 @@
 
 	let selectionText = $state('');
 	let lastRunSql = $state('');
+	/** Editor SQL whose run or Explain produced `error`; null when the error is not from a run. */
+	let failedSql = $state<string | null>(null);
 	let assistOpen = $state(false);
 	let assistOrigin = $state<AssistOrigin>('editor');
 	let assistObject = $state<AssistObjectRef | null>(null);
@@ -136,8 +139,18 @@
 		object: assistObject ?? treeObject,
 		editor: { text, selection: selectionText.trim() ? selectionText : null },
 		grid: gridContext(lastRunSql || text, result, schema ?? null),
-		error: null
+		error: assistOrigin === 'error' && failedSql !== null ? error : null
 	});
+
+	/** Ask the assistant to fix the statement that just failed. Drafting starts right away. */
+	function fixWithAssist() {
+		if (failedSql === null || !error) return;
+		openAssist('error');
+		assistQuestion = t('assist.fixQuestion');
+		if (!assistBlocker(assistContext, hasModel) && !assistSession.busy) {
+			void submitAssist(assistQuestion);
+		}
+	}
 
 	function openAssist(origin: AssistOrigin, object: AssistObjectRef | null = null) {
 		assistOrigin = origin;
@@ -281,6 +294,7 @@
 	async function execute(sqlText: string, mode: 'run' | 'explain', detail: string | null) {
 		running = true;
 		error = null;
+		failedSql = null;
 		plan = null;
 		localLog = [
 			{
@@ -311,6 +325,7 @@
 			);
 		} catch (err) {
 			error = errorMessage(err);
+			failedSql = text;
 			localLog = [...localLog, { level: 'info', text: t('query.log.failed') }];
 			workspace.setQueryResult(tabId, null, error);
 		} finally {
@@ -368,6 +383,7 @@
 		if (!target) return;
 		running = true;
 		error = null;
+		failedSql = null;
 		plan = null;
 		localLog = [
 			{
@@ -406,6 +422,7 @@
 			workspace.lastMessage = t('query.summaryExplain', { summary });
 		} catch (err) {
 			error = errorMessage(err);
+			failedSql = text;
 			localLog = [...localLog, { level: 'info', text: t('query.log.failed') }];
 		} finally {
 			running = false;
@@ -508,7 +525,17 @@
 		{/snippet}
 		{#snippet bottom()}
 			{#if error}
-				<div class="message error">{error}</div>
+				<div class="message error">
+					{error}
+					{#if failedSql !== null}
+						<button
+							class="assist-inline"
+							type="button"
+							disabled={assistSession.busy}
+							onclick={fixWithAssist}>{t('assist.fix')}</button
+						>
+					{/if}
+				</div>
 			{:else if plan}
 				<div class="message">
 					{plan.parsed.analyzed ? 'EXPLAIN ANALYZE' : 'EXPLAIN'} · {t('plan.nodes', {

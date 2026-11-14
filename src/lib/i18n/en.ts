@@ -1177,7 +1177,9 @@ export const en = {
 	'assist.chip.turns': 'Continues {count} earlier questions',
 	'assist.chip.turnsHint':
 		'Earlier questions and drafts in this editor are sent too, so you can build on them.',
-	'assist.forgetTurns': 'Forget earlier questions and start over'
+	'assist.forgetTurns': 'Forget earlier questions and start over',
+	'assist.fix': 'Fix with AI',
+	'assist.fixQuestion': 'Fix the error in this SQL'
 } as const;
 
 export type MessageKey = keyof typeof en;
