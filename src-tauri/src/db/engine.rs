@@ -6,8 +6,8 @@ use super::postgres::PostgresEngine;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, EngineKind, ExplainPlan,
-    IndexInfo, ObjectKind, QueryResult, RoutineInfo, SchemaObjectInfo, TableInfo,
-    TestConnectionRequest, TriggerInfo, ViewInfo,
+    IndexInfo, ObjectKind, QueryResult, RoutineInfo, SchemaHealthReport, SchemaObjectInfo,
+    TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use crate::sql_audit::{AuditOutcome, AuditScope, AuditSource};
 use async_trait::async_trait;
@@ -56,6 +56,12 @@ pub trait DatabaseEngine: Send + Sync {
     /// engine does not support switching within a connection.
     async fn list_server_databases(&self) -> AppResult<Vec<String>> {
         Ok(Vec::new())
+    }
+    /// Rule-based review of a schema's design (PostgreSQL only).
+    async fn schema_health(&self, _schema: &str) -> AppResult<SchemaHealthReport> {
+        Err(AppError::msg(
+            "schema health check is only available for PostgreSQL",
+        ))
     }
     /// Objects of an engine-specific folder kind: sequences, types, extensions, policies.
     async fn list_schema_objects(
@@ -385,6 +391,10 @@ impl DatabaseEngine for LiveEngine {
         kind: ObjectKind,
     ) -> AppResult<Vec<SchemaObjectInfo>> {
         dispatch_engine!(self, list_schema_objects, schema, kind)
+    }
+
+    async fn schema_health(&self, schema: &str) -> AppResult<SchemaHealthReport> {
+        dispatch_engine!(self, schema_health, schema)
     }
 
     async fn explain_plan(

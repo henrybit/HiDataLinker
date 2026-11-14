@@ -976,7 +976,83 @@ export const en = {
 	'agentMode.live.contextCompressed': 'Compressed {count} older messages into a summary.',
 	'agentMode.live.contextNothingToCompress': 'No older messages to compress yet.',
 	'agentMode.live.contextAutoCompressed':
-		'Auto-compressed history (summary {summary} chars · recent {recent} chars).'
+		'Auto-compressed history (summary {summary} chars · recent {recent} chars).',
+	'menu.schemaHealth': 'Schema health check',
+	'health.tabTitle': 'Health: {name}',
+	'health.title': 'Schema health check',
+	'health.running': 'Checking…',
+	'health.rerun': 'Check again',
+	'health.summary': '{rules} rules · {ms} ms',
+	'health.all': 'All {count}',
+	'health.severity.error': 'Errors {count}',
+	'health.severity.warning': 'Warnings {count}',
+	'health.severity.info': 'Suggestions {count}',
+	'health.badge.error': 'Error',
+	'health.badge.warning': 'Warning',
+	'health.badge.info': 'Suggestion',
+	'health.empty': 'No problems found.',
+	'health.fixNote':
+		'Fix SQL is never run automatically. Open it in the query editor, review it, then run it yourself.',
+	'health.statsSince': 'Unused-index findings are based on statistics collected since {date}.',
+	'health.statsAlways':
+		'Unused-index findings are based on statistics collected since the server started collecting them; check replicas too.',
+	'health.openFix': 'Open fix SQL',
+	'health.manual': 'Needs manual review',
+	'health.fixTabTitle': 'Fix: {name}',
+	'health.source.dontDoThis': "PostgreSQL wiki · Don't Do This",
+	'health.source.indexes': 'Index maintenance',
+	'health.source.general': 'Common practice',
+	'health.rule.timestamp_without_time_zone.title': 'timestamp without time zone',
+	'health.rule.timestamp_without_time_zone.reason':
+		'timestamp does not record a time zone, so values go wrong across time zones and daylight-saving changes. Use timestamptz. The fix SQL assumes existing values are UTC; adjust AT TIME ZONE if they are not.',
+	'health.rule.char_n.title': 'char(n) column',
+	'health.rule.char_n.reason':
+		'char(n) pads values with spaces, which breaks comparisons and concatenation, and it saves no space. Use text or varchar.',
+	'health.rule.varchar_n.title': 'varchar(n) length limit',
+	'health.rule.varchar_n.reason':
+		'Length limits are usually arbitrary and raising them later needs a schema change. Use text unless the limit is a real business rule; a CHECK constraint can enforce one.',
+	'health.rule.money_type.title': 'money column',
+	'health.rule.money_type.reason':
+		'money depends on the lc_monetary setting for precision and formatting, and cannot hold several currencies. Use numeric and store the currency separately.',
+	'health.rule.timetz_type.title': 'timetz column',
+	'health.rule.timetz_type.reason':
+		'A time of day with a time zone but no date is ambiguous around daylight-saving changes. Use timestamptz. Converting needs a decision about the date, so no fix SQL is offered.',
+	'health.rule.json_type.title': 'json instead of jsonb',
+	'health.rule.json_type.reason':
+		'json is stored as text and parsed on every access, and it cannot use GIN indexes. Use jsonb unless you need to keep key order or duplicate keys.',
+	'health.rule.serial_column.title': 'serial column',
+	'health.rule.serial_column.reason':
+		'serial has awkward permission and ownership behaviour. Since PostgreSQL 10, standard identity columns are recommended. The fix SQL keeps the current sequence value; pause writes while it runs.',
+	'health.rule.missing_primary_key.title': 'Table has no primary key',
+	'health.rule.missing_primary_key.reason':
+		'Rows cannot be reliably identified or updated one at a time, and logical replication is limited. If a non-null unique index exists, the fix SQL promotes it to the primary key; otherwise choose the key columns yourself.',
+	'health.rule.unindexed_foreign_key.title': 'Foreign key without an index',
+	'health.rule.unindexed_foreign_key.reason':
+		'Deleting or updating a referenced row scans the whole child table, and joins are slower. Index the foreign key columns.',
+	'health.rule.duplicate_index.title': 'Duplicate index',
+	'health.rule.duplicate_index.reason':
+		'It has the same columns, order and condition as another index, so it only adds write cost and storage. The index backing a constraint or unique index is kept.',
+	'health.rule.invalid_index.title': 'Invalid index',
+	'health.rule.invalid_index.reason':
+		'Usually left behind by a failed CREATE INDEX CONCURRENTLY. Queries never use it, but writes still maintain it. Rebuild or drop it.',
+	'health.rule.unused_index.title': 'Unused index',
+	'health.rule.unused_index.reason':
+		'It has not been scanned since statistics were collected, but every write maintains it. Before dropping it, make sure the statistics cover a long enough period and check usage on replicas.',
+	'health.rule.rule_usage.title': 'Rule (CREATE RULE)',
+	'health.rule.rule_usage.reason':
+		'Rules rewrite queries before they run and often behave unexpectedly. Use triggers instead.',
+	'health.rule.table_inheritance.title': 'Table inheritance',
+	'health.rule.table_inheritance.reason':
+		'Inheritance has many gaps around constraints, indexes and foreign keys, and has been replaced by declarative partitioning. Use partitioning or foreign keys in new designs.',
+	'health.rule.uppercase_identifier.title': 'Name contains upper-case letters',
+	'health.rule.uppercase_identifier.reason':
+		'Upper-case names must be double-quoted every time, or they are folded to lower case. Renaming affects existing SQL and application code, so check before running the fix.',
+	'health.rule.sequence_exhaustion.title': 'Sequence close to its limit',
+	'health.rule.sequence_exhaustion.reason':
+		'Inserts fail once the sequence runs out. Change the column and sequence to bigint. Changing a column type rewrites and locks the table, so run it in a maintenance window.',
+	'health.rule.sql_ascii_encoding.title': 'SQL_ASCII database encoding',
+	'health.rule.sql_ascii_encoding.reason':
+		'SQL_ASCII does not validate encodings, so unconvertible data creeps in. Create a database with a proper encoding and migrate the data.',
 } as const;
 
 export type MessageKey = keyof typeof en;

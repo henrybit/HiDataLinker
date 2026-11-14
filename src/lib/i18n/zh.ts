@@ -954,5 +954,79 @@ export const zh: Record<MessageKey, string> = {
 	'agentMode.live.contextCompressed': '已压缩 {count} 条较早消息为摘要。',
 	'agentMode.live.contextNothingToCompress': '暂无可压缩的较早消息。',
 	'agentMode.live.contextAutoCompressed':
-		'已自动压缩历史上下文（摘要 {summary} 字 · 近期 {recent} 字）。'
+		'已自动压缩历史上下文（摘要 {summary} 字 · 近期 {recent} 字）。',
+	'menu.schemaHealth': 'Schema 体检',
+	'health.tabTitle': '{name} 体检',
+	'health.title': 'Schema 体检',
+	'health.running': '正在检查…',
+	'health.rerun': '重新检查',
+	'health.summary': '{rules} 条规则 · 用时 {ms} ms',
+	'health.all': '全部 {count}',
+	'health.severity.error': '错误 {count}',
+	'health.severity.warning': '警告 {count}',
+	'health.severity.info': '建议 {count}',
+	'health.badge.error': '错误',
+	'health.badge.warning': '警告',
+	'health.badge.info': '建议',
+	'health.empty': '没有发现问题。',
+	'health.fixNote': '修复 SQL 不会自动执行。请在查询编辑器中打开、检查后再自行运行。',
+	'health.statsSince': '「未使用的索引」基于 {date} 以来的统计信息。',
+	'health.statsAlways':
+		'「未使用的索引」基于数据库开始收集统计以来的数据，请同时检查备库上的使用情况。',
+	'health.openFix': '打开修复 SQL',
+	'health.manual': '需人工处理',
+	'health.fixTabTitle': '修复：{name}',
+	'health.source.dontDoThis': "PostgreSQL wiki · Don't Do This",
+	'health.source.indexes': '索引维护',
+	'health.source.general': '常见实践',
+	'health.rule.timestamp_without_time_zone.title': '使用了不带时区的 timestamp',
+	'health.rule.timestamp_without_time_zone.reason':
+		'timestamp 不记录时区，跨时区读写或夏令时切换时数据会出错，建议改为 timestamptz。修复 SQL 假设现有数据是 UTC 时间，如不是请修改 AT TIME ZONE。',
+	'health.rule.char_n.title': '使用了 char(n)',
+	'health.rule.char_n.reason':
+		'char(n) 会用空格补齐，比较和拼接时容易出错，也不省空间。建议改为 text 或 varchar。',
+	'health.rule.varchar_n.title': 'varchar(n) 设置了长度上限',
+	'health.rule.varchar_n.reason':
+		'长度上限往往是随意定的，以后放宽还要改表结构。没有明确业务约束时用 text 即可；确需限制可用 CHECK 约束。',
+	'health.rule.money_type.title': '使用了 money 类型',
+	'health.rule.money_type.reason':
+		'money 的精度和格式依赖 lc_monetary 设置，也无法保存多种币种。建议改用 numeric，并单独记录币种。',
+	'health.rule.timetz_type.title': '使用了 timetz',
+	'health.rule.timetz_type.reason':
+		'只有时间、没有日期的带时区值在夏令时切换时含义不明，建议改用 timestamptz。转换需要人工确定日期，因此不提供修复 SQL。',
+	'health.rule.json_type.title': '使用了 json 而非 jsonb',
+	'health.rule.json_type.reason':
+		'json 按原文存储，每次访问都要重新解析，也不能使用 GIN 索引。除非需要保留键的顺序或重复键，建议改为 jsonb。',
+	'health.rule.serial_column.title': '使用了 serial 自增列',
+	'health.rule.serial_column.reason':
+		'serial 在权限和所有权上有不少坑，PostgreSQL 10 起推荐使用标准的 identity 列。修复 SQL 会保留序列当前值，执行期间请暂停写入。',
+	'health.rule.missing_primary_key.title': '表没有主键',
+	'health.rule.missing_primary_key.reason':
+		'没有主键就无法可靠地定位和更新单行，逻辑复制也会受限。若已有非空唯一索引，修复 SQL 会把它提升为主键；否则需要人工选择主键列。',
+	'health.rule.unindexed_foreign_key.title': '外键列没有索引',
+	'health.rule.unindexed_foreign_key.reason':
+		'删除或更新被引用的行时要扫描整张子表，联表查询也会变慢。建议给外键列建索引。',
+	'health.rule.duplicate_index.title': '重复索引',
+	'health.rule.duplicate_index.reason':
+		'与另一个索引的列、顺序和条件完全相同，只会增加写入开销和存储。会保留约束或唯一索引，删除多余的那个。',
+	'health.rule.invalid_index.title': '无效索引',
+	'health.rule.invalid_index.reason':
+		'通常是 CREATE INDEX CONCURRENTLY 中途失败留下的。查询不会使用它，但写入时仍要维护。建议重建或删除。',
+	'health.rule.unused_index.title': '未使用的索引',
+	'health.rule.unused_index.reason':
+		'统计期内从未被扫描，但每次写入都要维护。删除前请确认统计周期足够长，并检查备库上的使用情况。',
+	'health.rule.rule_usage.title': '使用了规则（CREATE RULE）',
+	'health.rule.rule_usage.reason': '规则在查询执行前改写语句，行为常常出乎意料。建议改用触发器。',
+	'health.rule.table_inheritance.title': '使用了表继承',
+	'health.rule.table_inheritance.reason':
+		'表继承在约束、索引和外键方面有很多限制，已被声明式分区取代。新设计建议使用分区或外键关联。',
+	'health.rule.uppercase_identifier.title': '名称包含大写字母',
+	'health.rule.uppercase_identifier.reason':
+		'含大写字母的名称每次都必须加双引号，否则会被转成小写。改名会影响已有的 SQL 和应用代码，请先确认再执行。',
+	'health.rule.sequence_exhaustion.title': '序列即将耗尽',
+	'health.rule.sequence_exhaustion.reason':
+		'序列耗尽后插入会失败。建议把列和序列改为 bigint。修改列类型会重写整张表并加锁，请在维护窗口执行。',
+	'health.rule.sql_ascii_encoding.title': '数据库编码为 SQL_ASCII',
+	'health.rule.sql_ascii_encoding.reason':
+		'SQL_ASCII 不校验编码，容易混入无法转换的数据。需要用正确的编码新建数据库并迁移数据。'
 };

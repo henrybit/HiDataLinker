@@ -239,6 +239,7 @@
 							actions: database.isSystem
 								? [
 										'new-query',
+										...(isPostgres(connection.engine) ? (['schema-health'] as const) : []),
 										'run-sql-file',
 										'create-database',
 										'dump-database-data',
@@ -248,6 +249,7 @@
 									]
 								: [
 										'new-query',
+										...(isPostgres(connection.engine) ? (['schema-health'] as const) : []),
 										'run-sql-file',
 										'create-database',
 										'dump-database-data',

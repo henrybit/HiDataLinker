@@ -119,6 +119,23 @@ export interface TableInfo {
 	parent?: string | null;
 }
 
+export type HealthSeverity = 'error' | 'warning' | 'info';
+
+export interface HealthFinding {
+	rule: string;
+	severity: HealthSeverity;
+	object: string;
+	facts: string;
+	fixSql?: string | null;
+}
+
+export interface SchemaHealthReport {
+	findings: HealthFinding[];
+	rulesChecked: string[];
+	statsReset?: string | null;
+	durationMs: number;
+}
+
 /** Entry of a PostgreSQL sequences / types / extensions / policies folder. */
 export interface SchemaObjectInfo {
 	name: string;
@@ -272,7 +289,7 @@ export interface SqlAuditDay {
 	sizeBytes: number;
 }
 
-export type TabKind = 'objects' | 'table' | 'view' | 'ddl' | 'query';
+export type TabKind = 'objects' | 'table' | 'view' | 'ddl' | 'query' | 'health';
 
 export interface Tab {
 	id: string;
@@ -315,7 +332,8 @@ export type ContextMenuAction =
 	| 'open-data'
 	| 'open-structure'
 	| 'open-ddl'
-	| 'refresh-matview';
+	| 'refresh-matview'
+	| 'schema-health';
 
 export interface CreateDatabasePrompt {
 	connectionId: string;

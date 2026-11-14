@@ -26,6 +26,7 @@ import type {
 	ObjectKind,
 	QueryResult,
 	RoutineInfo,
+	SchemaHealthReport,
 	SchemaObjectInfo,
 	SqlAuditClientSource,
 	SqlAuditDay,
@@ -171,6 +172,9 @@ export const api = {
 
 	getDdl: (connectionId: string, schema: string, kind: ObjectKind, name: string) =>
 		call<string>('get_ddl', { connectionId, schema, kind, name }),
+
+	schemaHealth: (connectionId: string, schema: string) =>
+		call<SchemaHealthReport>('schema_health', { connectionId, schema }),
 
 	listSchemaObjects: (connectionId: string, schema: string, kind: ObjectKind) =>
 		call<SchemaObjectInfo[]>('list_schema_objects', { connectionId, schema, kind }),

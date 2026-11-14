@@ -746,6 +746,24 @@ class WorkspaceStore {
 		this.closeMenu();
 	}
 
+	openSchemaHealth(connectionId: string, schema: string) {
+		const id = `health:${connectionId}:${schema}`;
+		if (!this.tabs.some((tab) => tab.id === id)) {
+			this.tabs = [
+				...this.tabs,
+				{
+					id,
+					kind: 'health',
+					title: t('health.tabTitle', { name: schema }),
+					connectionId,
+					schema
+				}
+			];
+		}
+		this.activeTabId = id;
+		this.closeMenu();
+	}
+
 	async openQuery(
 		connectionId: string,
 		schema?: string,

@@ -8,8 +8,8 @@ use super::sql::{apply_default_query_limit, statement_kind, SqlDialect, DEFAULT_
 use crate::error::{AppError, AppResult};
 use crate::models::{
     CharsetCatalog, ColumnInfo, ConnectionProfile, DatabaseInfo, ExplainPlan, IndexInfo,
-    ObjectKind, QueryResult, RoutineInfo, SchemaObjectInfo, TableInfo, TestConnectionRequest,
-    TriggerInfo, ViewInfo,
+    ObjectKind, QueryResult, RoutineInfo, SchemaHealthReport, SchemaObjectInfo, TableInfo,
+    TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use async_trait::async_trait;
 use deadpool_postgres::{Config, Manager, Pool, PoolConfig, Runtime, SslMode};
@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio_postgres::{NoTls, SimpleQueryMessage};
 
+mod health;
 mod notices;
 
 const SYSTEM_SCHEMAS: [&str; 3] = ["pg_catalog", "information_schema", "pg_toast"];
@@ -617,6 +618,11 @@ impl DatabaseEngine for PostgresEngine {
             )
             .await?;
         Ok(rows.into_iter().map(|row| row.get(0)).collect())
+    }
+
+    async fn schema_health(&self, schema: &str) -> AppResult<SchemaHealthReport> {
+        validate_ident(schema)?;
+        health::schema_health(&self.pool, schema).await
     }
 
     async fn list_schema_objects(

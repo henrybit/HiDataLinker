@@ -129,3 +129,34 @@ pub struct SchemaObjectInfo {
     pub name: String,
     pub detail: String,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "lowercase")]
+pub enum HealthSeverity {
+    Error,
+    Warning,
+    Info,
+}
+
+/// One problem found by a schema health rule. `rule` is a stable id the UI
+/// localizes; `facts` carries the object-specific details (types, sizes, …).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthFinding {
+    pub rule: String,
+    pub severity: HealthSeverity,
+    pub object: String,
+    pub facts: String,
+    /// Suggested fix; never executed by the app itself.
+    pub fix_sql: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaHealthReport {
+    pub findings: Vec<HealthFinding>,
+    pub rules_checked: Vec<String>,
+    /// When usage statistics were last reset; unused-index findings depend on it.
+    pub stats_reset: Option<String>,
+    pub duration_ms: u64,
+}

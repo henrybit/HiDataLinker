@@ -71,6 +71,9 @@
 					workspace.openDdl(connectionId, schema, objectKind, objectName);
 				}
 				break;
+			case 'schema-health':
+				if (connectionId && schema) workspace.openSchemaHealth(connectionId, schema);
+				break;
 			case 'refresh-matview':
 				if (connectionId && schema && objectName) {
 					void workspace.refreshMaterializedView(connectionId, schema, objectName);
@@ -128,7 +131,8 @@
 			'open-data': 'menu.openTable',
 			'open-structure': 'menu.designTable',
 			'open-ddl': 'menu.viewDdl',
-			'refresh-matview': 'menu.refreshMatview'
+			'refresh-matview': 'menu.refreshMatview',
+			'schema-health': 'menu.schemaHealth'
 		};
 		return t(keys[action]);
 	}

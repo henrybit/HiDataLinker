@@ -10,6 +10,7 @@
 	import TableWorkspace from '$lib/components/workspace/TableWorkspace.svelte';
 	import DdlViewer from '$lib/components/workspace/DdlViewer.svelte';
 	import QueryEditor from '$lib/components/workspace/QueryEditor.svelte';
+	import SchemaHealth from '$lib/components/workspace/SchemaHealth.svelte';
 
 	let mountedTabIds = $state(new Set<string>());
 
@@ -50,6 +51,8 @@
 							name={tab.objectName}
 							kind={tab.objectKind}
 						/>
+					{:else if tab.kind === 'health' && tab.schema}
+						<SchemaHealth connectionId={tab.connectionId} schema={tab.schema} />
 					{:else if tab.kind === 'query'}
 						<QueryEditor
 							tabId={tab.id}
