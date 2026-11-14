@@ -1130,7 +1130,35 @@ export const en = {
 	'assist.replace': 'Replace editor content',
 	'assist.insert': 'Insert at cursor',
 	'assist.replaceSelection': 'Replace selection',
-	'assist.discard': 'Discard'
+	'assist.discard': 'Discard',
+	'assist.steps': 'Steps ({count})',
+	'assist.step.catalogCached':
+		'Read the catalog (cached within 10 minutes): {objects} tables/views, {relations} relations',
+	'assist.step.catalogFresh': 'Read the catalog: {objects} tables/views, {relations} relations',
+	'assist.step.table': '{name} ({reason})',
+	'assist.step.scope': 'Tables sent with columns: {tables}',
+	'assist.step.others': '{count} other objects sent by name only',
+	'assist.step.relations': 'Join conditions provided: {relations}',
+	'assist.step.checkOk': 'Check: every table and column is in the catalog',
+	'assist.step.checkIssues': 'Check: {names} not in the catalog, asked the model to fix it',
+	'assist.step.recheckOk': 'Check after the fix: passed',
+	'assist.step.recheckIssues': 'Check after the fix: still references {names}',
+	'assist.reason.pinned': 'you picked',
+	'assist.reason.selected': 'selected in the tree',
+	'assist.reason.editor': 'in the editor',
+	'assist.reason.grid': 'in the result',
+	'assist.reason.question': 'matches the question',
+	'assist.reason.related': 'joined table',
+	'assist.reason.small-schema': 'small schema, sent whole',
+	'assist.cancelled': 'Cancelled. The editor was not changed.',
+	'assist.redraft': 'Draft with the selected tables',
+	'assist.explain': 'Explain',
+	'assist.explainHide': 'Hide Explain',
+	'assist.explainNote':
+		"This is what the editor's Explain sends. Nothing goes to the database until you run it.",
+	'assist.explainRun': 'Run Explain',
+	'assist.explainBlocked':
+		"SQL Server's Explain runs the statement itself, so it is not offered for writes. Review the statement and run it yourself."
 } as const;
 
 export type MessageKey = keyof typeof en;

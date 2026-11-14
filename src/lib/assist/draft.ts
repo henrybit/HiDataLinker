@@ -10,10 +10,22 @@ import {
 	formatScope,
 	type DraftResponse
 } from './prompt';
-import { pickTables, type DraftScope } from './select';
+import { pickTables, type DraftScope, type PickReason } from './select';
 import { validateDraft, type DraftIssue } from './validate';
 
 export type DraftPhase = 'catalog' | 'drafting' | 'checking' | 'repairing';
+
+/** What the assistant looked at and decided, shown to the user as it happens. */
+export type DraftStep =
+	| { kind: 'catalog'; cached: boolean; objects: number; relations: number }
+	| {
+			kind: 'scope';
+			tables: Array<{ name: string; reason: PickReason }>;
+			others: number;
+			relations: string[];
+	  }
+	| { kind: 'check'; issues: DraftIssue[] }
+	| { kind: 'recheck'; issues: DraftIssue[] };
 
 export type DraftOutcome =
 	| {
@@ -64,8 +76,11 @@ export interface DraftInput {
 	oracleVersion?: string | null;
 	/** Earlier questions and drafts in this editor, newest last. */
 	followUp?: string;
+	/** Tables the user picked from an earlier clarification. */
+	pinned?: string[];
 	loadCatalog: (scope: SchemaScope) => Promise<{ catalog: AssistCatalog; cached: boolean }>;
 	onPhase?: (phase: DraftPhase) => void;
+	onStep?: (step: DraftStep) => void;
 	isCancelled?: () => boolean;
 }
 
@@ -111,9 +126,25 @@ export async function draftSql(input: DraftInput): Promise<DraftOutcome> {
 	}
 	checkCancelled();
 	const { catalog, cached } = loaded;
+	input.onStep?.({
+		kind: 'catalog',
+		cached,
+		objects: catalog.objects.length,
+		relations: catalog.foreignKeys.length + catalog.inferred.length
+	});
 	if (!catalog.objects.length) return { kind: 'empty-catalog', schema };
 
-	const scope = pickTables(catalog, input.question, context);
+	const scope = pickTables(catalog, input.question, context, undefined, input.pinned);
+	input.onStep?.({
+		kind: 'scope',
+		tables: scope.tables.map((table) => ({ name: table.name, reason: scope.reasons[table.name] })),
+		others: scope.others.length,
+		relations: scope.relations.map((hint) =>
+			hint.fromColumns
+				.map((column, i) => `${hint.from}.${column} = ${hint.to}.${hint.toColumns[i] ?? '?'}`)
+				.join(' AND ')
+		)
+	});
 	const system = draftSystemPrompt(context.engine, input.locale);
 	const catalogText = formatScope(schema, scope, catalog.indexes);
 	const contextText = describeContext(context);
@@ -127,6 +158,7 @@ export async function draftSql(input: DraftInput): Promise<DraftOutcome> {
 					context: contextText,
 					catalog: catalogText,
 					followUp: input.followUp,
+					pinned: input.pinned,
 					feedback
 				})
 			);
@@ -145,6 +177,7 @@ export async function draftSql(input: DraftInput): Promise<DraftOutcome> {
 	input.onPhase?.('checking');
 	let sql = cleanDraftSql(response.sql, context.engine);
 	let issues = validateDraft(sql, catalog.objects, schema, response.columns);
+	input.onStep?.({ kind: 'check', issues });
 	if (!issues.length) {
 		return { kind: 'draft', response, sql, scope, catalogCached: cached, repaired: false };
 	}
@@ -157,6 +190,7 @@ export async function draftSql(input: DraftInput): Promise<DraftOutcome> {
 	}
 	sql = cleanDraftSql(response.sql, context.engine);
 	issues = validateDraft(sql, catalog.objects, schema, response.columns);
+	input.onStep?.({ kind: 'recheck', issues });
 	if (issues.length) {
 		return { kind: 'rejected', response, sql, issues, scope, catalogCached: cached };
 	}

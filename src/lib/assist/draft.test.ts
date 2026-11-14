@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ZodType } from 'zod';
 import type { StructuredCaller } from '$lib/analysis/workflow';
 import type { AssistContext } from './context';
-import { cleanDraftSql, draftSql, DraftError } from './draft';
+import { cleanDraftSql, draftSql, DraftError, type DraftStep } from './draft';
 import { shopCatalog } from './fixtures';
 import { formatScope, type DraftResponse } from './prompt';
 import { pickTables } from './select';
@@ -259,6 +259,56 @@ describe('draftSql', () => {
 			])
 		});
 		expect(outcome).toMatchObject({ kind: 'draft', repaired: true });
+	});
+
+	it('reports each step: catalog, scope, check and recheck', async () => {
+		const steps: DraftStep[] = [];
+		let catalogReads = 0;
+		await draftSql({
+			question: 'order totals',
+			context: baseContext,
+			locale: 'en',
+			loadCatalog: async () => {
+				catalogReads += 1;
+				return { catalog: shopCatalog(), cached: true };
+			},
+			onStep: (step) => steps.push(step),
+			caller: scriptedCaller([
+				response({ sql: 'SELECT o.total FROM orders o' }),
+				response({ sql: 'SELECT o.amount FROM orders o LIMIT 100' })
+			])
+		});
+		expect(catalogReads).toBe(1);
+		expect(steps.map((step) => step.kind)).toEqual(['catalog', 'scope', 'check', 'recheck']);
+		expect(steps[0]).toEqual({ kind: 'catalog', cached: true, objects: 5, relations: 3 });
+		expect(steps[1]).toMatchObject({
+			kind: 'scope',
+			tables: expect.arrayContaining([{ name: 'orders', reason: 'question' }]),
+			relations: expect.arrayContaining(['orders.customer_id = customers.id'])
+		});
+		expect(steps[2]).toEqual({ kind: 'check', issues: [{ kind: 'column', name: 'orders.total' }] });
+		expect(steps[3]).toEqual({ kind: 'recheck', issues: [] });
+	});
+
+	it('pins the tables the user picked after a clarification', async () => {
+		const prompts: string[] = [];
+		const steps: DraftStep[] = [];
+		await draftSql({
+			question: 'how many records',
+			context: baseContext,
+			locale: 'en',
+			loadCatalog,
+			pinned: ['audit_log'],
+			onStep: (step) => steps.push(step),
+			caller: scriptedCaller([response({ sql: 'SELECT COUNT(*) FROM audit_log' })], prompts)
+		});
+		expect(steps[1]).toMatchObject({
+			kind: 'scope',
+			tables: expect.arrayContaining([{ name: 'audit_log', reason: 'pinned' }])
+		});
+		expect(prompts[0]).toContain(
+			'The user confirmed the question is about these tables: audit_log.'
+		);
 	});
 
 	it('passes clarifications through', async () => {

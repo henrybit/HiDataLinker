@@ -21,7 +21,8 @@ export interface DraftScope {
 	reasons: Record<string, PickReason>;
 }
 
-export type PickReason = 'selected' | 'editor' | 'grid' | 'question' | 'related' | 'small-schema';
+export type PickReason =
+	'pinned' | 'selected' | 'editor' | 'grid' | 'question' | 'related' | 'small-schema';
 
 export const MAX_TABLES = 12;
 export const MAX_OTHER_NAMES = 400;
@@ -201,7 +202,8 @@ export function pickTables(
 	catalog: AssistCatalog,
 	question: string,
 	context: Pick<AssistContext, 'object' | 'editor' | 'grid' | 'error'>,
-	limit = MAX_TABLES
+	limit = MAX_TABLES,
+	pinned: string[] = []
 ): DraftScope {
 	const allRelations = relationHints(catalog);
 	const scores = new Map<string, number>();
@@ -210,7 +212,7 @@ export function pickTables(
 		if (score <= 0) return;
 		const before = scores.get(name) ?? 0;
 		scores.set(name, before + score);
-		const ranks: PickReason[] = ['selected', 'grid', 'editor', 'question', 'related'];
+		const ranks: PickReason[] = ['pinned', 'selected', 'grid', 'editor', 'question', 'related'];
 		const current = reasons[name];
 		if (!current || ranks.indexOf(reason) < ranks.indexOf(current)) reasons[name] = reason;
 	};
@@ -221,9 +223,11 @@ export function pickTables(
 		.join('\n')
 		.slice(0, 20_000);
 	const gridSql = context.grid?.sql ?? '';
+	const pinnedNames = new Set(pinned.map((name) => name.toLowerCase()));
 
 	for (const object of catalog.objects) {
 		const lower = object.name.toLowerCase();
+		if (pinnedNames.has(lower)) bump(object.name, 200, 'pinned');
 		if (context.object && context.object.name.toLowerCase() === lower) {
 			bump(object.name, 100, 'selected');
 		}

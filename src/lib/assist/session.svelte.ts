@@ -2,7 +2,14 @@ import { createAnalysisCaller } from '$lib/analysis/llm';
 import { toLlmSettings, type LlmProviderProfile } from '$lib/llm/providers';
 import { loadAssistCatalog } from './catalog';
 import type { AssistContext } from './context';
-import { draftSql, DraftCancelled, DraftError, type DraftOutcome, type DraftPhase } from './draft';
+import {
+	draftSql,
+	DraftCancelled,
+	DraftError,
+	type DraftOutcome,
+	type DraftPhase,
+	type DraftStep
+} from './draft';
 
 export interface AssistFailure {
 	stage: 'catalog' | 'model';
@@ -14,7 +21,12 @@ export class AssistSession {
 	phase = $state<DraftPhase | null>(null);
 	outcome = $state<DraftOutcome | null>(null);
 	failure = $state<AssistFailure | null>(null);
+	steps = $state<DraftStep[]>([]);
+	/** The last request was cancelled before it produced anything. */
+	cancelled = $state(false);
 	question = $state('');
+	/** Tables pinned for the last request, so a retry asks the same thing. */
+	pinned = $state<string[]>([]);
 	/** Whether the current draft has been written into the editor. */
 	applied = $state(false);
 	private generation = 0;
@@ -30,11 +42,15 @@ export class AssistSession {
 		locale: 'en' | 'zh';
 		oracleVersion?: string | null;
 		followUp?: string;
+		pinned?: string[];
 	}): Promise<DraftOutcome | null> {
 		const generation = ++this.generation;
 		this.question = input.question;
+		this.pinned = input.pinned ?? [];
 		this.outcome = null;
 		this.failure = null;
+		this.steps = [];
+		this.cancelled = false;
 		this.applied = false;
 		this.phase = 'catalog';
 		try {
@@ -45,9 +61,13 @@ export class AssistSession {
 				locale: input.locale,
 				oracleVersion: input.oracleVersion,
 				followUp: input.followUp,
+				pinned: input.pinned,
 				loadCatalog: (scope) => loadAssistCatalog(scope),
 				onPhase: (phase) => {
 					if (generation === this.generation) this.phase = phase;
+				},
+				onStep: (step) => {
+					if (generation === this.generation) this.steps = [...this.steps, step];
 				},
 				isCancelled: () => generation !== this.generation
 			});
@@ -67,14 +87,19 @@ export class AssistSession {
 	}
 
 	cancel() {
+		if (this.phase === null) return;
 		this.generation += 1;
 		this.phase = null;
+		this.cancelled = true;
 	}
 
 	dismiss() {
-		this.cancel();
+		this.generation += 1;
+		this.phase = null;
 		this.outcome = null;
 		this.failure = null;
+		this.steps = [];
+		this.cancelled = false;
 		this.applied = false;
 	}
 }

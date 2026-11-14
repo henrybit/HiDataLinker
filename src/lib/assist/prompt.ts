@@ -60,6 +60,7 @@ export function draftSystemPrompt(engine: string, locale: 'en' | 'zh'): string {
 		'- If the question needs a table that is only listed under "Other tables", or no listed table fits, return status "clarify" with candidates and what is missing instead of guessing.',
 		'- Write exactly one statement. Prefer a read-only SELECT. Write INSERT/UPDATE/DELETE or DDL only when the user explicitly asks to change data or structure.',
 		'- Join on the listed relationships. Foreign keys are reliable; inferred relations are guesses, so mention them in assumptions when you use them.',
+		'- Join only tables the result needs. When summing or counting a parent row, do not join a one-to-many child that is not aggregated first, or the parent values are counted once per child row; pre-aggregate the child in a subquery instead.',
 		'- Give every table an alias and qualify every column with it, e.g. o.amount.',
 		'- Add a row limit of 100 to queries that return detail rows; aggregates need none.',
 		'- Tables in the current schema may be used without a schema prefix unless the dialect rules say otherwise.',
@@ -128,9 +129,16 @@ export function draftHumanPrompt(input: {
 	context: string;
 	catalog: string;
 	followUp?: string;
+	pinned?: string[];
 	feedback?: string;
 }): string {
 	const parts = [`Question: ${input.question}`, '', 'Workspace:', input.context, '', input.catalog];
+	if (input.pinned?.length) {
+		parts.push(
+			'',
+			`The user confirmed the question is about these tables: ${input.pinned.join(', ')}. Read the question in terms of them (for example, which amount is meant) and draft now unless something essential is still missing.`
+		);
+	}
 	if (input.followUp) parts.push('', 'Earlier in this session:', input.followUp);
 	if (input.feedback) parts.push('', input.feedback);
 	return parts.join('\n');

@@ -1100,5 +1100,32 @@ export const zh: Record<MessageKey, string> = {
 	'assist.replace': '替换编辑器内容',
 	'assist.insert': '插入到光标处',
 	'assist.replaceSelection': '替换选区',
-	'assist.discard': '放弃'
+	'assist.discard': '放弃',
+	'assist.steps': '步骤（{count}）',
+	'assist.step.catalogCached':
+		'读取目录（10 分钟内的缓存）：{objects} 个表/视图，{relations} 条关系',
+	'assist.step.catalogFresh': '读取目录：{objects} 个表/视图，{relations} 条关系',
+	'assist.step.table': '{name}（{reason}）',
+	'assist.step.scope': '带列发给模型的表：{tables}',
+	'assist.step.others': '其余 {count} 个对象只发送名称',
+	'assist.step.relations': '提供的关联条件：{relations}',
+	'assist.step.checkOk': '校验：表名和列名都能在目录中找到',
+	'assist.step.checkIssues': '校验：目录中没有 {names}，已要求模型修正',
+	'assist.step.recheckOk': '修正后校验：通过',
+	'assist.step.recheckIssues': '修正后校验：仍引用了 {names}',
+	'assist.reason.pinned': '你选定',
+	'assist.reason.selected': '树上选中',
+	'assist.reason.editor': '编辑器中出现',
+	'assist.reason.grid': '当前结果',
+	'assist.reason.question': '与问题相关',
+	'assist.reason.related': '关联表',
+	'assist.reason.small-schema': '库较小，全部发送',
+	'assist.cancelled': '已取消，编辑器未改动。',
+	'assist.redraft': '按所选表重新起草',
+	'assist.explain': 'Explain',
+	'assist.explainHide': '收起 Explain',
+	'assist.explainNote': '这是编辑器的 Explain 会发送的语句。点击执行之前不会发往数据库。',
+	'assist.explainRun': '执行 Explain',
+	'assist.explainBlocked':
+		'SQL Server 的 Explain 会真正执行语句，因此不对写操作提供。请核对语句后自行运行。'
 };

@@ -132,7 +132,7 @@
 		assistShowPayload = false;
 	}
 
-	async function submitAssist(question: string) {
+	async function submitAssist(question: string, pinned: string[] = []) {
 		const provider = selectedLlmProvider();
 		if (!provider) return;
 		const outcome = await assistSession.ask({
@@ -140,7 +140,8 @@
 			context: $state.snapshot(assistContext),
 			provider,
 			locale: getLocale(),
-			oracleVersion: connection?.oracleVersion
+			oracleVersion: connection?.oracleVersion,
+			pinned
 		});
 		if (outcome?.kind === 'draft' && !text.trim()) applyDraft('replace');
 	}
@@ -266,19 +267,22 @@
 	}
 
 	async function explain() {
+		await explainStatement(text, analyze);
+	}
+
+	async function explainStatement(sqlText: string, withAnalyze: boolean) {
 		if (postgres) {
-			await explainPostgres();
+			await explainPostgres(sqlText, withAnalyze);
 			return;
 		}
-		const explainSql = buildExplainSql(text, connection?.engine);
+		const explainSql = buildExplainSql(sqlText, connection?.engine);
 		if (!explainSql) return;
 		await execute(explainSql, 'explain');
 	}
 
-	async function explainPostgres() {
-		const target = explainTarget(text);
+	async function explainPostgres(sqlText: string, withAnalyze: boolean) {
+		const target = explainTarget(sqlText);
 		if (!target) return;
-		const withAnalyze = analyze;
 		running = true;
 		error = null;
 		plan = null;
@@ -367,10 +371,14 @@
 		>
 			<AssistResult
 				session={assistSession}
+				engine={connection?.engine ?? ''}
 				editorHasText={Boolean(text.trim())}
 				hasSelection={Boolean(selectionText.trim())}
+				explainBusy={running || !connection?.connected}
 				onApply={applyDraft}
-				onRetry={() => void submitAssist(assistSession.question)}
+				onRetry={() => void submitAssist(assistSession.question, assistSession.pinned)}
+				onRedraft={(pinned) => void submitAssist(assistSession.question, pinned)}
+				onExplain={(draft) => void explainStatement(draft, false)}
 			/>
 		</AssistPanel>
 	{/if}
