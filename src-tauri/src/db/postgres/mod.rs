@@ -11,13 +11,17 @@ use crate::models::{
     QueryResult, RoutineInfo, TableInfo, TestConnectionRequest, TriggerInfo, ViewInfo,
 };
 use async_trait::async_trait;
-use deadpool_postgres::{Config, Pool, PoolConfig, Runtime, SslMode};
+use deadpool_postgres::{Config, Manager, Pool, PoolConfig, Runtime, SslMode};
 use native_tls::{Certificate, Identity, TlsConnector};
+use notices::{NoticeConnect, NoticeRouter};
 use postgres_native_tls::MakeTlsConnector;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio_postgres::{NoTls, SimpleQueryMessage};
+
+mod notices;
 
 const SYSTEM_SCHEMAS: [&str; 3] = ["pg_catalog", "information_schema", "pg_toast"];
 const MAX_RESULT_ROWS: usize = 5_000;
@@ -25,11 +29,14 @@ const MAX_RESULT_ROWS: usize = 5_000;
 #[derive(Clone)]
 pub struct PostgresEngine {
     pool: Pool,
+    notices: Arc<NoticeRouter>,
 }
 
 impl PostgresEngine {
     pub fn from_profile(profile: &ConnectionProfile) -> AppResult<Self> {
+        let notices = Arc::new(NoticeRouter::default());
         Ok(Self {
+            notices: notices.clone(),
             pool: create_pool(
                 &profile.host,
                 profile.port,
@@ -41,6 +48,7 @@ impl PostgresEngine {
                     cert: profile.ssl_cert.as_deref(),
                     key: profile.ssl_key.as_deref(),
                 },
+                notices,
             )?,
         })
     }
@@ -57,6 +65,7 @@ impl PostgresEngine {
                 cert: request.ssl_cert.as_deref(),
                 key: request.ssl_key.as_deref(),
             },
+            Arc::default(),
         )?;
         let client = pool.get().await?;
         client.simple_query("SELECT 1").await?;
@@ -551,12 +560,26 @@ impl DatabaseEngine for PostgresEngine {
             statement_kind(sql)
         )));
 
+        let capture = self.notices.begin(&client).await?;
         let started = Instant::now();
         let result = client.simple_query(sql).await;
+        let notices = capture.finish();
         if schema.is_some() {
             let _ = client.simple_query("RESET search_path").await;
         }
-        let query_messages = result?;
+        let query_messages = match result {
+            Ok(query_messages) => query_messages,
+            Err(error) if !notices.is_empty() => {
+                let mut message = AppError::from(error).user_message();
+                for notice in &notices {
+                    message.push('\n');
+                    message.push_str(&notice.text);
+                }
+                return Err(AppError::msg(message));
+            }
+            Err(error) => return Err(error.into()),
+        };
+        messages.extend(notices);
         Ok(simple_query_result(
             query_messages,
             sql,
@@ -600,6 +623,7 @@ fn create_pool(
     password: Option<&str>,
     database: Option<&str>,
     ssl: SslFiles<'_>,
+    notices: Arc<NoticeRouter>,
 ) -> AppResult<Pool> {
     let mut cfg = Config::new();
     cfg.host = Some(host.to_string());
@@ -614,13 +638,36 @@ fn create_pool(
         .unwrap_or("postgres");
     cfg.dbname = Some(dbname.to_string());
     cfg.pool = Some(PoolConfig::new(16));
-    match tls_connector_from_files(ssl)? {
-        Some(tls) => {
-            cfg.ssl_mode = Some(SslMode::Require);
-            Ok(cfg.create_pool(Some(Runtime::Tokio1), tls)?)
-        }
-        None => Ok(cfg.create_pool(Some(Runtime::Tokio1), NoTls)?),
+    let tls = tls_connector_from_files(ssl)?;
+    if tls.is_some() {
+        cfg.ssl_mode = Some(SslMode::Require);
     }
+    let pg_config = cfg
+        .get_pg_config()
+        .map_err(|error| AppError::PgPool(error.to_string()))?;
+    let manager = match tls {
+        Some(tls) => Manager::from_connect(
+            pg_config,
+            NoticeConnect {
+                tls,
+                router: notices,
+            },
+            cfg.get_manager_config(),
+        ),
+        None => Manager::from_connect(
+            pg_config,
+            NoticeConnect {
+                tls: NoTls,
+                router: notices,
+            },
+            cfg.get_manager_config(),
+        ),
+    };
+    Pool::builder(manager)
+        .config(cfg.get_pool_config())
+        .runtime(Runtime::Tokio1)
+        .build()
+        .map_err(|error| AppError::PgPool(error.to_string()))
 }
 
 #[derive(Clone, Copy)]
@@ -899,7 +946,10 @@ async fn table_ddl(pool: &Pool, schema: &str, name: &str) -> AppResult<String> {
     let oid: u32 = relation.get(0);
     let partition_key: Option<String> = relation.get(1);
     let partition_bound: Option<String> = relation.get(2);
-    let parent = match (relation.get::<_, Option<String>>(3), relation.get::<_, Option<String>>(4)) {
+    let parent = match (
+        relation.get::<_, Option<String>>(3),
+        relation.get::<_, Option<String>>(4),
+    ) {
         (Some(parent_schema), Some(parent_name)) => Some(qualify(&parent_schema, &parent_name)),
         _ => None,
     };
@@ -1306,7 +1356,10 @@ async fn dump_extras(pool: &Pool, schema: &str) -> AppResult<DumpExtras> {
          ORDER BY t.relname"
     );
     for row in tx.query(&sequence_sql, &[&schema, &"pg_class"]).await? {
-        let owner_table = match (row.get::<_, Option<String>>(9), row.get::<_, Option<String>>(10)) {
+        let owner_table = match (
+            row.get::<_, Option<String>>(9),
+            row.get::<_, Option<String>>(10),
+        ) {
             (Some(table_schema), Some(table)) => Some((table_schema, table)),
             _ => None,
         };
