@@ -6,7 +6,7 @@ use crate::runtime::{run_blocking, run_db};
 use crate::sql_audit::{AuditConnection, AuditScope, SqlAuditLog};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 
@@ -19,6 +19,9 @@ struct StoredProfiles {
 
 pub struct AppState {
     data_file: PathBuf,
+    /// Legacy Application Support copy; cleared after a successful home persist
+    /// so a missing home file cannot remigrate stale profiles.
+    legacy_connections: Option<PathBuf>,
     query_cache_dir: PathBuf,
     analysis_history_dir: PathBuf,
     migration_history_dir: PathBuf,
@@ -39,13 +42,21 @@ pub struct AppState {
     session_order: Mutex<Vec<String>>,
     connect_lock: tokio::sync::Mutex<()>,
     schema_refresh_lock: tokio::sync::Mutex<()>,
+    /// Serializes profile mutate + disk write so a slower upsert cannot
+    /// overwrite a later delete (lost-update on connections.json).
+    persist_lock: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
     pub fn load(paths: AppPaths, legacy_dir: Option<PathBuf>) -> AppResult<Self> {
         paths.ensure()?;
+        let legacy_connections = legacy_dir
+            .as_ref()
+            .map(|dir| dir.join("connections.json"));
+        if let Some(legacy) = legacy_connections.as_ref() {
+            migrate_file(legacy, &paths.connections)?;
+        }
         if let Some(legacy) = legacy_dir.as_deref() {
-            migrate_file(&legacy.join("connections.json"), &paths.connections)?;
             migrate_analysis(&legacy.join("analysis-history"), &paths.analysis)?;
         }
         let data_file = paths.connections;
@@ -71,6 +82,7 @@ impl AppState {
 
         Ok(Self {
             data_file,
+            legacy_connections,
             query_cache_dir,
             analysis_history_dir,
             migration_history_dir,
@@ -89,6 +101,7 @@ impl AppState {
             session_order: Mutex::new(Vec::new()),
             connect_lock: tokio::sync::Mutex::new(()),
             schema_refresh_lock: tokio::sync::Mutex::new(()),
+            persist_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -121,6 +134,7 @@ impl AppState {
         profile.ssl_cert = trim_optional_path(profile.ssl_cert.take());
         profile.ssl_key = trim_optional_path(profile.ssl_key.take());
 
+        let _persist = self.persist_lock.lock().await;
         {
             let mut profiles = self.profiles.write().await;
             if let Some(existing) = profiles.iter_mut().find(|item| item.id == profile.id) {
@@ -129,12 +143,13 @@ impl AppState {
                 profiles.push(profile.clone());
             }
         }
-        self.persist().await?;
+        self.persist_locked().await?;
         Ok(profile)
     }
 
     pub async fn delete_profile(&self, id: &str) -> AppResult<()> {
         self.disconnect(id).await.ok();
+        let _persist = self.persist_lock.lock().await;
         {
             let mut profiles = self.profiles.write().await;
             let before = profiles.len();
@@ -143,7 +158,8 @@ impl AppState {
                 return Err(AppError::ProfileNotFound(id.to_string()));
             }
         }
-        self.persist().await?;
+        self.persist_locked().await?;
+        drop(_persist);
         let _ = crate::schema_cache::remove_connection(self, id).await;
         Ok(())
     }
@@ -338,7 +354,8 @@ impl AppState {
         &self.locale_path
     }
 
-    async fn persist(&self) -> AppResult<()> {
+    /// Caller must hold `persist_lock`.
+    async fn persist_locked(&self) -> AppResult<()> {
         let profiles = self.profiles.read().await;
         let stored = StoredProfiles {
             connections: profiles.iter().map(ConnectionProfile::sanitized).collect(),
@@ -346,12 +363,44 @@ impl AppState {
         drop(profiles);
         let json = serde_json::to_string_pretty(&stored)?;
         let path = self.data_file.clone();
+        let legacy = self.legacy_connections.clone();
         run_blocking(move || {
-            std::fs::write(path, json)?;
+            atomic_write(&path, json.as_bytes())?;
+            if let Some(legacy) = legacy {
+                // Drop the one-shot migrate source so a deleted home file cannot
+                // resurrect profiles that the user already removed.
+                if legacy.is_file() {
+                    let _ = std::fs::remove_file(legacy);
+                }
+            }
             Ok(())
         })
         .await
     }
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> AppResult<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::msg("connections path has no parent directory"))?;
+    std::fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(
+        ".{}.tmp-{}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("connections.json"),
+        std::process::id()
+    ));
+    std::fs::write(&tmp, bytes)?;
+    if path.exists() {
+        // Windows cannot rename over an existing file.
+        let _ = std::fs::remove_file(path);
+    }
+    std::fs::rename(&tmp, path).map_err(|error| {
+        let _ = std::fs::remove_file(&tmp);
+        AppError::from(error)
+    })?;
+    Ok(())
 }
 
 fn trim_optional_path(value: Option<String>) -> Option<String> {
@@ -385,6 +434,28 @@ fn ids_to_evict(open_order: &[String], connecting_id: &str, max: usize) -> Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::AppPaths;
+
+    fn sample_profile(id: &str, name: &str) -> ConnectionProfile {
+        ConnectionProfile {
+            id: id.into(),
+            name: name.into(),
+            engine: "mysql".into(),
+            host: "127.0.0.1".into(),
+            port: 3306,
+            username: "root".into(),
+            password: Some("secret".into()),
+            database: None,
+            ssl_ca: None,
+            ssl_cert: None,
+            ssl_key: None,
+            ssl_verify: false,
+            oracle_version: None,
+            oracle_connect: None,
+            oracle_instant_client: None,
+            save_password: true,
+        }
+    }
 
     #[test]
     fn keeps_sessions_under_the_cap() {
@@ -418,5 +489,97 @@ mod tests {
             ids_to_evict(&open, "g", 5),
             vec!["a".to_string(), "b".to_string()]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn deleted_connection_stays_gone_after_reload() {
+        let root = std::env::temp_dir().join(format!(
+            "hidatalinker-conn-delete-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let legacy = root.join("legacy");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(
+            legacy.join("connections.json"),
+            r#"{"connections":[{"id":"legacy-1","name":"Legacy","engine":"mysql","host":"127.0.0.1","port":3306,"username":"root","savePassword":false}]}"#,
+        )
+        .unwrap();
+        let paths = AppPaths::from_root(root.join("home").join(".hidatalinker"));
+        let state = AppState::load(paths.clone(), Some(legacy.clone())).unwrap();
+        let created = state
+            .upsert_profile(sample_profile("", "Temp"))
+            .await
+            .unwrap();
+        assert!(!created.id.is_empty());
+        state.delete_profile(&created.id).await.unwrap();
+
+        let reloaded = AppState::load(paths, Some(legacy)).unwrap();
+        let ids: Vec<_> = reloaded
+            .list_profiles()
+            .await
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert!(
+            !ids.contains(&created.id),
+            "deleted id still present after reload: {ids:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_upsert_cannot_revive_a_delete() {
+        let root = std::env::temp_dir().join(format!(
+            "hidatalinker-conn-race-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let paths = AppPaths::from_root(root.join(".hidatalinker"));
+        let state = std::sync::Arc::new(AppState::load(paths.clone(), None).unwrap());
+        let kept = state
+            .upsert_profile(sample_profile("keep", "Keep"))
+            .await
+            .unwrap();
+
+        let state_upsert = state.clone();
+        let upsert = tokio::spawn(async move {
+            for i in 0..20 {
+                let _ = state_upsert
+                    .upsert_profile(sample_profile("", &format!("Temp-{i}")))
+                    .await;
+            }
+        });
+
+        // Let a few creates land, then delete the stable profile repeatedly is wrong —
+        // instead create one disposable id and delete it while creates race.
+        let doomed = state
+            .upsert_profile(sample_profile("doomed", "Doomed"))
+            .await
+            .unwrap();
+        let state_delete = state.clone();
+        let doomed_id = doomed.id.clone();
+        let delete = tokio::spawn(async move {
+            state_delete.delete_profile(&doomed_id).await.unwrap();
+        });
+
+        let _ = tokio::join!(upsert, delete);
+        // Ensure a final persist barrier by touching an upsert on the kept profile.
+        state
+            .upsert_profile(sample_profile(&kept.id, "Keep"))
+            .await
+            .unwrap();
+
+        let reloaded = AppState::load(paths, None).unwrap();
+        let ids: Vec<_> = reloaded
+            .list_profiles()
+            .await
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert!(
+            !ids.contains(&doomed.id),
+            "doomed id revived after concurrent upserts: {ids:?}"
+        );
+        assert!(ids.contains(&kept.id));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

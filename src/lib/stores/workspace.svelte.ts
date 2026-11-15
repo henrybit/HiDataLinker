@@ -151,7 +151,7 @@ class WorkspaceStore {
 	openNewConnection() {
 		this.editingConnection = {
 			id: '',
-			name: 'MySQL',
+			name: uniqueConnectionName('MySQL', this.connections),
 			engine: 'mysql',
 			host: '127.0.0.1',
 			port: 3306,
@@ -204,10 +204,10 @@ class WorkspaceStore {
 		this.begin(key);
 		this.error = null;
 		try {
-			await api.upsertConnection(profile);
+			const saved = await api.upsertConnection(profile);
 			await this.boot();
 			this.dialogOpen = false;
-			this.status = t('status.saved', { name: profile.name });
+			this.status = t('status.saved', { name: saved.name || profile.name });
 		} catch (error) {
 			this.error = errorMessage(error);
 		} finally {
@@ -224,13 +224,17 @@ class WorkspaceStore {
 
 	async confirmDeleteConnection() {
 		if (!this.confirmDelete) return;
-		const key = `delete:${this.confirmDelete.id}`;
+		const deletedId = this.confirmDelete.id;
+		const key = `delete:${deletedId}`;
+		if (this.isPending(key)) return;
 		this.begin(key);
+		this.error = null;
 		try {
-			await api.deleteConnection(this.confirmDelete.id);
-			this.forgetSession(this.confirmDelete.id);
-			this.tabs = this.tabs.filter((tab) => tab.connectionId !== this.confirmDelete?.id);
-			if (this.selection?.connectionId === this.confirmDelete.id) this.selection = null;
+			await api.deleteConnection(deletedId);
+			this.forgetSession(deletedId);
+			this.connections = this.connections.filter((item) => item.id !== deletedId);
+			this.tabs = this.tabs.filter((tab) => tab.connectionId !== deletedId);
+			if (this.selection?.connectionId === deletedId) this.selection = null;
 			this.confirmDelete = null;
 			await this.boot();
 		} catch (error) {
@@ -1159,6 +1163,21 @@ class WorkspaceStore {
 		this.queryResults = { ...this.queryResults, [tabId]: result };
 		if (message) this.lastMessage = message;
 	}
+}
+
+/** Avoid colliding with an existing sidebar label when opening a new connection. */
+export function uniqueConnectionName(
+	base: string,
+	connections: Array<{ name: string }>
+): string {
+	const used = new Set(connections.map((item) => item.name.trim()).filter(Boolean));
+	const trimmed = base.trim() || 'Connection';
+	if (!used.has(trimmed)) return trimmed;
+	for (let index = 2; index < 1000; index += 1) {
+		const candidate = `${trimmed} ${index}`;
+		if (!used.has(candidate)) return candidate;
+	}
+	return `${trimmed} ${Date.now()}`;
 }
 
 export function folderLabel(folder: FolderKind): string {

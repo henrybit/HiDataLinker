@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { workspace } from '$lib/stores/workspace.svelte';
+	import { uniqueConnectionName, workspace } from '$lib/stores/workspace.svelte';
 	import { api, errorMessage, isTauriRuntime } from '$lib/api/tauri';
 	import {
 		ENGINE_PRESETS,
@@ -75,7 +75,7 @@
 			profile.database = preset.database;
 		}
 		if (isDefaultConnectionName(profile.name)) {
-			profile.name = preset.name;
+			profile.name = uniqueConnectionName(preset.name, workspace.connections);
 		}
 		profile.engine = next;
 		if (connectionUrl.trim()) {
@@ -115,7 +115,10 @@
 					: profile.oracleConnect || 'service';
 		}
 		if (isDefaultConnectionName(profile.name)) {
-			profile.name = ENGINE_PRESETS[parsed.engine].name;
+			profile.name = uniqueConnectionName(
+				ENGINE_PRESETS[parsed.engine].name,
+				workspace.connections
+			);
 		}
 		connectionUrl = raw.trim();
 		urlMessage = options?.fromHost ? t('dialog.urlDetected') : t('dialog.urlApplied');
