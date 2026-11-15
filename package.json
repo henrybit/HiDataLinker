@@ -1,7 +1,7 @@
 {
 	"name": "db-gui",
 	"private": true,
-	"version": "1.1.0",
+	"version": "1.3.0",
 	"author": "onesolo.app",
 	"type": "module",
 	"scripts": {
