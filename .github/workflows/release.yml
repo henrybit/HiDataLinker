@@ -28,7 +28,35 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.set.outputs.include }}
+      version: ${{ steps.version.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Resolve and validate version
+        run: |
+          set -eu
+          pkg_version=$(node -p "require('./package.json').version")
+          tauri_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n1)
+
+          if [ "$pkg_version" != "$tauri_version" ] || [ "$pkg_version" != "$cargo_version" ]; then
+            echo "::error::Version mismatch: package.json=$pkg_version tauri.conf.json=$tauri_version Cargo.toml=$cargo_version"
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF_NAME}"
+            expected="v${pkg_version}"
+            if [ "$tag" != "$expected" ]; then
+              echo "::error::Tag $tag does not match package version $expected. Bump package.json / tauri.conf.json / Cargo.toml first."
+              exit 1
+            fi
+          fi
+
+          echo "version=$pkg_version" >> "$GITHUB_OUTPUT"
+          echo "Resolved version v${pkg_version}"
+
       - id: set
         env:
           PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
@@ -36,16 +64,16 @@ jobs:
           set -eu
           case "$PLATFORM" in
             linux)
-              include='[{"platform":"ubuntu-22.04","rust_targets":"","args":"--bundles deb,appimage"}]'
+              include='[{"os":"ubuntu-22.04","rust_targets":"","args":"--bundles deb,appimage"}]'
               ;;
             macos)
-              include='[{"platform":"macos-latest","rust_targets":"aarch64-apple-darwin","args":"--target aarch64-apple-darwin --bundles dmg"},{"platform":"macos-latest","rust_targets":"x86_64-apple-darwin","args":"--target x86_64-apple-darwin --bundles dmg"}]'
+              include='[{"os":"macos-latest","rust_targets":"aarch64-apple-darwin","args":"--target aarch64-apple-darwin --bundles dmg"},{"os":"macos-latest","rust_targets":"x86_64-apple-darwin","args":"--target x86_64-apple-darwin --bundles dmg"}]'
               ;;
             windows)
-              include='[{"platform":"windows-latest","rust_targets":"","args":"--bundles msi"}]'
+              include='[{"os":"windows-latest","rust_targets":"","args":"--bundles msi"}]'
               ;;
             *)
-              include='[{"platform":"macos-latest","rust_targets":"aarch64-apple-darwin","args":"--target aarch64-apple-darwin --bundles dmg"},{"platform":"macos-latest","rust_targets":"x86_64-apple-darwin","args":"--target x86_64-apple-darwin --bundles dmg"},{"platform":"windows-latest","rust_targets":"","args":"--bundles msi"},{"platform":"ubuntu-22.04","rust_targets":"","args":"--bundles deb,appimage"}]'
+              include='[{"os":"macos-latest","rust_targets":"aarch64-apple-darwin","args":"--target aarch64-apple-darwin --bundles dmg"},{"os":"macos-latest","rust_targets":"x86_64-apple-darwin","args":"--target x86_64-apple-darwin --bundles dmg"},{"os":"windows-latest","rust_targets":"","args":"--bundles msi"},{"os":"ubuntu-22.04","rust_targets":"","args":"--bundles deb,appimage"}]'
               ;;
           esac
           echo "include=$include" >> "$GITHUB_OUTPUT"
@@ -56,7 +84,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.select.outputs.include) }}
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
 
     steps:
@@ -80,16 +108,36 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev pkg-config
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            pkg-config \
+            xdg-utils
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prefetch bundled Node for build target
+        shell: bash
+        env:
+          RUST_TARGETS: ${{ matrix.rust_targets }}
+        run: |
+          set -eu
+          if [ -n "$RUST_TARGETS" ]; then
+            node scripts/fetch-bundled-node.mjs --target "$RUST_TARGETS" --force
+          else
+            node scripts/fetch-bundled-node.mjs --force
+          fi
+
       - name: Check Apple signing secrets
-        if: matrix.platform == 'macos-latest'
+        if: matrix.os == 'macos-latest'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -125,7 +173,7 @@ jobs:
           args: ${{ matrix.args }}
 
   notes:
-    needs: publish
+    needs: [select, publish]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
@@ -137,9 +185,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          VERSION: ${{ needs.select.outputs.version }}
         run: |
           set -eu
-          version=$(node -p "require('./package.json').version")
+          version="$VERSION"
           tag="v${version}"
           notes=$(mktemp)
 

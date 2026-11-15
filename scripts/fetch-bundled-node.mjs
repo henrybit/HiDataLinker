@@ -6,12 +6,17 @@
  * Usage:
  *   node scripts/fetch-bundled-node.mjs
  *   node scripts/fetch-bundled-node.mjs --force
+ *   node scripts/fetch-bundled-node.mjs --target x86_64-apple-darwin
+ *
+ * Target resolution order:
+ *   1. --target <triple>
+ *   2. TAURI_ENV_TARGET_TRIPLE (set by `tauri build --target …`)
+ *   3. Host platform / arch
  */
 import { createWriteStream, existsSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { createGunzip } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
@@ -23,58 +28,49 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
 const outDir = join(repoRoot, 'src-tauri', 'binaries');
 
-function detectTarget() {
+/** @type {Record<string, { nodeArch: string, archive: 'tar.gz' | 'zip', binName: string }>} */
+const TARGETS = {
+	'aarch64-apple-darwin': { nodeArch: 'darwin-arm64', archive: 'tar.gz', binName: 'node' },
+	'x86_64-apple-darwin': { nodeArch: 'darwin-x64', archive: 'tar.gz', binName: 'node' },
+	'aarch64-unknown-linux-gnu': { nodeArch: 'linux-arm64', archive: 'tar.gz', binName: 'node' },
+	'x86_64-unknown-linux-gnu': { nodeArch: 'linux-x64', archive: 'tar.gz', binName: 'node' },
+	'aarch64-pc-windows-msvc': { nodeArch: 'win-arm64', archive: 'zip', binName: 'node.exe' },
+	'x86_64-pc-windows-msvc': { nodeArch: 'win-x64', archive: 'zip', binName: 'node.exe' }
+};
+
+function parseTargetArg() {
+	const idx = process.argv.indexOf('--target');
+	if (idx === -1) return '';
+	const value = process.argv[idx + 1];
+	if (!value || value.startsWith('-')) {
+		throw new Error('--target requires a Rust target triple, e.g. x86_64-apple-darwin');
+	}
+	return value;
+}
+
+function hostTriple() {
 	const platform = process.platform;
 	const arch = process.arch;
-	if (platform === 'darwin' && arch === 'arm64') {
-		return {
-			triple: 'aarch64-apple-darwin',
-			nodeArch: 'darwin-arm64',
-			archive: 'tar.gz',
-			binName: 'node'
-		};
-	}
-	if (platform === 'darwin' && arch === 'x64') {
-		return {
-			triple: 'x86_64-apple-darwin',
-			nodeArch: 'darwin-x64',
-			archive: 'tar.gz',
-			binName: 'node'
-		};
-	}
-	if (platform === 'linux' && arch === 'arm64') {
-		return {
-			triple: 'aarch64-unknown-linux-gnu',
-			nodeArch: 'linux-arm64',
-			archive: 'tar.gz',
-			binName: 'node'
-		};
-	}
-	if (platform === 'linux' && arch === 'x64') {
-		return {
-			triple: 'x86_64-unknown-linux-gnu',
-			nodeArch: 'linux-x64',
-			archive: 'tar.gz',
-			binName: 'node'
-		};
-	}
-	if (platform === 'win32' && arch === 'arm64') {
-		return {
-			triple: 'aarch64-pc-windows-msvc',
-			nodeArch: 'win-arm64',
-			archive: 'zip',
-			binName: 'node.exe'
-		};
-	}
-	if (platform === 'win32' && arch === 'x64') {
-		return {
-			triple: 'x86_64-pc-windows-msvc',
-			nodeArch: 'win-x64',
-			archive: 'zip',
-			binName: 'node.exe'
-		};
-	}
+	if (platform === 'darwin' && arch === 'arm64') return 'aarch64-apple-darwin';
+	if (platform === 'darwin' && arch === 'x64') return 'x86_64-apple-darwin';
+	if (platform === 'linux' && arch === 'arm64') return 'aarch64-unknown-linux-gnu';
+	if (platform === 'linux' && arch === 'x64') return 'x86_64-unknown-linux-gnu';
+	if (platform === 'win32' && arch === 'arm64') return 'aarch64-pc-windows-msvc';
+	if (platform === 'win32' && arch === 'x64') return 'x86_64-pc-windows-msvc';
 	throw new Error(`Unsupported platform for bundled node: ${platform}/${arch}`);
+}
+
+function resolveTarget() {
+	const fromArg = parseTargetArg();
+	const fromEnv = (process.env.TAURI_ENV_TARGET_TRIPLE || '').trim();
+	const triple = fromArg || fromEnv || hostTriple();
+	const meta = TARGETS[triple];
+	if (!meta) {
+		throw new Error(
+			`Unsupported target triple for bundled node: ${triple}. Supported: ${Object.keys(TARGETS).join(', ')}`
+		);
+	}
+	return { triple, ...meta };
 }
 
 async function download(url, dest) {
@@ -109,7 +105,11 @@ function extractNodeBinary(archivePath, archiveKind, nodeArch, binName, outPath)
 	try {
 		execFileSync(
 			'powershell.exe',
-			['-NoProfile', '-Command', `Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`],
+			[
+				'-NoProfile',
+				'-Command',
+				`Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${destDir}'`
+			],
 			{ stdio: 'inherit' }
 		);
 	} catch {
@@ -123,7 +123,7 @@ function extractNodeBinary(archivePath, archiveKind, nodeArch, binName, outPath)
 }
 
 async function main() {
-	const target = detectTarget();
+	const target = resolveTarget();
 	mkdirSync(outDir, { recursive: true });
 	const outName = target.binName.endsWith('.exe')
 		? `node-${target.triple}.exe`
@@ -138,7 +138,7 @@ async function main() {
 	const file = `node-v${NODE_VERSION}-${target.nodeArch}.${target.archive}`;
 	const url = `https://nodejs.org/dist/v${NODE_VERSION}/${file}`;
 	const archivePath = join(tmpdir(), file);
-	console.log(`[fetch-bundled-node] downloading ${url}`);
+	console.log(`[fetch-bundled-node] target=${target.triple} downloading ${url}`);
 	await download(url, archivePath);
 	try {
 		if (existsSync(outPath)) unlinkSync(outPath);
