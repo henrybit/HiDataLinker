@@ -1,12 +1,11 @@
 <script lang="ts">
 	import type { QueryResult } from '$lib/api/types';
+	import { browserTextMeasure, cellNeedsExpand, dataGridLayout } from '$lib/grid/column-widths';
 	import { t } from '$lib/i18n/i18n.svelte';
 	import CellDetailDrawer from './CellDetailDrawer.svelte';
 
 	const ROW_HEIGHT = 26;
 	const OVERSCAN = 12;
-	/** Show expand control when content is likely clipped by the 420px cell max-width. */
-	const EXPAND_MIN_CHARS = 48;
 
 	let {
 		result,
@@ -20,6 +19,7 @@
 
 	let scrollTop = $state(0);
 	let viewportHeight = $state(360);
+	let scroller = $state<HTMLDivElement | null>(null);
 	let detail = $state<{
 		columnName: string;
 		columnType?: string;
@@ -27,20 +27,32 @@
 	} | null>(null);
 
 	const colCount = $derived(result.columns.length + 1);
+	const layout = $derived.by(() =>
+		dataGridLayout(result.columns, result.rows, t('grid.null'), browserTextMeasure())
+	);
 	const start = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
 	const visibleCount = $derived(Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2);
 	const end = $derived(Math.min(result.rows.length, start + visibleCount));
 	const visibleRows = $derived(result.rows.slice(start, end));
 	const useWindow = $derived(result.rows.length > 80);
 
-	function onScroll(event: Event) {
-		const target = event.currentTarget as HTMLElement;
-		scrollTop = target.scrollTop;
-		viewportHeight = target.clientHeight;
-	}
+	$effect(() => {
+		const element = scroller;
+		if (!element) return;
+		const syncHeight = () => {
+			const next = element.clientHeight;
+			if (next > 0) viewportHeight = next;
+		};
+		syncHeight();
+		const observer = new ResizeObserver(syncHeight);
+		observer.observe(element);
+		return () => observer.disconnect();
+	});
 
-	function needsExpand(value: string): boolean {
-		return value.length >= EXPAND_MIN_CHARS || /[\r\n]/.test(value);
+	function onScroll(event: Event) {
+		const next = (event.currentTarget as HTMLElement).scrollTop;
+		if (Math.floor(next / ROW_HEIGHT) === Math.floor(scrollTop / ROW_HEIGHT)) return;
+		scrollTop = next;
 	}
 
 	function openDetail(event: MouseEvent, cellIndex: number, value: string) {
@@ -54,12 +66,22 @@
 	}
 </script>
 
-<div class="data-grid-wrap" onscroll={onScroll}>
-	<table class="data-grid">
+<div class="data-grid-wrap" bind:this={scroller} onscroll={onScroll}>
+	<table
+		class="data-grid stable-cols"
+		class:windowed={useWindow}
+		style="width: {layout.tableWidth}px"
+	>
+		<colgroup>
+			<col style="width: {layout.indexWidth}px" />
+			{#each layout.columnWidths as width, index (`${index}:${result.columns[index]?.name ?? ''}`)}
+				<col style="width: {width}px" />
+			{/each}
+		</colgroup>
 		<thead>
 			<tr>
-				<th style="width:48px">#</th>
-				{#each result.columns as column (column.name)}
+				<th>#</th>
+				{#each result.columns as column, index (`${index}:${column.name}`)}
 					<th title={column.typeName}>{column.name}</th>
 				{/each}
 			</tr>
@@ -74,6 +96,7 @@
 				{@const index = useWindow ? start + offset : offset}
 				<tr
 					class:selected={selectedRow === index}
+					class:stripe={useWindow && index % 2 === 1}
 					onclick={() => (selectedRow = index)}
 					oncontextmenu={(event) => {
 						selectedRow = index;
@@ -87,7 +110,7 @@
 						<td title={cell ?? t('input.null')}>
 							{#if cell == null}
 								<span class="null-cell">{t('grid.null')}</span>
-							{:else if needsExpand(cell)}
+							{:else if cellNeedsExpand(cell)}
 								<span class="cell-inner">
 									<span class="cell-text">{cell}</span>
 									<button

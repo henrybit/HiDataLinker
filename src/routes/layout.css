@@ -463,6 +463,8 @@ button {
 .data-grid-wrap {
 	min-height: 0;
 	overflow: auto;
+	overflow-anchor: none;
+	scrollbar-gutter: stable;
 	background: white;
 	user-select: text;
 }
@@ -621,6 +623,67 @@ button {
 }
 
 .data-grid tr.selected td {
+	background: #dbeafe;
+}
+
+/* Locked columns: virtual scrolling must not remeasure widths, and sticky
+   headers jitter under border-collapse on Windows display scaling. */
+.data-grid.stable-cols {
+	table-layout: fixed;
+	border-collapse: separate;
+	border-spacing: 0;
+	border-left: 1px solid #e5e7eb;
+}
+
+.data-grid.stable-cols th,
+.data-grid.stable-cols td {
+	box-sizing: border-box;
+	height: 26px;
+	padding-top: 0;
+	padding-bottom: 0;
+	line-height: 25px;
+	border: 0;
+	border-right: 1px solid #e5e7eb;
+	border-bottom: 1px solid #e5e7eb;
+	overflow: hidden;
+}
+
+.data-grid.stable-cols th {
+	border-top: 1px solid #e5e7eb;
+	line-height: 24px;
+}
+
+.data-grid.stable-cols .cell-expand {
+	height: 16px;
+}
+
+.data-grid.stable-cols tbody tr {
+	content-visibility: visible;
+	height: 26px;
+}
+
+.data-grid.stable-cols tr.spacer-row {
+	height: auto;
+	content-visibility: visible;
+}
+
+.data-grid.stable-cols tr.spacer-row td {
+	height: auto;
+	padding: 0;
+	border: 0;
+	line-height: 0;
+	font-size: 0;
+}
+
+.data-grid.windowed tbody td {
+	background: white;
+}
+
+.data-grid.windowed tbody tr.stripe td {
+	background: #fafbfd;
+}
+
+.data-grid.windowed tbody tr.selected td {
 	background: #dbeafe;
 }
 
