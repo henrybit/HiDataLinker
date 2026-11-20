@@ -258,32 +258,46 @@ async fn run_import_job(
             return Ok(());
         }
         emit_progress("ddl", 0, total_rows, "Creating table");
-        match db_engine
-            .execute_sql(Some(schema.as_str()), &ddl)
-            .await
-        {
-            Ok(_) => {}
-            Err(error) if is_table_already_exists(&error) => {
-                // "Create" against an existing table means replace rows, not abort.
-                emit_progress(
-                    "ddl",
-                    0,
-                    total_rows,
-                    "Table already exists — clearing rows before reload",
-                );
-                let clear_sql = clear_table_sql(&engine, &qualified);
-                db_engine
-                    .execute_sql(Some(schema.as_str()), &clear_sql)
-                    .await
-                    .map_err(|clear_error| {
-                        AppError::msg(format!(
-                            "table already exists and clear failed: {}; original create error: {}",
-                            clear_error.user_message(),
-                            error.user_message()
-                        ))
-                    })?;
+        let statements = split_sql_statements(&ddl);
+        if statements.is_empty() {
+            return Err(AppError::msg("import DDL is empty"));
+        }
+        for statement in statements {
+            if live.cancelled.load(Ordering::SeqCst) {
+                emit_progress("cancelled", 0, total_rows, "Cancelled");
+                return Ok(());
             }
-            Err(error) => return Err(error),
+            match db_engine
+                .execute_sql(Some(schema.as_str()), &statement)
+                .await
+            {
+                Ok(_) => {}
+                Err(error) if is_create_table(&statement) && is_table_already_exists(&error) => {
+                    // Truncate would keep the old column types (for example VARCHAR(32)).
+                    // Drop and run the edited CREATE so a corrected script can reload.
+                    emit_progress(
+                        "ddl",
+                        0,
+                        total_rows,
+                        "Table already exists — dropping and recreating from the import script",
+                    );
+                    let drop_sql = format!("DROP TABLE IF EXISTS {qualified};");
+                    db_engine
+                        .execute_sql(Some(schema.as_str()), &drop_sql)
+                        .await
+                        .map_err(|drop_error| {
+                            AppError::msg(format!(
+                                "table already exists and drop failed: {}; original create error: {}",
+                                drop_error.user_message(),
+                                error.user_message()
+                            ))
+                        })?;
+                    db_engine
+                        .execute_sql(Some(schema.as_str()), &statement)
+                        .await?;
+                }
+                Err(error) => return Err(error),
+            }
         }
     }
 
@@ -482,13 +496,108 @@ fn is_table_already_exists(error: &AppError) -> bool {
         || message.contains("42p07")
 }
 
-fn clear_table_sql(engine: &str, qualified: &str) -> String {
-    // Prefer DELETE for broad engine compatibility (TRUNCATE may need privileges).
-    if engine.starts_with("postgres") {
-        format!("TRUNCATE TABLE {qualified} RESTART IDENTITY;")
-    } else {
-        format!("DELETE FROM {qualified};")
+fn is_create_table(sql: &str) -> bool {
+    let rest = strip_leading_comments(sql).trim_start();
+    let upper = rest.to_ascii_uppercase();
+    upper.starts_with("CREATE TABLE")
+        || upper.starts_with("CREATE TEMPORARY TABLE")
+        || upper.starts_with("CREATE TEMP TABLE")
+        || upper.starts_with("CREATE UNLOGGED TABLE")
+}
+
+fn strip_leading_comments(sql: &str) -> &str {
+    let mut rest = sql.trim_start();
+    loop {
+        if let Some(stripped) = rest.strip_prefix("--") {
+            match stripped.find('\n') {
+                Some(idx) => {
+                    rest = stripped[idx + 1..].trim_start();
+                    continue;
+                }
+                None => return "",
+            }
+        }
+        if let Some(stripped) = rest.strip_prefix("/*") {
+            match stripped.find("*/") {
+                Some(idx) => {
+                    rest = stripped[idx + 2..].trim_start();
+                    continue;
+                }
+                None => return "",
+            }
+        }
+        return rest;
     }
+}
+
+/// Split a script on semicolons that are outside quotes and comments.
+pub(crate) fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut chars = sql.chars().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    while let Some(c) = chars.next() {
+        if in_line_comment {
+            current.push(c);
+            if c == '\n' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+        if in_block_comment {
+            current.push(c);
+            if c == '*' && chars.peek() == Some(&'/') {
+                current.push(chars.next().unwrap());
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if !in_single && !in_double && c == '-' && chars.peek() == Some(&'-') {
+            current.push(c);
+            current.push(chars.next().unwrap());
+            in_line_comment = true;
+            continue;
+        }
+        if !in_single && !in_double && c == '/' && chars.peek() == Some(&'*') {
+            current.push(c);
+            current.push(chars.next().unwrap());
+            in_block_comment = true;
+            continue;
+        }
+        if c == '\'' && !in_double {
+            current.push(c);
+            if in_single && chars.peek() == Some(&'\'') {
+                current.push(chars.next().unwrap());
+            } else {
+                in_single = !in_single;
+            }
+            continue;
+        }
+        if c == '"' && !in_single {
+            in_double = !in_double;
+            current.push(c);
+            continue;
+        }
+        if c == ';' && !in_single && !in_double {
+            push_statement(&mut out, &current);
+            current.clear();
+            continue;
+        }
+        current.push(c);
+    }
+    push_statement(&mut out, &current);
+    out
+}
+
+fn push_statement(out: &mut Vec<String>, raw: &str) {
+    let stmt = raw.trim();
+    if stmt.is_empty() || strip_leading_comments(stmt).trim().is_empty() {
+        return;
+    }
+    out.push(stmt.to_string());
 }
 
 /// Strip Excel/CSV leading apostrophe used to force text (e.g. `'008` → `008`).
@@ -523,6 +632,20 @@ fn sql_literal(value: &str, engine: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn splits_drop_and_create_and_keeps_semicolons_inside_strings() {
+        let sql = "DROP TABLE IF EXISTS \"Test\".\"t\";\nCREATE TABLE \"Test\".\"t\" (\n  \"note\" TEXT\n);\n-- done\n";
+        let parts = split_sql_statements(sql);
+        assert_eq!(parts.len(), 2);
+        assert!(parts[0].starts_with("DROP TABLE"));
+        assert!(is_create_table(&parts[1]));
+        let literal = "INSERT INTO t (a) VALUES ('a;b');";
+        assert_eq!(
+            split_sql_statements(literal),
+            vec![literal.trim_end_matches(';').to_string()]
+        );
+    }
 
     #[test]
     fn strips_excel_text_apostrophe_from_numeric_codes() {

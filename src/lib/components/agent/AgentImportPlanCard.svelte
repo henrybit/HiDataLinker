@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { FileSpreadsheet, LoaderCircle } from '@lucide/svelte';
+	import { FileSpreadsheet, LoaderCircle, Sparkles } from '@lucide/svelte';
+	import { z } from 'zod';
 	import { api, errorMessage } from '$lib/api/tauri';
 	import type {
 		AttachmentMeta,
@@ -8,7 +9,17 @@
 		SuggestedColumn,
 		TableInfo
 	} from '$lib/api/types';
-	import { t } from '$lib/i18n/i18n.svelte';
+	import { createAnalysisCaller } from '$lib/analysis/llm';
+	import { getLocale, t } from '$lib/i18n/i18n.svelte';
+	import {
+		columnLengthHints,
+		importSqlRepairPrompt,
+		repairImportSqlLocally,
+		schemaSqlFromPreview,
+		stripSqlFence
+	} from '$lib/import/repair-sql';
+	import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
+	import { toLlmSettings } from '$lib/llm/providers';
 	import { agentChat, DATA_ANALYST_ID, type ChatMessage } from '$lib/stores/agent-chat.svelte';
 	import { workspace } from '$lib/stores/workspace.svelte';
 
@@ -35,14 +46,26 @@
 	let schema = $state('');
 	let table = $state('');
 	let ddl = $state('');
+	let ddlTouched = $state(false);
 	let columns = $state<SuggestedColumn[]>([]);
 	let schemas = $state<DatabaseInfo[]>([]);
 	let tables = $state<TableInfo[]>([]);
 	let busy = $state(false);
+	let fixing = $state(false);
+	let fixNote = $state<string | null>(null);
 	let localError = $state<string | null>(null);
 	let showScript = $state(false);
 
-	const formLocked = $derived(busy || importing || phase === 'done' || decided);
+	const formLocked = $derived(
+		busy || importing || phase === 'done' || (decided && phase !== 'error')
+	);
+	const sqlLocked = $derived(busy || importing || phase === 'done' || fixing);
+	const importError = $derived(localError || String(message.meta?.error ?? '') || '');
+	const loadNote = $derived.by(() => {
+		const preview = scriptPreview;
+		const marker = preview.search(/\n-- Import load plan\b/);
+		return marker === -1 ? '' : preview.slice(marker).trim();
+	});
 
 	const connections = $derived(
 		workspace.connections.filter((item) => {
@@ -68,6 +91,16 @@
 	});
 
 	$effect(() => {
+		if (ddlTouched) return;
+		const saved = String(message.meta?.editedDdl ?? '').trim();
+		const fromPreview = schemaSqlFromPreview(String(message.meta?.scriptPreview ?? ''));
+		const next = saved || fromPreview;
+		if (!next) return;
+		ddl = next;
+		ddlTouched = true;
+	});
+
+	$effect(() => {
 		if (!connectionId || !selectedConnection || !sample) return;
 		let cancelled = false;
 		void (async () => {
@@ -84,7 +117,7 @@
 				);
 				if (cancelled) return;
 				columns = inferred.columns;
-				ddl = inferred.ddl;
+				if (!ddlTouched) ddl = inferred.ddl;
 				if (!table) table = inferred.table;
 			} catch (error) {
 				if (!cancelled) localError = errorMessage(error);
@@ -117,15 +150,63 @@
 		};
 	});
 
-	async function refreshDdl() {
-		if (!selectedConnection || !sample) return;
-		const inferred = await api.importInferSchema(
-			{ sample, engine: selectedConnection.engine },
-			schema,
-			table || sample.suggestedTable
-		);
-		columns = inferred.columns;
-		ddl = inferred.ddl;
+	function onSqlInput() {
+		ddlTouched = true;
+		fixNote = null;
+		agentChat.updateImportMessage(message.id, { editedDdl: ddl });
+	}
+
+	function applyRepairedSql(sql: string, note: string) {
+		ddl = sql.trim();
+		ddlTouched = true;
+		fixNote = note;
+		showScript = true;
+		agentChat.updateImportMessage(message.id, { editedDdl: ddl });
+	}
+
+	async function fixImportError() {
+		const errorText = importError.trim();
+		const currentSql = (ddl || schemaSqlFromPreview(scriptPreview)).trim();
+		if (!errorText || !currentSql) return;
+		fixing = true;
+		localError = null;
+		try {
+			const locale = getLocale() === 'zh' ? 'zh' : 'en';
+			const prompt = importSqlRepairPrompt({
+				engine: selectedConnection?.engine ?? '',
+				error: errorText,
+				sql: currentSql,
+				columnHints: columnLengthHints(sample),
+				locale
+			});
+			const profile = selectedLlmProvider();
+			if (!profile || (!profile.apiKey.trim() && !profile.baseUrl.trim())) {
+				throw new Error(t('agentMode.live.needLlm'));
+			}
+			const caller = createAnalysisCaller(toLlmSettings(profile));
+			const repaired = await caller.complete(
+				z.object({
+					sql: z.string().min(1),
+					summary: z.string()
+				}),
+				prompt.system,
+				prompt.human
+			);
+			const sql = stripSqlFence(repaired.sql);
+			if (!/^\s*(DROP|CREATE|ALTER)\b/i.test(sql)) {
+				throw new Error(t('agentMode.live.importAiFixInvalid'));
+			}
+			applyRepairedSql(sql, repaired.summary.trim() || t('agentMode.live.importAiFixApplied'));
+		} catch (error) {
+			const local = repairImportSqlLocally(currentSql, errorText);
+			if (local) {
+				applyRepairedSql(local.sql, t('agentMode.live.importAiFixLocal'));
+			} else {
+				localError = errorMessage(error);
+			}
+		} finally {
+			fixing = false;
+		}
 	}
 
 	function decisionTarget(imported: boolean, jobId?: string) {
@@ -163,10 +244,15 @@
 			localError = t('agentMode.live.importNeedTarget');
 			return;
 		}
+		const editedSql = ddl.trim();
+		if (mode === 'create' && !editedSql) {
+			localError = t('agentMode.live.importNeedSql');
+			return;
+		}
 		busy = true;
 		localError = null;
+		fixNote = null;
 		try {
-			if (mode === 'create') await refreshDdl();
 			const pkg = await api.importPrepare({
 				agentId: DATA_ANALYST_ID,
 				sessionId: agentChat.session.id,
@@ -178,7 +264,7 @@
 				table: table.trim(),
 				mode,
 				createTable: mode === 'create',
-				ddl: mode === 'create' ? ddl : undefined,
+				ddl: mode === 'create' ? editedSql : undefined,
 				columnMappings: columns.map((col) => ({
 					source: col.sourceName,
 					target: col.name
@@ -196,8 +282,10 @@
 				jobId: pkg.jobId,
 				scriptDir: pkg.scriptDir,
 				scriptPreview: preview,
+				editedDdl: mode === 'create' ? editedSql : undefined,
 				phase: 'ready',
-				totalRows: pkg.totalRows
+				totalRows: pkg.totalRows,
+				error: null
 			});
 			showScript = true;
 
@@ -206,7 +294,8 @@
 			agentChat.updateImportMessage(message.id, {
 				importing: true,
 				phase: 'load',
-				progressMessage: t('agentMode.live.importStarting')
+				progressMessage: t('agentMode.live.importStarting'),
+				error: null
 			});
 
 			// Wait for native import-done/error before the agent continues.
@@ -315,19 +404,23 @@
 			</label>
 		</div>
 
-		{#if mode === 'create' && ddl}
-			<details class="agent-import-ddl" open={false}>
-				<summary>{t('agentMode.live.importViewDdl')}</summary>
-				<pre>{ddl}</pre>
+		{#if mode === 'create' && (ddl || showScript)}
+			<details class="agent-import-ddl" open>
+				<summary>{t('agentMode.live.importViewScript')}</summary>
+				<p class="agent-import-sql-hint">{t('agentMode.live.importSqlEditable')}</p>
+				<textarea
+					class="agent-import-sql"
+					rows="12"
+					spellcheck="false"
+					bind:value={ddl}
+					disabled={sqlLocked}
+					oninput={onSqlInput}
+				></textarea>
+				{#if loadNote}
+					<pre>{loadNote}</pre>
+				{/if}
 			</details>
 		{/if}
-	{/if}
-
-	{#if showScript && scriptPreview}
-		<details class="agent-import-ddl" open>
-			<summary>{t('agentMode.live.importViewScript')}</summary>
-			<pre>{scriptPreview}</pre>
-		</details>
 	{/if}
 
 	{#if importing || phase === 'load' || phase === 'ddl' || phase === 'prepare'}
@@ -364,7 +457,11 @@
 				disabled={busy || !connectionId || !schema || !table}
 				onclick={() => void confirmImport()}
 			>
-				{busy ? t('agentMode.live.importPreparing') : t('agentMode.live.importConfirm')}
+				{busy
+					? t('agentMode.live.importPreparing')
+					: phase === 'error'
+						? t('agentMode.live.importRetry')
+						: t('agentMode.live.importConfirm')}
 			</button>
 		</div>
 		{#if awaitingDecision}
@@ -372,7 +469,28 @@
 		{/if}
 	{/if}
 
-	{#if localError || message.meta?.error}
-		<p class="agent-error-banner inline">{localError || String(message.meta?.error)}</p>
+	{#if importError}
+		<div class="agent-import-error">
+			<p class="agent-error-banner inline">{importError}</p>
+			{#if phase !== 'done' && (ddl || scriptPreview)}
+				<button
+					type="button"
+					class="agent-btn ghost agent-import-fix"
+					disabled={fixing || busy || importing}
+					onclick={() => void fixImportError()}
+				>
+					{#if fixing}
+						<span class="agent-import-spin"><LoaderCircle size={14} /></span>
+						{t('agentMode.live.importAiFixing')}
+					{:else}
+						<Sparkles size={14} />
+						{t('agentMode.live.importAiFix')}
+					{/if}
+				</button>
+			{/if}
+		</div>
+	{/if}
+	{#if fixNote}
+		<p class="agent-import-fix-note">{fixNote}</p>
 	{/if}
 </div>

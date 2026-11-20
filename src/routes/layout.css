@@ -2801,12 +2801,67 @@ button.query-exec-log-title:hover {
 
 .agent-import-ddl pre {
 	margin: 8px 0 0;
-	max-height: 220px;
+	max-height: 160px;
 	overflow: auto;
 	white-space: pre-wrap;
 	font-size: 11px;
 	line-height: 1.45;
+	color: #6b7280;
+}
+
+.agent-import-sql-hint {
+	margin: 8px 0 0;
+	font-size: 12px;
+	color: #6b7280;
+}
+
+.agent-import-sql {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-top: 8px;
+	min-height: 180px;
+	max-height: 320px;
+	padding: 8px 10px;
+	border: 1px solid #d1d5db;
+	border-radius: 8px;
+	background: #fff;
+	resize: vertical;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.45;
 	color: #1f2937;
+}
+
+.agent-import-sql:disabled {
+	background: #f9fafb;
+	color: #4b5563;
+}
+
+.agent-import-error {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.agent-import-error .agent-error-banner.inline {
+	flex: 1 1 220px;
+	margin: 0;
+}
+
+.agent-import-fix {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+}
+
+.agent-import-fix-note {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.45;
+	color: #047857;
 }
 
 .agent-import-actions {

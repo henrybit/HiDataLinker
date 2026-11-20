@@ -960,6 +960,16 @@ export const en = {
 	'agentMode.live.importNoMysqlPg': 'No MySQL/PostgreSQL connections',
 	'agentMode.live.importViewDdl': 'View recommended CREATE TABLE',
 	'agentMode.live.importViewScript': 'View import script details',
+	'agentMode.live.importSqlEditable':
+		'You can edit the SQL below. Import runs the statement you leave here.',
+	'agentMode.live.importNeedSql': 'CREATE TABLE SQL cannot be empty.',
+	'agentMode.live.importRetry': 'Import again',
+	'agentMode.live.importAiFix': 'AI fix',
+	'agentMode.live.importAiFixing': 'Analyzing…',
+	'agentMode.live.importAiFixApplied': 'SQL was rewritten from the error. Review it, then import again.',
+	'agentMode.live.importAiFixLocal':
+		'Short VARCHAR columns were widened to TEXT, and the existing table is dropped before recreate. Review it, then import again.',
+	'agentMode.live.importAiFixInvalid': 'The model did not return executable DDL.',
 	'agentMode.live.importConfirm': 'Confirm & import',
 	'agentMode.live.importAnalyzeOnly': 'Analyze only (no import)',
 	'agentMode.live.importWaitHint': 'Pick an import target first; the agent continues after you confirm.',
