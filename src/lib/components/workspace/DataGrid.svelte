@@ -10,10 +10,13 @@
 	let {
 		result,
 		selectedRow = $bindable(0),
+		codecColumns = [],
 		onRowContextMenu
 	}: {
 		result: QueryResult;
 		selectedRow?: number;
+		/** Column indexes whose displayed values were decoded or decrypted. */
+		codecColumns?: number[];
 		onRowContextMenu?: (event: MouseEvent, index: number) => void;
 	} = $props();
 
@@ -27,6 +30,7 @@
 	} | null>(null);
 
 	const colCount = $derived(result.columns.length + 1);
+	const codecSet = $derived(new Set(codecColumns));
 	const layout = $derived.by(() =>
 		dataGridLayout(result.columns, result.rows, t('grid.null'), browserTextMeasure())
 	);
@@ -82,7 +86,12 @@
 			<tr>
 				<th>#</th>
 				{#each result.columns as column, index (`${index}:${column.name}`)}
-					<th title={column.typeName}>{column.name}</th>
+					<th title={column.typeName}>
+						{column.name}
+						{#if codecSet.has(index)}
+							<span class="codec-mark">{t('codec.mark')}</span>
+						{/if}
+					</th>
 				{/each}
 			</tr>
 		</thead>

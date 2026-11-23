@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { api, errorMessage } from '$lib/api/tauri';
-	import type { QueryLogEntry } from '$lib/api/types';
+	import type { QueryLogEntry, QueryResult } from '$lib/api/types';
 	import { formatDuration, formatNumber } from '$lib/format';
 	import { afterPaint } from '$lib/runtime/jobs';
 	import { isOracle, isPostgres } from '$lib/engine';
@@ -28,6 +28,7 @@
 	import { AssistSession } from '$lib/assist/session.svelte';
 	import { pickSavePath, writeSqlFile } from '$lib/save-sql-file';
 	import { csvFileName, resultToCsv } from '$lib/sql/result-csv';
+	import { applyFieldCodecs, type CodecRuleProblem } from '$lib/sql/field-codec';
 	import { getLocale } from '$lib/i18n/i18n.svelte';
 	import { selectedLlmProvider } from '$lib/llm/catalog.svelte';
 	import StackSplit from '$lib/components/layout/StackSplit.svelte';
@@ -35,6 +36,7 @@
 	import AssistPanel from './AssistPanel.svelte';
 	import AssistResult from './AssistResult.svelte';
 	import DataGrid from './DataGrid.svelte';
+	import FieldCodecBar from './FieldCodecBar.svelte';
 	import DraftRunConfirm from './DraftRunConfirm.svelte';
 	import PlanView from './PlanView.svelte';
 	import QueryExecLog from './QueryExecLog.svelte';
@@ -70,6 +72,15 @@
 	let analyze = $state(false);
 	let plan = $state<{ parsed: ParsedPlan; raw: string } | null>(null);
 	const result = $derived(workspace.queryResults[tabId] ?? null);
+	const codecRules = $derived(workspace.fieldCodecs[tabId] ?? []);
+	let codecOpen = $state(false);
+	let codecView = $state<{
+		source: QueryResult;
+		rows: QueryResult['rows'];
+		activeColumns: number[];
+		failedCells: number;
+		issues: CodecRuleProblem[];
+	} | null>(null);
 	const connection = $derived(workspace.connections.find((item) => item.id === connectionId));
 	const postgres = $derived(isPostgres(connection?.engine));
 	const schemaHint = $derived(
@@ -89,6 +100,18 @@
 				: localLog
 	);
 	const canAct = $derived(!running && !loadingSql && Boolean(text.trim()));
+	const shownResult = $derived.by(() => {
+		if (!result) return null;
+		if (!codecView || codecView.source !== result || codecView.rows === result.rows) return result;
+		return { ...result, rows: codecView.rows };
+	});
+	const codecActive = $derived(
+		codecView && codecView.source === result ? codecView.activeColumns : []
+	);
+	const codecIssues = $derived(codecView && codecView.source === result ? codecView.issues : []);
+	const codecFailed = $derived(
+		codecView && codecView.source === result ? codecView.failedCells : 0
+	);
 
 	let selectionText = $state('');
 	let lastRunSql = $state('');
@@ -335,7 +358,7 @@
 
 	/** Save the current grid as CSV. The user picks the path; cancelling writes nothing. */
 	async function exportResult() {
-		const current = result;
+		const current = shownResult;
 		if (!current?.columns.length || exporting) return;
 		const fileName = csvFileName(`${schema ?? connection?.name ?? 'result'}_query`);
 		const path = await pickSavePath(fileName, t('query.exportTitle'), {
@@ -428,6 +451,30 @@
 			running = false;
 		}
 	}
+
+	$effect(() => {
+		const source = result;
+		const rules = codecRules;
+		if (!source?.columns.length || rules.length === 0) {
+			codecView = null;
+			return;
+		}
+		let cancelled = false;
+		codecView = null;
+		void applyFieldCodecs(source.columns, source.rows, rules).then((applied) => {
+			if (cancelled) return;
+			codecView = {
+				source,
+				rows: applied.rows,
+				activeColumns: applied.activeColumns,
+				failedCells: applied.failedCells,
+				issues: applied.issues
+			};
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	$effect(() => {
 		if (!hydrated || !autoRun || didAutoRun || running || loadingSql || !active) return;
@@ -565,6 +612,22 @@
 							disabled={exporting}
 							onclick={() => void exportResult()}>{t('query.exportCsv')}</button
 						>
+						<button class="assist-inline" type="button" onclick={() => (codecOpen = !codecOpen)}>
+							{codecRules.length
+								? t('codec.toggleCount', { count: codecRules.length })
+								: t('codec.toggle')}
+						</button>
+					{/if}
+					{#if codecActive.length}
+						· {t('codec.applied', {
+							columns: codecActive
+								.map((index) => result.columns[index]?.name)
+								.filter(Boolean)
+								.join(', ')
+						})}
+						{#if codecFailed}
+							· {t('codec.failed', { count: formatNumber(codecFailed) })}
+						{/if}
 					{/if}
 				</div>
 			{/if}
@@ -573,7 +636,15 @@
 				{#if plan && !error}
 					<PlanView plan={plan.parsed} raw={plan.raw} />
 				{:else if result?.columns.length}
-					<DataGrid {result} />
+					{#if codecOpen}
+						<FieldCodecBar
+							rules={codecRules}
+							columns={result.columns.map((column) => column.name)}
+							issues={codecIssues}
+							onChange={(rules) => workspace.setFieldCodecs(tabId, rules)}
+						/>
+					{/if}
+					<DataGrid result={shownResult ?? result} codecColumns={codecActive} />
 				{:else if !error && !result && !running}
 					<div class="empty">{t('query.empty')}</div>
 				{/if}

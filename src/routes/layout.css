@@ -475,6 +475,17 @@ button {
 	font-variant-numeric: tabular-nums;
 }
 
+.codec-mark {
+	margin-left: 6px;
+	padding: 0 4px;
+	border-radius: 4px;
+	background: #e0f2fe;
+	color: #0369a1;
+	font-size: 10px;
+	font-weight: 600;
+	vertical-align: 1px;
+}
+
 .data-grid th,
 .data-grid td {
 	border: 1px solid #e5e7eb;
@@ -5047,7 +5058,9 @@ button.query-exec-log-title:hover {
 	margin: 0;
 }
 
-.agent-md.user :is(p, ul, ol, blockquote, pre, table, hr) + :is(p, ul, ol, blockquote, pre, table, hr) {
+.agent-md.user
+	:is(p, ul, ol, blockquote, pre, table, hr)
+	+ :is(p, ul, ol, blockquote, pre, table, hr) {
 	margin-top: 0.45em;
 }
 

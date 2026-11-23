@@ -11,6 +11,7 @@ import {
 	writeQuerySqlCache
 } from '$lib/query-sql-cache';
 import type { AssistSeed } from '$lib/assist/context';
+import type { FieldCodecRule } from '$lib/sql/field-codec';
 import { pickSqlSavePath, sqlDumpFileName, writeSqlFile } from '$lib/save-sql-file';
 import { connectStatus, forgetExpandedKeys } from '$lib/sessions';
 import type {
@@ -96,6 +97,8 @@ class WorkspaceStore {
 	migrateDatabasePrompt = $state<MigrateDatabasePrompt | null>(null);
 	contextMenu = $state<ContextMenuState | null>(null);
 	queryResults = $state<Record<string, QueryResult | null>>({});
+	/** Per query tab. Display-only decode/decrypt rules; not written to the database. */
+	fieldCodecs = $state<Record<string, FieldCodecRule[]>>({});
 	lastMessage = $state<string | null>(null);
 	tableDataEpoch = $state<Record<string, number>>({});
 	private sqlWriteTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -233,7 +236,11 @@ class WorkspaceStore {
 			await api.deleteConnection(deletedId);
 			this.forgetSession(deletedId);
 			this.connections = this.connections.filter((item) => item.id !== deletedId);
+			const removedTabs = this.tabs
+				.filter((tab) => tab.connectionId === deletedId)
+				.map((tab) => tab.id);
 			this.tabs = this.tabs.filter((tab) => tab.connectionId !== deletedId);
+			this.dropFieldCodecs(removedTabs);
 			if (this.selection?.connectionId === deletedId) this.selection = null;
 			this.confirmDelete = null;
 			await this.boot();
@@ -305,11 +312,13 @@ class WorkspaceStore {
 		try {
 			await api.dropDatabase(prompt.connectionId, prompt.name);
 			this.dropDatabasePrompt = null;
-			const remaining = this.tabs.filter(
-				(tab) => !(tab.connectionId === prompt.connectionId && tab.schema === prompt.name)
-			);
+			const removedTabs = this.tabs
+				.filter((tab) => tab.connectionId === prompt.connectionId && tab.schema === prompt.name)
+				.map((tab) => tab.id);
+			const remaining = this.tabs.filter((tab) => !removedTabs.includes(tab.id));
 			const activeStillOpen = remaining.some((tab) => tab.id === this.activeTabId);
 			this.tabs = remaining;
+			this.dropFieldCodecs(removedTabs);
 			if (!activeStillOpen) {
 				this.activeTabId = remaining[remaining.length - 1]?.id ?? null;
 			}
@@ -590,12 +599,10 @@ class WorkspaceStore {
 	}
 
 	/** Best-effort connect for agent mode: saved-password sources only, no password prompts. */
-	async warmAgentConnections(
-		options?: {
-			autoConnect?: boolean;
-			sourceAutoConnect?: Record<string, boolean>;
-		}
-	): Promise<void> {
+	async warmAgentConnections(options?: {
+		autoConnect?: boolean;
+		sourceAutoConnect?: Record<string, boolean>;
+	}): Promise<void> {
 		const autoConnect = options?.autoConnect !== false;
 		if (!autoConnect) return;
 		const overrides = options?.sourceAutoConnect ?? {};
@@ -868,6 +875,7 @@ class WorkspaceStore {
 		this.tabs = this.tabs.filter((tab) => tab.id !== id);
 		delete this.queryResults[id];
 		this.queryResults = { ...this.queryResults };
+		this.dropFieldCodecs([id]);
 		if (this.activeTabId === id) {
 			this.activeTabId = this.tabs[index]?.id ?? this.tabs[index - 1]?.id ?? null;
 		}
@@ -1163,13 +1171,28 @@ class WorkspaceStore {
 		this.queryResults = { ...this.queryResults, [tabId]: result };
 		if (message) this.lastMessage = message;
 	}
+
+	setFieldCodecs(tabId: string, rules: FieldCodecRule[]) {
+		this.fieldCodecs = { ...this.fieldCodecs, [tabId]: rules };
+	}
+
+	private dropFieldCodecs(ids: Iterable<string>) {
+		let next = this.fieldCodecs;
+		let changed = false;
+		for (const id of ids) {
+			if (!(id in next)) continue;
+			if (!changed) {
+				next = { ...next };
+				changed = true;
+			}
+			delete next[id];
+		}
+		if (changed) this.fieldCodecs = next;
+	}
 }
 
 /** Avoid colliding with an existing sidebar label when opening a new connection. */
-export function uniqueConnectionName(
-	base: string,
-	connections: Array<{ name: string }>
-): string {
+export function uniqueConnectionName(base: string, connections: Array<{ name: string }>): string {
 	const used = new Set(connections.map((item) => item.name.trim()).filter(Boolean));
 	const trimmed = base.trim() || 'Connection';
 	if (!used.has(trimmed)) return trimmed;
