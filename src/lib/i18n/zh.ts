@@ -1149,10 +1149,12 @@ export const zh: Record<MessageKey, string> = {
 	'query.exportTitle': '导出查询结果',
 	'query.exported': '已导出 {count} 行到 {path}',
 	'query.exportedTruncated': '已导出 {count} 行到 {path}。结果已截断，只保存了网格中的行。',
+	'codec.resize': '调整解码面板高度',
 	'codec.toggle': '字段解码',
 	'codec.toggleCount': '字段解码 ({count})',
 	'codec.hint':
-		'只转换这个查询标签的结果，执行后直接看到解码或解密后的值。不会写回数据库。同一列有多条规则时按从上到下依次处理。密钥只留在这个标签里，关闭标签后清除。',
+		'只转换当前标签的结果，方便直接看解码或解密后的值。勾选后才会生效，取消勾选可继续编辑。不会写回数据库。同一列有多条规则时按从上到下依次处理。密钥只留在这个标签里，关闭标签后清除。',
+	'codec.enable': '启用',
 	'codec.column': '字段',
 	'codec.add': '添加字段',
 	'codec.remove': '移除',

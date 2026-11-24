@@ -23,6 +23,7 @@
 		runSqlStatements,
 		type ColumnSpec
 	} from '$lib/sql/column-mutations';
+	import CodecResults from './CodecResults.svelte';
 	import ColumnEditorDialog from './ColumnEditorDialog.svelte';
 	import DataGrid from './DataGrid.svelte';
 	import RecordFormView from './RecordFormView.svelte';
@@ -31,11 +32,13 @@
 	import { t } from '$lib/i18n/i18n.svelte';
 
 	let {
+		tabId,
 		connectionId,
 		schema,
 		name,
 		isView
 	}: {
+		tabId: string;
 		connectionId: string;
 		schema: string;
 		name: string;
@@ -43,6 +46,11 @@
 	} = $props();
 
 	let mode = $state<'data' | 'structure' | 'ddl'>('data');
+	let codecOpen = $state(false);
+	let codecActive = $state<number[]>([]);
+	let codecFailed = $state(0);
+	const codecRules = $derived(workspace.fieldCodecs[tabId] ?? []);
+	const codecEnabled = $derived(codecRules.filter((rule) => rule.enabled).length);
 	let dataView = $state<'grid' | 'form'>('grid');
 	let columns = $state<ColumnInfo[]>([]);
 	let result = $state<QueryResult | null>(null);
@@ -76,7 +84,9 @@
 			null
 	);
 	const canMutate = $derived(!isView);
-	const hasSelection = $derived(!!result && result.rows.length > 0 && selectedRow < result.rows.length);
+	const hasSelection = $derived(
+		!!result && result.rows.length > 0 && selectedRow < result.rows.length
+	);
 	const hasColumnSelection = $derived(columns.length > 0 && selectedColumn < columns.length);
 	const selectedColumnInfo = $derived(hasColumnSelection ? columns[selectedColumn] : null);
 	const editFormColumns = $derived.by(() => {
@@ -84,7 +94,9 @@
 		const editable = editableColumns(columns);
 		return editable.length ? [...keys, ...editable] : insertableColumns(columns);
 	});
-	const formColumns = $derived(editorMode === 'edit' ? editFormColumns : insertableColumns(columns));
+	const formColumns = $derived(
+		editorMode === 'edit' ? editFormColumns : insertableColumns(columns)
+	);
 	const readonlyNames = $derived(
 		editorMode === 'edit' && editableColumns(columns).length
 			? primaryKeyColumns(columns).map((column) => column.name)
@@ -216,8 +228,7 @@
 				(sql) => api.executeSql(connectionId, sql, schema, 'structure'),
 				statements
 			);
-			const message =
-				columnEditorMode === 'add' ? t('structure.added') : t('structure.updated');
+			const message = columnEditorMode === 'add' ? t('structure.added') : t('structure.updated');
 			closeColumnEditor();
 			await afterSchemaChange();
 			showSuccess(message);
@@ -406,6 +417,27 @@
 			<button
 				class="btn"
 				type="button"
+				disabled={!result?.columns.length}
+				onclick={() => (codecOpen = !codecOpen)}
+			>
+				{codecEnabled
+					? t('codec.toggleCount', { count: codecEnabled })
+					: t('codec.toggle')}
+			</button>
+			{#if codecActive.length}
+				<span
+					>{t('codec.applied', {
+						columns: codecActive
+							.map((index) => result?.columns[index]?.name)
+							.filter(Boolean)
+							.join(', ')
+					})}{#if codecFailed}
+						· {t('codec.failed', { count: formatNumber(codecFailed) })}{/if}</span
+				>
+			{/if}
+			<button
+				class="btn"
+				type="button"
 				onclick={() =>
 					workspace.openAssist(connectionId, schema, {
 						origin: 'table',
@@ -441,11 +473,26 @@
 			{/if}
 		</div>
 		{#if result}
-			{#if dataView === 'grid'}
-				<DataGrid {result} bind:selectedRow onRowContextMenu={openRowMenu} />
-			{:else}
-				<RecordFormView {result} bind:selectedRow onRowContextMenu={openRowMenu} />
-			{/if}
+			<CodecResults
+				{tabId}
+				{result}
+				bind:open={codecOpen}
+				bind:activeColumns={codecActive}
+				bind:failedCells={codecFailed}
+			>
+				{#snippet children(shown, columns)}
+					{#if dataView === 'grid'}
+						<DataGrid
+							result={shown}
+							codecColumns={columns}
+							bind:selectedRow
+							onRowContextMenu={openRowMenu}
+						/>
+					{:else}
+						<RecordFormView result={shown} bind:selectedRow onRowContextMenu={openRowMenu} />
+					{/if}
+				{/snippet}
+			</CodecResults>
 		{:else}
 			<div class="empty">
 				{loading ? t('table.loadingData') : error ? t('table.loadFailed') : t('table.noData')}
@@ -462,7 +509,9 @@
 			<span>{t('structure.columnsCount', { count: columns.length })}</span>
 			{#if canMutate}
 				<div class="filter-bar-actions">
-					<button class="btn" disabled={mutating} onclick={openAddColumn}>{t('structure.add')}</button>
+					<button class="btn" disabled={mutating} onclick={openAddColumn}
+						>{t('structure.add')}</button
+					>
 					<button
 						class="btn"
 						disabled={mutating || !hasColumnSelection}

@@ -24,6 +24,11 @@
 		selected ? workspace.connections.find((item) => item.id === selected.connectionId) : null
 	);
 	const locale = $derived(getLocale());
+	const statusText = $derived(
+		active
+			? `${active.name} · ${engineLabel(active.engine)} · ${active.host}:${active.port} · ${active.connected ? t('toolbar.connected') : t('toolbar.offline')}`
+			: t('toolbar.noConnection')
+	);
 	let moreOpen = $state(false);
 	let moreRoot = $state<HTMLDivElement | null>(null);
 
@@ -62,6 +67,7 @@
 </script>
 
 <header class="toolbar" class:agent-mode={appMode.mode === 'agent'}>
+	<div class="toolbar-main">
 	<div class="toolbar-brand">{t('app.title')}</div>
 
 	<div class="mode-switch" role="group" aria-label={t('agentMode.modeSwitch')}>
@@ -165,19 +171,21 @@
 			{/if}
 		</div>
 		<div class="toolbar-sep"></div>
-		<span class="toolbar-status truncate" style="color: var(--text-muted)">
+	{/if}
+	</div>
+
+	{#if appMode.mode === 'database'}
+		<span class="toolbar-status" title={statusText}>
 			{#if active}
-				<Database size={14} style="display:inline;vertical-align:-2px" />
-				{active.name} · {engineLabel(active.engine)} · {active.host}:{active.port}
-				{#if active.connected}· {t('toolbar.connected')}{:else}· {t('toolbar.offline')}{/if}
-			{:else}
-				{t('toolbar.noConnection')}
+				<Database size={14} />
 			{/if}
+			<span class="toolbar-status-text">{statusText}</span>
 		</span>
 	{:else}
 		<div class="toolbar-spacer"></div>
 	{/if}
 
+	<div class="toolbar-end">
 	<button class="toolbar-btn" type="button" onclick={() => (llmSettingsDialog.open = true)}>
 		<Settings size={14} />
 		{#if appMode.mode === 'database'}{t('toolbar.settings')}{/if}
@@ -197,5 +205,6 @@
 			title="中文"
 			onclick={() => switchLocale('zh')}>{t('toolbar.lang.zh')}</button
 		>
+	</div>
 	</div>
 </header>

@@ -39,6 +39,7 @@
 						/>
 					{:else if (tab.kind === 'table' || tab.kind === 'view') && tab.schema && tab.objectName}
 						<TableWorkspace
+							tabId={tab.id}
 							connectionId={tab.connectionId}
 							schema={tab.schema}
 							name={tab.objectName}

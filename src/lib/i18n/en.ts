@@ -1189,10 +1189,12 @@ export const en = {
 	'query.exported': 'Exported {count} rows to {path}',
 	'query.exportedTruncated':
 		'Exported {count} rows to {path}. The result was truncated, so only the rows in the grid were saved.',
+	'codec.resize': 'Resize the decode panel',
 	'codec.toggle': 'Decode fields',
 	'codec.toggleCount': 'Decode fields ({count})',
 	'codec.hint':
-		'Transforms this query tab’s result so you can read decoded or decrypted values after it runs. Nothing is written back to the database. Several rules on one column run from top to bottom. Keys stay in this tab and are dropped when the tab closes.',
+		'Transforms this tab’s result so you can read decoded or decrypted values. Check a rule to apply it; uncheck to edit it again. Nothing is written back to the database. Several rules on one column run from top to bottom. Keys stay in this tab and are dropped when the tab closes.',
+	'codec.enable': 'Apply',
 	'codec.column': 'Column',
 	'codec.add': 'Add field',
 	'codec.remove': 'Remove',

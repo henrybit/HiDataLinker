@@ -12,6 +12,7 @@ English first; Chinese follows in each file.
 | [1.1.0](./Features/Feature-1.1.0.md) | Minor / 小版本 | Local MCP / Skill — open the workbench to external agents / 本机 MCP / Skill，把工作台开放给外部智能体 |
 | [1.2.0](./Features/Feature-1.2.0.md) | Minor / 小版本 | Agent Mode, attachment import, Insights, SQL audit / 智能体模式、附件导入、洞察推荐、SQL 执行审计 |
 | [1.3.0](./Features/Feature-1.3.0.md) | Minor (in progress) / 小版本（开发中） | PostgreSQL deep workbench + in-workbench SQL Assist / PostgreSQL 深度工作台、工作台内 SQL Assist |
+| [1.4.0](./Features/Feature-1.4.0.md) | Minor (in progress) / 小版本（开发中） | Decode and AES-decrypt result fields per tab / 查询与表数据按字段解码、AES 解密 |
 
 When shipping a new version, add a file under `Features/` and a row to this table.  
 新版本发布时在 `Features/` 新增对应文件，并在上表追加一行。

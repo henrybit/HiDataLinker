@@ -21,6 +21,8 @@ export interface FieldCodecRule {
 	id: string;
 	column: string;
 	op: FieldCodecOp;
+	/** Applied to the result only after the rule is confirmed. */
+	enabled: boolean;
 	aes: AesCodecOptions;
 }
 
@@ -54,7 +56,7 @@ export function emptyAesOptions(): AesCodecOptions {
 }
 
 export function newFieldCodecRule(id: string, column = ''): FieldCodecRule {
-	return { id, column, op: 'base64', aes: emptyAesOptions() };
+	return { id, column, op: 'base64', enabled: false, aes: emptyAesOptions() };
 }
 
 const textEncoder = new TextEncoder();
@@ -213,6 +215,7 @@ export async function applyFieldCodecs(
 	const issues: CodecRuleProblem[] = [];
 	const jobs: Array<{ indexes: number[]; rule: FieldCodecRule; aes: PreparedAes | null }> = [];
 	for (const rule of rules) {
+		if (!rule.enabled) continue;
 		const indexes = columnIndexes(columns, rule.column);
 		if (!rule.column.trim()) continue;
 		if (!indexes.length) {

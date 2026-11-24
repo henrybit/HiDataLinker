@@ -15,6 +15,7 @@ function rule(
 	return {
 		...base,
 		...partial,
+		enabled: partial.enabled ?? true,
 		aes: { ...base.aes, ...partial.aes }
 	};
 }
@@ -53,6 +54,17 @@ describe('applyFieldCodecs', () => {
 		expect(applied.failedCells).toBe(3);
 		expect(applied.activeColumns).toEqual([0, 1, 2]);
 		expect(applied.issues).toEqual([{ id: 'missing', column: 'missing', issue: 'unknown-column' }]);
+	});
+
+	it('leaves the cell unchanged until the rule is confirmed', async () => {
+		const applied = await applyFieldCodecs(
+			columns(['name']),
+			[['aGVsbG8=']],
+			[rule({ column: 'name', op: 'base64', enabled: false })]
+		);
+		expect(applied.rows).toEqual([['aGVsbG8=']]);
+		expect(applied.activeColumns).toEqual([]);
+		expect(applied.issues).toEqual([]);
 	});
 
 	it('runs several rules on one column from top to bottom', async () => {
