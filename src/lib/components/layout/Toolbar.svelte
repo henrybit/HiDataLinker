@@ -4,6 +4,7 @@
 		Cable,
 		ChevronDown,
 		Database,
+		Info,
 		Play,
 		Plus,
 		RefreshCw,
@@ -11,6 +12,7 @@
 		Sparkles,
 		Square
 	} from '@lucide/svelte';
+	import { aboutDialog } from '$lib/about.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { llmSettingsDialog } from '$lib/llm/catalog.svelte';
 	import { engineLabel } from '$lib/engine';
@@ -186,6 +188,16 @@
 	{/if}
 
 	<div class="toolbar-end">
+	<button
+		class="toolbar-btn"
+		type="button"
+		title={t('toolbar.about')}
+		aria-label={t('toolbar.about')}
+		onclick={() => (aboutDialog.open = true)}
+	>
+		<Info size={14} />
+		{#if appMode.mode === 'database'}{t('toolbar.about')}{/if}
+	</button>
 	<button class="toolbar-btn" type="button" onclick={() => (llmSettingsDialog.open = true)}>
 		<Settings size={14} />
 		{#if appMode.mode === 'database'}{t('toolbar.settings')}{/if}

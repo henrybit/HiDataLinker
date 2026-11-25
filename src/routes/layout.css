@@ -816,6 +816,23 @@ button {
 	color: var(--text-muted);
 }
 
+.modal.about {
+	width: min(360px, calc(100vw - 32px));
+}
+
+.modal.about .about-name {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 650;
+	color: var(--text);
+}
+
+.about-version {
+	margin: 0;
+	font-size: 14px;
+	color: var(--text-muted);
+}
+
 .field {
 	display: grid;
 	grid-template-columns: 110px 1fr;

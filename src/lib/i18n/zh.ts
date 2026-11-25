@@ -16,6 +16,7 @@ export const zh: Record<MessageKey, string> = {
 	'toolbar.offline': '未连接',
 	'toolbar.noConnection': '未选择连接',
 	'toolbar.settings': '设置',
+	'toolbar.about': '关于',
 	'toolbar.language': '语言',
 	'toolbar.lang.en': 'EN',
 	'toolbar.lang.zh': '中文',
@@ -179,6 +180,8 @@ export const zh: Record<MessageKey, string> = {
 	'dialog.migratePhaseRename': '改名',
 	'dialog.migratePhaseDone': '完成',
 	'dialog.close': '关闭',
+	'dialog.aboutTitle': '关于',
+	'dialog.aboutVersion': '版本 {version}',
 	'dialog.dropping': '删除中…',
 	'dialog.switchDatabaseTitle': '切换数据库',
 	'dialog.switchDatabaseBody':

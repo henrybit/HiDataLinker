@@ -14,6 +14,7 @@ export const en = {
 	'toolbar.offline': 'offline',
 	'toolbar.noConnection': 'No connection selected',
 	'toolbar.settings': 'Settings',
+	'toolbar.about': 'About',
 	'toolbar.language': 'Language',
 	'toolbar.lang.en': 'EN',
 	'toolbar.lang.zh': '中文',
@@ -182,6 +183,8 @@ export const en = {
 	'dialog.migratePhaseRename': 'Rename',
 	'dialog.migratePhaseDone': 'Done',
 	'dialog.close': 'Close',
+	'dialog.aboutTitle': 'About',
+	'dialog.aboutVersion': 'Version {version}',
 	'dialog.dropping': 'Deleting…',
 	'dialog.switchDatabaseTitle': 'Switch Database',
 	'dialog.switchDatabaseBody':

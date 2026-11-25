@@ -16,8 +16,10 @@
 	import MigrateDatabaseDialog from '$lib/components/dialogs/MigrateDatabaseDialog.svelte';
 	import RelationshipAnalysis from '$lib/components/analysis/RelationshipAnalysis.svelte';
 	import MigrationCenter from '$lib/components/migration/MigrationCenter.svelte';
+	import AboutDialog from '$lib/components/dialogs/AboutDialog.svelte';
 	import LlmSettingsDialog from '$lib/components/dialogs/LlmSettingsDialog.svelte';
 	import AgentShell from '$lib/components/agent/AgentShell.svelte';
+	import { aboutDialog } from '$lib/about.svelte';
 	import { analysisPanel } from '$lib/analysis/panel.svelte';
 	import { hydrateLocale } from '$lib/i18n/i18n.svelte';
 	import { hydrateLlmCatalogFromDisk, llmSettingsDialog } from '$lib/llm/catalog.svelte';
@@ -103,6 +105,9 @@
 {/if}
 {#if llmSettingsDialog.open}
 	<LlmSettingsDialog />
+{/if}
+{#if aboutDialog.open}
+	<AboutDialog />
 {/if}
 {#if workspace.dialogOpen}
 	<ConnectionDialog />
